@@ -1,0 +1,345 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ShopRole {
+  ADMIN
+  MANAGER
+  CASHIER
+}
+
+enum ShopType {
+  RETAIL
+  COFFEE
+  FOOD
+  BUILDING_MATERIALS
+  SERVICES
+}
+
+enum InventoryMovementType {
+  PURCHASE_RECEIVED
+  SALE_COMPLETED
+  MANUAL_ADJUSTMENT
+  OPENING_STOCK
+}
+
+enum SaleStatus {
+  COMPLETED
+  VOIDED
+}
+
+enum PurchaseStatus {
+  DRAFT
+  RECEIVED
+  CANCELLED
+}
+
+enum NotificationType {
+  LOW_STOCK
+  DAILY_SUMMARY
+  SYSTEM
+}
+
+enum WorkerJobType {
+  LOW_STOCK_SCAN
+  DAILY_SUMMARY
+}
+
+enum WorkerJobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model User {
+  id            String        @id @default(cuid())
+  email         String        @unique
+  name          String?
+  passwordHash  String
+  defaultShopId String?
+  defaultShop   Shop?         @relation("DefaultShop", fields: [defaultShopId], references: [id], onDelete: SetNull)
+  ownedShops    Shop[]        @relation("ShopOwner")
+  memberships   UserShop[]
+  cashierSales  Sale[]        @relation("CashierUser")
+  activities    ActivityLog[]
+  jobsCreated   WorkerJob[]   @relation("WorkerJobCreatedBy")
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([defaultShopId])
+}
+
+model Shop {
+  id             String              @id @default(cuid())
+  name           String
+  slug           String              @unique
+  posType        ShopType            @default(RETAIL)
+  phone          String?
+  email          String?
+  address        String?
+  taxId          String?
+  ownerId        String
+  owner          User                @relation("ShopOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  defaultUsers   User[]              @relation("DefaultShop")
+  memberships    UserShop[]
+  categories     Category[]
+  products       Product[]
+  sales          Sale[]
+  suppliers      Supplier[]
+  purchases      PurchaseOrder[]
+  settings       ShopSetting?
+  notifications  Notification[]
+  activities     ActivityLog[]
+  workerJobs     WorkerJob[]
+  inventoryMoves InventoryMovement[]
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([ownerId])
+}
+
+model UserShop {
+  id        String   @id @default(cuid())
+  userId    String
+  shopId    String
+  role      ShopRole @default(CASHIER)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, shopId])
+  @@index([userId])
+  @@index([shopId])
+}
+
+model Category {
+  id         String     @id @default(cuid())
+  shopId     String
+  parentId   String?
+  name       String
+  slug       String
+  isActive   Boolean    @default(true)
+  shop       Shop       @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  parent     Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children   Category[] @relation("CategoryTree")
+  products   Product[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@unique([shopId, slug])
+  @@index([shopId])
+  @@index([parentId])
+}
+
+model Product {
+  id             String              @id @default(cuid())
+  shopId         String
+  categoryId     String?
+  sku            String?
+  barcode        String?
+  name           String
+  description    String?
+  cost           Decimal             @db.Decimal(12, 2)
+  price          Decimal             @db.Decimal(12, 2)
+  stockQty       Int                 @default(0)
+  reorderPoint   Int                 @default(5)
+  isActive       Boolean             @default(true)
+  category       Category?           @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  shop           Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  saleItems      SaleItem[]
+  purchaseItems  PurchaseItem[]
+  inventoryMoves InventoryMovement[]
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@unique([shopId, sku])
+  @@unique([shopId, barcode])
+  @@index([shopId])
+  @@index([categoryId])
+}
+
+model Sale {
+  id             String      @id @default(cuid())
+  shopId         String
+  cashierUserId  String?
+  saleNumber     String
+  receiptNumber  String
+  status         SaleStatus  @default(COMPLETED)
+  customerName   String?
+  customerPhone  String?
+  subtotal       Decimal     @db.Decimal(12, 2)
+  taxAmount      Decimal     @db.Decimal(12, 2)
+  discountAmount Decimal     @db.Decimal(12, 2)
+  totalAmount    Decimal     @db.Decimal(12, 2)
+  paymentMethod  String
+  notes          String?
+  cashierName    String?
+  voidReason     String?
+  shop           Shop        @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  cashierUser    User?       @relation("CashierUser", fields: [cashierUserId], references: [id], onDelete: SetNull)
+  items          SaleItem[]
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@unique([shopId, saleNumber])
+  @@unique([shopId, receiptNumber])
+  @@index([shopId, createdAt])
+}
+
+model SaleItem {
+  id          String    @id @default(cuid())
+  saleId      String
+  productId   String
+  productName String
+  qty         Int
+  unitPrice   Decimal   @db.Decimal(12, 2)
+  lineTotal   Decimal   @db.Decimal(12, 2)
+  sale        Sale      @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([saleId])
+  @@index([productId])
+}
+
+model InventoryMovement {
+  id          String                @id @default(cuid())
+  shopId      String
+  productId   String
+  type        InventoryMovementType
+  qtyChange   Int
+  referenceId String?
+  notes       String?
+  userId      String?
+  product     Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  shop        Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  createdAt   DateTime              @default(now())
+
+  @@index([shopId, createdAt])
+  @@index([productId, createdAt])
+}
+
+model Supplier {
+  id          String          @id @default(cuid())
+  shopId      String
+  name        String
+  contactName String?
+  email       String?
+  phone       String?
+  address     String?
+  notes       String?
+  isActive    Boolean         @default(true)
+  shop        Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  purchases   PurchaseOrder[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([shopId])
+}
+
+model PurchaseOrder {
+  id             String         @id @default(cuid())
+  shopId         String
+  supplierId     String
+  purchaseNumber String
+  status         PurchaseStatus @default(DRAFT)
+  totalAmount    Decimal        @db.Decimal(12, 2)
+  notes          String?
+  receivedAt     DateTime?
+  supplier       Supplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  shop           Shop           @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  items          PurchaseItem[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([shopId, purchaseNumber])
+  @@index([shopId, createdAt])
+}
+
+model PurchaseItem {
+  id          String        @id @default(cuid())
+  purchaseId  String
+  productId   String
+  productName String
+  qty         Int
+  unitCost    Decimal       @db.Decimal(12, 2)
+  lineTotal   Decimal       @db.Decimal(12, 2)
+  purchase    PurchaseOrder @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product     Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([purchaseId])
+  @@index([productId])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  shopId    String
+  type      NotificationType
+  title     String
+  message   String
+  isRead    Boolean          @default(false)
+  shop      Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  createdAt DateTime         @default(now())
+
+  @@index([shopId, createdAt])
+  @@index([shopId, isRead])
+}
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  shopId      String
+  userId      String?
+  action      String
+  entityType  String
+  entityId    String?
+  description String
+  metadata    Json?
+  shop        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@index([shopId, createdAt])
+}
+
+model ShopSetting {
+  id                 String   @id @default(cuid())
+  shopId             String   @unique
+  currencyCode       String   @default("PHP")
+  currencySymbol     String   @default("₱")
+  taxRate            Decimal  @default(0) @db.Decimal(5, 2)
+  receiptHeader      String?
+  receiptFooter      String?
+  lowStockEnabled    Boolean  @default(true)
+  lowStockThreshold  Int      @default(5)
+  salePrefix         String   @default("SAL")
+  receiptPrefix      String   @default("RCP")
+  purchasePrefix     String   @default("PO")
+  shop               Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  updatedAt          DateTime @updatedAt
+  createdAt          DateTime @default(now())
+}
+
+model WorkerJob {
+  id          String          @id @default(cuid())
+  shopId      String?
+  type        WorkerJobType
+  status      WorkerJobStatus @default(QUEUED)
+  payload     Json?
+  error       String?
+  runAt       DateTime        @default(now())
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  createdById String?
+  createdBy   User?           @relation("WorkerJobCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  shop        Shop?           @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  createdAt   DateTime        @default(now())
+
+  @@index([status, runAt])
+  @@index([shopId, status])
+}
