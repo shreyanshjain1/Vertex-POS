@@ -3,13 +3,10 @@
 import { useMemo, useState } from 'react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import Card from '@/components/ui/Card';
 import { money } from '@/lib/format';
 
-type Category = {
-  id: string;
-  name: string;
-};
-
+type Category = { id: string; name: string; parentId: string | null };
 type Product = {
   id: string;
   categoryId: string | null;
@@ -25,28 +22,23 @@ type Product = {
   category?: { name: string } | null;
 };
 
-type ProductManagerProps = {
-  products?: Product[];
-  initialProducts?: Product[];
-  categories: Category[];
-  currencySymbol: string;
-};
-
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <label className="mb-2 block text-sm font-semibold text-stone-700">{children}</label>;
 }
 
 export default function ProductManager({
-  products,
   initialProducts,
   categories,
   currencySymbol
-}: ProductManagerProps) {
-  const safeProducts = products ?? initialProducts ?? [];
-  const safeCategories = categories ?? [];
-
-  const [items, setItems] = useState<Product[]>(safeProducts);
+}: {
+  initialProducts: Product[];
+  categories: Category[];
+  currencySymbol: string;
+}) {
+  const [products, setProducts] = useState(initialProducts);
   const [query, setQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({
     categoryId: '',
     sku: '',
@@ -64,17 +56,54 @@ export default function ProductManager({
 
   const filtered = useMemo(() => {
     const term = query.toLowerCase().trim();
-    if (!term) return items;
 
-    return items.filter((product) =>
-      [product.name, product.sku ?? '', product.barcode ?? '', product.category?.name ?? '']
-        .join(' ')
-        .toLowerCase()
-        .includes(term)
-    );
-  }, [items, query]);
+    return products.filter((product) => {
+      const matchesTerm =
+        !term ||
+        [product.name, product.sku ?? '', product.barcode ?? '', product.category?.name ?? '']
+          .join(' ')
+          .toLowerCase()
+          .includes(term);
 
-  async function createProduct(event: React.FormEvent<HTMLFormElement>) {
+      const matchesCategory = !categoryFilter || product.categoryId === categoryFilter;
+
+      return matchesTerm && matchesCategory;
+    });
+  }, [products, query, categoryFilter]);
+
+  function resetForm() {
+    setEditingId(null);
+    setForm({
+      categoryId: '',
+      sku: '',
+      barcode: '',
+      name: '',
+      description: '',
+      cost: '0.00',
+      price: '0.00',
+      stockQty: '0',
+      reorderPoint: '5',
+      isActive: true
+    });
+  }
+
+  function beginEdit(product: Product) {
+    setEditingId(product.id);
+    setForm({
+      categoryId: product.categoryId ?? '',
+      sku: product.sku ?? '',
+      barcode: product.barcode ?? '',
+      name: product.name,
+      description: product.description ?? '',
+      cost: product.cost,
+      price: product.price,
+      stockQty: String(product.stockQty),
+      reorderPoint: String(product.reorderPoint),
+      isActive: product.isActive
+    });
+  }
+
+  async function saveProduct(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
 
@@ -83,7 +112,7 @@ export default function ProductManager({
       return;
     }
 
-    if (Number(form.price) < 0 || Number(form.cost) < 0) {
+    if (Number(form.cost) < 0 || Number(form.price) < 0) {
       setError('Cost and selling price must not be negative.');
       return;
     }
@@ -95,66 +124,73 @@ export default function ProductManager({
 
     setLoading(true);
 
-    try {
-      const response = await fetch('/api/products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          categoryId: form.categoryId || null,
-          sku: form.sku || null,
-          barcode: form.barcode || null,
-          name: form.name.trim(),
-          description: form.description || null,
-          cost: Number(form.cost),
-          price: Number(form.price),
-          stockQty: Number(form.stockQty),
-          reorderPoint: Number(form.reorderPoint),
-          isActive: form.isActive
-        })
-      });
+    const payload = {
+      ...form,
+      categoryId: form.categoryId || null,
+      sku: form.sku || null,
+      barcode: form.barcode || null,
+      description: form.description || null,
+      stockQty: Number(form.stockQty),
+      reorderPoint: Number(form.reorderPoint),
+      cost: Number(form.cost),
+      price: Number(form.price)
+    };
 
-      const data = await response.json().catch(() => ({ error: 'Failed to create product.' }));
-      setLoading(false);
+    const response = await fetch(editingId ? `/api/products/${editingId}` : '/api/products', {
+      method: editingId ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
 
-      if (!response.ok) {
-        setError(data.error ?? 'Failed to create product.');
-        return;
-      }
+    const data = await response.json().catch(() => ({ error: 'Failed to save product.' }));
+    setLoading(false);
 
-      const createdProduct: Product = {
-        ...data.product,
-        cost: String(data.product.cost),
-        price: String(data.product.price)
-      };
-
-      setItems((prev) => [createdProduct, ...prev]);
-      setForm({
-        categoryId: '',
-        sku: '',
-        barcode: '',
-        name: '',
-        description: '',
-        cost: '0.00',
-        price: '0.00',
-        stockQty: '0',
-        reorderPoint: '5',
-        isActive: true
-      });
-    } catch {
-      setLoading(false);
-      setError('Failed to create product.');
+    if (!response.ok) {
+      setError(data.error ?? 'Failed to save product.');
+      return;
     }
+
+    const product = {
+      ...data.product,
+      cost: String(data.product.cost),
+      price: String(data.product.price)
+    };
+
+    setProducts((prev) =>
+      editingId ? prev.map((item) => (item.id === editingId ? product : item)) : [product, ...prev]
+    );
+
+    resetForm();
+  }
+
+  async function archiveProduct(product: Product) {
+    const response = await fetch(`/api/products/${product.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isActive: !product.isActive })
+    });
+
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.product) return;
+
+    setProducts((prev) =>
+      prev.map((item) =>
+        item.id === product.id ? { ...item, isActive: data.product.isActive } : item
+      )
+    );
   }
 
   return (
     <div className="space-y-6">
-      <div className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm">
-        <div className="mb-1 text-2xl font-black text-stone-900">Add product</div>
+      <Card>
+        <div className="mb-1 text-2xl font-black text-stone-900">
+          {editingId ? 'Edit product' : 'Add product'}
+        </div>
         <p className="mb-6 text-sm text-stone-500">
-          Create a product with pricing, stock, barcode, and reorder details.
+          Set pricing, stock levels, barcode, and reorder behavior clearly so cashiers and managers understand each item.
         </p>
 
-        <form onSubmit={createProduct} className="space-y-6">
+        <form onSubmit={saveProduct} className="space-y-6">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div>
               <FieldLabel>Product name</FieldLabel>
@@ -169,12 +205,12 @@ export default function ProductManager({
             <div>
               <FieldLabel>Category</FieldLabel>
               <select
-                className="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-emerald-500 focus:bg-white"
+                className="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm outline-none transition focus:border-emerald-500 focus:bg-white"
                 value={form.categoryId}
                 onChange={(e) => setForm((p) => ({ ...p, categoryId: e.target.value }))}
               >
-                <option value="">No category</option>
-                {safeCategories.map((category) => (
+                <option value="">Uncategorized</option>
+                {categories.map((category) => (
                   <option key={category.id} value={category.id}>
                     {category.name}
                   </option>
@@ -203,9 +239,9 @@ export default function ProductManager({
             <div>
               <FieldLabel>Cost price</FieldLabel>
               <Input
-                placeholder="0.00"
                 type="number"
                 step="0.01"
+                placeholder="0.00"
                 value={form.cost}
                 onChange={(e) => setForm((p) => ({ ...p, cost: e.target.value }))}
               />
@@ -214,9 +250,9 @@ export default function ProductManager({
             <div>
               <FieldLabel>Selling price</FieldLabel>
               <Input
-                placeholder="0.00"
                 type="number"
                 step="0.01"
+                placeholder="0.00"
                 value={form.price}
                 onChange={(e) => setForm((p) => ({ ...p, price: e.target.value }))}
               />
@@ -225,8 +261,8 @@ export default function ProductManager({
             <div>
               <FieldLabel>Opening stock quantity</FieldLabel>
               <Input
-                placeholder="0"
                 type="number"
+                placeholder="0"
                 value={form.stockQty}
                 onChange={(e) => setForm((p) => ({ ...p, stockQty: e.target.value }))}
               />
@@ -235,8 +271,8 @@ export default function ProductManager({
             <div>
               <FieldLabel>Low-stock reorder level</FieldLabel>
               <Input
-                placeholder="5"
                 type="number"
+                placeholder="5"
                 value={form.reorderPoint}
                 onChange={(e) => setForm((p) => ({ ...p, reorderPoint: e.target.value }))}
               />
@@ -257,9 +293,8 @@ export default function ProductManager({
               type="checkbox"
               checked={form.isActive}
               onChange={(e) => setForm((p) => ({ ...p, isActive: e.target.checked }))}
-              className="h-4 w-4 rounded border-stone-300"
             />
-            Product is active and can be sold
+            Product is active and available for selling
           </label>
 
           {error ? (
@@ -268,26 +303,48 @@ export default function ProductManager({
             </div>
           ) : null}
 
-          <div>
+          <div className="flex gap-3">
             <Button type="submit" disabled={loading}>
-              {loading ? 'Saving product...' : 'Save product'}
+              {loading ? 'Saving product...' : editingId ? 'Update product' : 'Save product'}
             </Button>
+
+            {editingId ? (
+              <Button type="button" variant="secondary" onClick={resetForm}>
+                Cancel
+              </Button>
+            ) : null}
           </div>
         </form>
-      </div>
+      </Card>
 
-      <div className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm">
-        <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <Card>
+        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <div className="text-lg font-black text-stone-900">Product catalog</div>
-            <div className="text-sm text-stone-500">Search, review, and monitor your products.</div>
+            <h2 className="text-xl font-black text-stone-900">Product catalog</h2>
+            <p className="text-sm text-stone-500">
+              Search, filter, and manage active or archived products.
+            </p>
           </div>
-          <div className="w-full md:w-80">
+
+          <div className="flex flex-col gap-3 md:flex-row">
             <Input
-              placeholder="Search by name, SKU, barcode, or category..."
+              placeholder="Search products..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              className="md:w-72"
             />
+            <select
+              className="rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm"
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+            >
+              <option value="">All categories</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -301,7 +358,7 @@ export default function ProductManager({
                 <th className="px-3 py-3">Cost</th>
                 <th className="px-3 py-3">Price</th>
                 <th className="px-3 py-3">Stock</th>
-                <th className="px-3 py-3">Reorder</th>
+                <th className="px-3 py-3">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -309,9 +366,7 @@ export default function ProductManager({
                 <tr key={product.id} className="border-t border-stone-200">
                   <td className="px-3 py-3">
                     <div className="font-semibold text-stone-900">{product.name}</div>
-                    {product.description ? (
-                      <div className="text-xs text-stone-500">{product.description}</div>
-                    ) : null}
+                    <div className="text-xs text-stone-500">{product.description ?? 'No description'}</div>
                   </td>
                   <td className="px-3 py-3">{product.category?.name ?? '—'}</td>
                   <td className="px-3 py-3 text-stone-600">
@@ -326,7 +381,16 @@ export default function ProductManager({
                   >
                     {product.stockQty}
                   </td>
-                  <td className="px-3 py-3">{product.reorderPoint}</td>
+                  <td className="px-3 py-3">
+                    <div className="flex gap-2">
+                      <Button type="button" variant="secondary" onClick={() => beginEdit(product)}>
+                        Edit
+                      </Button>
+                      <Button type="button" variant="ghost" onClick={() => archiveProduct(product)}>
+                        {product.isActive ? 'Archive' : 'Activate'}
+                      </Button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -338,7 +402,7 @@ export default function ProductManager({
             </div>
           ) : null}
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

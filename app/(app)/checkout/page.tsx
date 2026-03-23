@@ -1,17 +1,26 @@
 import AppHeader from '@/components/layout/AppHeader';
 import CheckoutClient from '@/components/checkout/CheckoutClient';
-import { prisma } from '@/lib/prisma';
 import { getActiveShopContext } from '@/lib/auth/get-active-shop';
+import { prisma } from '@/lib/prisma';
 
 export default async function CheckoutPage() {
-  const { session, shopId } = await getActiveShopContext();
+  const { shopId, session } = await getActiveShopContext();
 
   const [products, settings] = await Promise.all([
     prisma.product.findMany({
       where: { shopId, isActive: true },
       orderBy: { name: 'asc' },
       include: {
-        category: true
+        category: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            shopId: true,
+            createdAt: true,
+            updatedAt: true
+          }
+        }
       }
     }),
     prisma.shopSetting.findUnique({
