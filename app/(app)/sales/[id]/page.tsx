@@ -37,10 +37,10 @@ export default async function SaleDetailPage({
       />
 
       <div className="flex flex-wrap gap-3">
-        <Link href={`/sales/${sale.id}/receipt`}>
+        <Link href={`/print/receipt/${sale.id}`}>
           <Button type="button">Open receipt</Button>
         </Link>
-        <Link href={`/sales/${sale.id}/receipt?autoprint=1`}>
+        <Link href={`/print/receipt/${sale.id}?autoprint=1`}>
           <Button type="button" variant="secondary">
             Print receipt
           </Button>
@@ -89,7 +89,7 @@ export default async function SaleDetailPage({
                 <span>{money(sale.subtotal.toString(), currencySymbol)}</span>
               </div>
               <div className="flex justify-between">
-                <span>Tax</span>
+                <span>VAT</span>
                 <span>{money(sale.taxAmount.toString(), currencySymbol)}</span>
               </div>
               <div className="flex justify-between">

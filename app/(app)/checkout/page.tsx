@@ -6,7 +6,7 @@ import { prisma } from '@/lib/prisma';
 export default async function CheckoutPage() {
   const { shopId, session } = await getActiveShopContext();
 
-  const [products, settings] = await Promise.all([
+  const [products, categories, settings] = await Promise.all([
     prisma.product.findMany({
       where: { shopId, isActive: true },
       orderBy: { name: 'asc' },
@@ -14,13 +14,17 @@ export default async function CheckoutPage() {
         category: {
           select: {
             id: true,
-            name: true,
-            slug: true,
-            shopId: true,
-            createdAt: true,
-            updatedAt: true
+            name: true
           }
         }
+      }
+    }),
+    prisma.category.findMany({
+      where: { shopId },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true
       }
     }),
     prisma.shopSetting.findUnique({
@@ -38,31 +42,21 @@ export default async function CheckoutPage() {
       <CheckoutClient
         products={products.map((product) => ({
           id: product.id,
-          shopId: product.shopId,
-          categoryId: product.categoryId,
-          sku: product.sku,
-          barcode: product.barcode,
           name: product.name,
-          description: product.description,
-          cost: product.cost.toString(),
+          barcode: product.barcode,
+          sku: product.sku,
           price: product.price.toString(),
           stockQty: product.stockQty,
-          reorderPoint: product.reorderPoint,
-          isActive: product.isActive,
-          createdAt: product.createdAt.toISOString(),
-          updatedAt: product.updatedAt.toISOString(),
+          categoryId: product.categoryId,
           category: product.category
             ? {
                 id: product.category.id,
-                name: product.category.name,
-                slug: product.category.slug,
-                shopId: product.category.shopId,
-                createdAt: product.category.createdAt.toISOString(),
-                updatedAt: product.category.updatedAt.toISOString()
+                name: product.category.name
               }
             : null
         }))}
-        taxRate={Number(settings?.taxRate ?? 0)}
+        categories={categories}
+        taxRate={Number(settings?.taxRate ?? 12)}
         currencySymbol={settings?.currencySymbol ?? '₱'}
         cashierName={session.user.name ?? 'Cashier'}
       />

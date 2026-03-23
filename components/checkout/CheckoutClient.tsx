@@ -7,6 +7,11 @@ import Input from '@/components/ui/Input';
 import Button from '@/components/ui/Button';
 import { money } from '@/lib/format';
 
+type Category = {
+  id: string;
+  name: string;
+};
+
 type Product = {
   id: string;
   name: string;
@@ -14,24 +19,28 @@ type Product = {
   sku: string | null;
   price: string;
   stockQty: number;
-  category?: { name: string } | null;
+  categoryId: string | null;
+  category?: { id: string; name: string } | null;
 };
 
 type CartItem = Product & { qty: number };
 
 export default function CheckoutClient({
   products,
+  categories,
   taxRate,
   currencySymbol,
   cashierName
 }: {
   products: Product[];
+  categories: Category[];
   taxRate: number;
   currencySymbol: string;
   cashierName: string;
 }) {
   const router = useRouter();
 
+  const [selectedCategory, setSelectedCategory] = useState('');
   const [query, setQuery] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [discountAmount, setDiscountAmount] = useState('0');
@@ -44,22 +53,28 @@ export default function CheckoutClient({
 
   const filtered = useMemo(() => {
     const term = query.toLowerCase().trim();
-    if (!term) return products.slice(0, 24);
 
     return products
-      .filter((product) =>
-        [
-          product.name,
-          product.barcode ?? '',
-          product.sku ?? '',
-          product.category?.name ?? ''
-        ]
-          .join(' ')
-          .toLowerCase()
-          .includes(term)
-      )
-      .slice(0, 24);
-  }, [products, query]);
+      .filter((product) => {
+        const matchesCategory =
+          !selectedCategory || product.categoryId === selectedCategory;
+
+        const matchesTerm =
+          !term ||
+          [
+            product.name,
+            product.barcode ?? '',
+            product.sku ?? '',
+            product.category?.name ?? ''
+          ]
+            .join(' ')
+            .toLowerCase()
+            .includes(term);
+
+        return matchesCategory && matchesTerm;
+      })
+      .slice(0, 30);
+  }, [products, query, selectedCategory]);
 
   function addToCart(product: Product) {
     setError('');
@@ -91,7 +106,7 @@ export default function CheckoutClient({
     setCart((prev) =>
       prev
         .map((item) =>
-          item.id === productId ? { ...item, qty: Math.max(0, item.qty - 1) } : item
+          item.id === productId ? { ...item, qty: Math.max(item.qty - 1, 0) } : item
         )
         .filter((item) => item.qty > 0)
     );
@@ -108,9 +123,9 @@ export default function CheckoutClient({
   }
 
   const subtotal = cart.reduce((sum, item) => sum + Number(item.price) * item.qty, 0);
-  const taxAmount = subtotal * (taxRate / 100);
+  const vatAmount = subtotal * (taxRate / 100);
   const discount = Number(discountAmount || 0);
-  const total = Math.max(subtotal + taxAmount - discount, 0);
+  const total = Math.max(subtotal + vatAmount - discount, 0);
 
   async function completeSale() {
     setError('');
@@ -156,7 +171,7 @@ export default function CheckoutClient({
       setCustomerPhone('');
       setNotes('');
 
-      router.push(`/sales/${data.sale.id}/receipt?autoprint=1`);
+      router.push(`/print/receipt/${data.sale.id}?autoprint=1`);
       router.refresh();
     } catch {
       setLoading(false);
@@ -167,17 +182,30 @@ export default function CheckoutClient({
   return (
     <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
       <Card>
-        <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="mb-5 flex flex-col gap-4">
           <div>
             <h2 className="text-2xl font-black text-stone-900">Find products</h2>
             <p className="mt-1 text-sm text-stone-500">
-              Search by product name, SKU, barcode, or category. Barcode scanner input can also go here.
+              Choose a category first, then search or scan a barcode.
             </p>
           </div>
 
-          <div className="w-full md:w-96">
+          <div className="grid gap-3 md:grid-cols-[240px_1fr]">
+            <select
+              className="rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-emerald-500 focus:bg-white"
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+            >
+              <option value="">All categories</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+
             <Input
-              placeholder="Search or scan barcode..."
+              placeholder="Search by name, SKU, barcode..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -306,22 +334,24 @@ export default function CheckoutClient({
           />
         </div>
 
-        <div className="mt-6 space-y-2 rounded-2xl bg-stone-50 p-4 text-sm">
-          <div className="flex justify-between">
-            <span>Subtotal</span>
-            <span>{money(subtotal, currencySymbol)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Tax</span>
-            <span>{money(taxAmount, currencySymbol)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Discount</span>
-            <span>-{money(discount, currencySymbol)}</span>
-          </div>
-          <div className="flex justify-between border-t border-stone-200 pt-2 text-lg font-black text-stone-900">
-            <span>Total</span>
-            <span>{money(total, currencySymbol)}</span>
+        <div className="mt-6 rounded-2xl bg-stone-50 p-5">
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span>Subtotal</span>
+              <span>{money(subtotal, currencySymbol)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>VAT ({taxRate}%)</span>
+              <span>{money(vatAmount, currencySymbol)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Discount</span>
+              <span>-{money(discount, currencySymbol)}</span>
+            </div>
+            <div className="flex justify-between border-t border-stone-200 pt-3 text-lg font-black text-stone-900">
+              <span>Total</span>
+              <span>{money(total, currencySymbol)}</span>
+            </div>
           </div>
         </div>
 
