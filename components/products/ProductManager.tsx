@@ -3,10 +3,13 @@
 import { useMemo, useState } from 'react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
-import Card from '@/components/ui/Card';
 import { money } from '@/lib/format';
 
-type Category = { id: string; name: string; parentId: string | null };
+type Category = {
+  id: string;
+  name: string;
+};
+
 type Product = {
   id: string;
   categoryId: string | null;
@@ -22,127 +25,320 @@ type Product = {
   category?: { name: string } | null;
 };
 
-export default function ProductManager({ initialProducts, categories, currencySymbol }: { initialProducts: Product[]; categories: Category[]; currencySymbol: string }) {
-  const [products, setProducts] = useState(initialProducts);
+type ProductManagerProps = {
+  products?: Product[];
+  initialProducts?: Product[];
+  categories: Category[];
+  currencySymbol: string;
+};
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return <label className="mb-2 block text-sm font-semibold text-stone-700">{children}</label>;
+}
+
+export default function ProductManager({
+  products,
+  initialProducts,
+  categories,
+  currencySymbol
+}: ProductManagerProps) {
+  const safeProducts = products ?? initialProducts ?? [];
+  const safeCategories = categories ?? [];
+
+  const [items, setItems] = useState<Product[]>(safeProducts);
   const [query, setQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ categoryId: '', sku: '', barcode: '', name: '', description: '', cost: '0', price: '0', stockQty: '0', reorderPoint: '5', isActive: true });
+  const [form, setForm] = useState({
+    categoryId: '',
+    sku: '',
+    barcode: '',
+    name: '',
+    description: '',
+    cost: '0.00',
+    price: '0.00',
+    stockQty: '0',
+    reorderPoint: '5',
+    isActive: true
+  });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const filtered = useMemo(() => {
     const term = query.toLowerCase().trim();
-    return products.filter((product) => {
-      const matchesTerm = !term || [product.name, product.sku ?? '', product.barcode ?? '', product.category?.name ?? ''].join(' ').toLowerCase().includes(term);
-      const matchesCategory = !categoryFilter || product.categoryId === categoryFilter;
-      return matchesTerm && matchesCategory;
-    });
-  }, [products, query, categoryFilter]);
+    if (!term) return items;
 
-  function beginEdit(product: Product) {
-    setEditingId(product.id);
-    setForm({
-      categoryId: product.categoryId ?? '',
-      sku: product.sku ?? '',
-      barcode: product.barcode ?? '',
-      name: product.name,
-      description: product.description ?? '',
-      cost: product.cost,
-      price: product.price,
-      stockQty: String(product.stockQty),
-      reorderPoint: String(product.reorderPoint),
-      isActive: product.isActive
-    });
-  }
+    return items.filter((product) =>
+      [product.name, product.sku ?? '', product.barcode ?? '', product.category?.name ?? '']
+        .join(' ')
+        .toLowerCase()
+        .includes(term)
+    );
+  }, [items, query]);
 
-  async function saveProduct(event: React.FormEvent<HTMLFormElement>) {
+  async function createProduct(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
+
+    if (!form.name.trim()) {
+      setError('Product name is required.');
+      return;
+    }
+
+    if (Number(form.price) < 0 || Number(form.cost) < 0) {
+      setError('Cost and selling price must not be negative.');
+      return;
+    }
+
+    if (Number(form.stockQty) < 0 || Number(form.reorderPoint) < 0) {
+      setError('Stock quantity and reorder level must not be negative.');
+      return;
+    }
+
     setLoading(true);
-    const payload = {
-      ...form,
-      categoryId: form.categoryId || null,
-      sku: form.sku || null,
-      barcode: form.barcode || null,
-      description: form.description || null,
-      stockQty: Number(form.stockQty),
-      reorderPoint: Number(form.reorderPoint),
-      cost: Number(form.cost),
-      price: Number(form.price)
-    };
 
-    const response = await fetch(editingId ? `/api/products/${editingId}` : '/api/products', {
-      method: editingId ? 'PATCH' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+    try {
+      const response = await fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          categoryId: form.categoryId || null,
+          sku: form.sku || null,
+          barcode: form.barcode || null,
+          name: form.name.trim(),
+          description: form.description || null,
+          cost: Number(form.cost),
+          price: Number(form.price),
+          stockQty: Number(form.stockQty),
+          reorderPoint: Number(form.reorderPoint),
+          isActive: form.isActive
+        })
+      });
 
-    const data = await response.json().catch(() => ({ error: 'Failed to save product.' }));
-    setLoading(false);
-    if (!response.ok) return setError(data.error ?? 'Failed to save product.');
+      const data = await response.json().catch(() => ({ error: 'Failed to create product.' }));
+      setLoading(false);
 
-    const product = { ...data.product, cost: String(data.product.cost), price: String(data.product.price) };
-    setProducts((prev) => editingId ? prev.map((item) => item.id === editingId ? product : item) : [product, ...prev]);
-    setEditingId(null);
-    setForm({ categoryId: '', sku: '', barcode: '', name: '', description: '', cost: '0', price: '0', stockQty: '0', reorderPoint: '5', isActive: true });
-  }
+      if (!response.ok) {
+        setError(data.error ?? 'Failed to create product.');
+        return;
+      }
 
-  async function archiveProduct(product: Product) {
-    const response = await fetch(`/api/products/${product.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isActive: !product.isActive })
-    });
-    const data = await response.json().catch(() => null);
-    if (!response.ok || !data?.product) return;
-    setProducts((prev) => prev.map((item) => item.id === product.id ? { ...item, isActive: data.product.isActive } : item));
+      const createdProduct: Product = {
+        ...data.product,
+        cost: String(data.product.cost),
+        price: String(data.product.price)
+      };
+
+      setItems((prev) => [createdProduct, ...prev]);
+      setForm({
+        categoryId: '',
+        sku: '',
+        barcode: '',
+        name: '',
+        description: '',
+        cost: '0.00',
+        price: '0.00',
+        stockQty: '0',
+        reorderPoint: '5',
+        isActive: true
+      });
+    } catch {
+      setLoading(false);
+      setError('Failed to create product.');
+    }
   }
 
   return (
     <div className="space-y-6">
-      <Card>
-        <h2 className="text-xl font-black text-stone-900">{editingId ? 'Edit product' : 'Add product'}</h2>
-        <form onSubmit={saveProduct} className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <Input placeholder="Product name" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} required />
-          <select className="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm" value={form.categoryId} onChange={(e) => setForm((p) => ({ ...p, categoryId: e.target.value }))}>
-            <option value="">Uncategorized</option>
-            {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-          </select>
-          <Input placeholder="SKU" value={form.sku} onChange={(e) => setForm((p) => ({ ...p, sku: e.target.value }))} />
-          <Input placeholder="Barcode" value={form.barcode} onChange={(e) => setForm((p) => ({ ...p, barcode: e.target.value }))} />
-          <Input type="number" step="0.01" placeholder="Cost price" value={form.cost} onChange={(e) => setForm((p) => ({ ...p, cost: e.target.value }))} />
-          <Input type="number" step="0.01" placeholder="Selling price" value={form.price} onChange={(e) => setForm((p) => ({ ...p, price: e.target.value }))} />
-          <Input type="number" placeholder="Stock qty" value={form.stockQty} onChange={(e) => setForm((p) => ({ ...p, stockQty: e.target.value }))} />
-          <Input type="number" placeholder="Reorder level" value={form.reorderPoint} onChange={(e) => setForm((p) => ({ ...p, reorderPoint: e.target.value }))} />
-          <div className="md:col-span-2 xl:col-span-4"><Input placeholder="Description" value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} /></div>
-          <label className="flex items-center gap-2 text-sm font-medium text-stone-700 md:col-span-2 xl:col-span-4"><input type="checkbox" checked={form.isActive} onChange={(e) => setForm((p) => ({ ...p, isActive: e.target.checked }))} /> Product is active</label>
-          {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 md:col-span-2 xl:col-span-4">{error}</div> : null}
-          <div className="flex gap-3 md:col-span-2 xl:col-span-4"><Button type="submit" disabled={loading}>{loading ? 'Saving...' : editingId ? 'Update product' : 'Save product'}</Button>{editingId ? <Button type="button" variant="secondary" onClick={() => { setEditingId(null); setForm({ categoryId: '', sku: '', barcode: '', name: '', description: '', cost: '0', price: '0', stockQty: '0', reorderPoint: '5', isActive: true }); }}>Cancel</Button> : null}</div>
-        </form>
-      </Card>
-      <Card>
-        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h2 className="text-xl font-black text-stone-900">Product catalog</h2>
-            <p className="text-sm text-stone-500">Search, filter, and manage active or archived products.</p>
+      <div className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm">
+        <div className="mb-1 text-2xl font-black text-stone-900">Add product</div>
+        <p className="mb-6 text-sm text-stone-500">
+          Create a product with pricing, stock, barcode, and reorder details.
+        </p>
+
+        <form onSubmit={createProduct} className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div>
+              <FieldLabel>Product name</FieldLabel>
+              <Input
+                placeholder="e.g. Iced Latte"
+                value={form.name}
+                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                required
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Category</FieldLabel>
+              <select
+                className="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-emerald-500 focus:bg-white"
+                value={form.categoryId}
+                onChange={(e) => setForm((p) => ({ ...p, categoryId: e.target.value }))}
+              >
+                <option value="">No category</option>
+                {safeCategories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <FieldLabel>SKU</FieldLabel>
+              <Input
+                placeholder="e.g. COF-ICE-001"
+                value={form.sku}
+                onChange={(e) => setForm((p) => ({ ...p, sku: e.target.value }))}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Barcode</FieldLabel>
+              <Input
+                placeholder="Scan or type barcode"
+                value={form.barcode}
+                onChange={(e) => setForm((p) => ({ ...p, barcode: e.target.value }))}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Cost price</FieldLabel>
+              <Input
+                placeholder="0.00"
+                type="number"
+                step="0.01"
+                value={form.cost}
+                onChange={(e) => setForm((p) => ({ ...p, cost: e.target.value }))}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Selling price</FieldLabel>
+              <Input
+                placeholder="0.00"
+                type="number"
+                step="0.01"
+                value={form.price}
+                onChange={(e) => setForm((p) => ({ ...p, price: e.target.value }))}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Opening stock quantity</FieldLabel>
+              <Input
+                placeholder="0"
+                type="number"
+                value={form.stockQty}
+                onChange={(e) => setForm((p) => ({ ...p, stockQty: e.target.value }))}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Low-stock reorder level</FieldLabel>
+              <Input
+                placeholder="5"
+                type="number"
+                value={form.reorderPoint}
+                onChange={(e) => setForm((p) => ({ ...p, reorderPoint: e.target.value }))}
+              />
+            </div>
           </div>
-          <div className="flex flex-col gap-3 md:flex-row">
-            <Input placeholder="Search products..." value={query} onChange={(e) => setQuery(e.target.value)} className="md:w-72" />
-            <select className="rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-              <option value="">All categories</option>
-              {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-            </select>
+
+          <div>
+            <FieldLabel>Description</FieldLabel>
+            <Input
+              placeholder="Optional product description"
+              value={form.description}
+              onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+            />
+          </div>
+
+          <label className="inline-flex items-center gap-3 text-sm font-medium text-stone-700">
+            <input
+              type="checkbox"
+              checked={form.isActive}
+              onChange={(e) => setForm((p) => ({ ...p, isActive: e.target.checked }))}
+              className="h-4 w-4 rounded border-stone-300"
+            />
+            Product is active and can be sold
+          </label>
+
+          {error ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          ) : null}
+
+          <div>
+            <Button type="submit" disabled={loading}>
+              {loading ? 'Saving product...' : 'Save product'}
+            </Button>
+          </div>
+        </form>
+      </div>
+
+      <div className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm">
+        <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="text-lg font-black text-stone-900">Product catalog</div>
+            <div className="text-sm text-stone-500">Search, review, and monitor your products.</div>
+          </div>
+          <div className="w-full md:w-80">
+            <Input
+              placeholder="Search by name, SKU, barcode, or category..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
           </div>
         </div>
+
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="text-stone-500"><tr><th className="px-3 py-3">Name</th><th className="px-3 py-3">Category</th><th className="px-3 py-3">SKU / Barcode</th><th className="px-3 py-3">Cost</th><th className="px-3 py-3">Price</th><th className="px-3 py-3">Stock</th><th className="px-3 py-3">Actions</th></tr></thead>
-            <tbody>{filtered.map((product) => <tr key={product.id} className="border-t border-stone-200"><td className="px-3 py-3"><div className="font-semibold text-stone-900">{product.name}</div><div className="text-xs text-stone-500">{product.description ?? 'No description'}</div></td><td className="px-3 py-3">{product.category?.name ?? '—'}</td><td className="px-3 py-3 text-stone-600">{product.sku ?? '—'} / {product.barcode ?? '—'}</td><td className="px-3 py-3">{money(product.cost, currencySymbol)}</td><td className="px-3 py-3">{money(product.price, currencySymbol)}</td><td className={`px-3 py-3 font-semibold ${product.stockQty <= product.reorderPoint ? 'text-red-600' : 'text-stone-900'}`}>{product.stockQty}</td><td className="px-3 py-3"><div className="flex gap-2"><Button type="button" variant="secondary" onClick={() => beginEdit(product)}>Edit</Button><Button type="button" variant="ghost" onClick={() => archiveProduct(product)}>{product.isActive ? 'Archive' : 'Activate'}</Button></div></td></tr>)}</tbody>
+            <thead className="text-stone-500">
+              <tr>
+                <th className="px-3 py-3">Name</th>
+                <th className="px-3 py-3">Category</th>
+                <th className="px-3 py-3">SKU / Barcode</th>
+                <th className="px-3 py-3">Cost</th>
+                <th className="px-3 py-3">Price</th>
+                <th className="px-3 py-3">Stock</th>
+                <th className="px-3 py-3">Reorder</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((product) => (
+                <tr key={product.id} className="border-t border-stone-200">
+                  <td className="px-3 py-3">
+                    <div className="font-semibold text-stone-900">{product.name}</div>
+                    {product.description ? (
+                      <div className="text-xs text-stone-500">{product.description}</div>
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-3">{product.category?.name ?? '—'}</td>
+                  <td className="px-3 py-3 text-stone-600">
+                    {product.sku ?? '—'} / {product.barcode ?? '—'}
+                  </td>
+                  <td className="px-3 py-3">{money(product.cost, currencySymbol)}</td>
+                  <td className="px-3 py-3">{money(product.price, currencySymbol)}</td>
+                  <td
+                    className={`px-3 py-3 font-semibold ${
+                      product.stockQty <= product.reorderPoint ? 'text-red-600' : 'text-stone-900'
+                    }`}
+                  >
+                    {product.stockQty}
+                  </td>
+                  <td className="px-3 py-3">{product.reorderPoint}</td>
+                </tr>
+              ))}
+            </tbody>
           </table>
-          {!filtered.length ? <div className="py-6 text-sm text-stone-500">No products found.</div> : null}
+
+          {!filtered.length ? (
+            <div className="py-10 text-center text-sm text-stone-500">
+              No products found. Add your first product above to start selling.
+            </div>
+          ) : null}
         </div>
-      </Card>
+      </div>
     </div>
   );
 }
