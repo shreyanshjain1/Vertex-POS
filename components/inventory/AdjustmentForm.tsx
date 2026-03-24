@@ -139,8 +139,8 @@ export default function AdjustmentForm({
 
       {selectedProduct ? (
         <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
-          Selected product: <span className="font-semibold text-stone-900">{selectedProduct.name}</span>
-          {' '}• Current stock: <span className="font-semibold text-stone-900">{selectedProduct.stockQty}</span>
+          Selected product: <span className="font-semibold text-stone-900">{selectedProduct.name}</span>{' '}
+          • Current stock: <span className="font-semibold text-stone-900">{selectedProduct.stockQty}</span>
         </div>
       ) : null}
 

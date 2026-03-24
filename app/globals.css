@@ -17,3 +17,15 @@ html, body {
 * { box-sizing: border-box; }
 a { color: inherit; text-decoration: none; }
 button, input, select, textarea { font: inherit; }
+
+body {
+  background-image:
+    radial-gradient(circle at top left, rgba(16, 185, 129, 0.08), transparent 24%),
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.08), transparent 20%),
+    linear-gradient(180deg, #f7f7f5 0%, #f1f3ef 100%);
+}
+
+::selection {
+  background: rgba(16, 185, 129, 0.18);
+  color: #1c1917;
+}

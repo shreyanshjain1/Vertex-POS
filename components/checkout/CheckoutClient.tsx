@@ -56,17 +56,11 @@ export default function CheckoutClient({
 
     return products
       .filter((product) => {
-        const matchesCategory =
-          !selectedCategory || product.categoryId === selectedCategory;
+        const matchesCategory = !selectedCategory || product.categoryId === selectedCategory;
 
         const matchesTerm =
           !term ||
-          [
-            product.name,
-            product.barcode ?? '',
-            product.sku ?? '',
-            product.category?.name ?? ''
-          ]
+          [product.name, product.barcode ?? '', product.sku ?? '', product.category?.name ?? '']
             .join(' ')
             .toLowerCase()
             .includes(term);
@@ -88,9 +82,7 @@ export default function CheckoutClient({
           return prev;
         }
 
-        return prev.map((item) =>
-          item.id === product.id ? { ...item, qty: item.qty + 1 } : item
-        );
+        return prev.map((item) => (item.id === product.id ? { ...item, qty: item.qty + 1 } : item));
       }
 
       if (product.stockQty <= 0) {
@@ -105,9 +97,7 @@ export default function CheckoutClient({
   function decreaseQty(productId: string) {
     setCart((prev) =>
       prev
-        .map((item) =>
-          item.id === productId ? { ...item, qty: Math.max(item.qty - 1, 0) } : item
-        )
+        .map((item) => (item.id === productId ? { ...item, qty: Math.max(item.qty - 1, 0) } : item))
         .filter((item) => item.qty > 0)
     );
   }

@@ -20,8 +20,12 @@ export default async function HomePage() {
             Vertex POS helps shop owners, managers, and cashiers handle onboarding, products, suppliers, purchases, checkout, receipts, stock movement, settings, and business reporting in one clean workspace.
           </p>
           <div className="mt-8 flex flex-wrap gap-4">
-            <Link href="/signup" className="rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700">Create account</Link>
-            <Link href="/login" className="rounded-2xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-900 shadow-sm transition hover:bg-stone-50">Sign in</Link>
+            <Link href="/signup" className="rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700">
+              Create account
+            </Link>
+            <Link href="/login" className="rounded-2xl border border-stone-300 bg-white px-5 py-3 text-sm font-semibold text-stone-900 shadow-sm transition hover:bg-stone-50">
+              Sign in
+            </Link>
           </div>
         </div>
         <div className="mt-16 grid gap-4 lg:mt-0 lg:w-[420px]">

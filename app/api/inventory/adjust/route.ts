@@ -28,7 +28,7 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const productId = typeof body.productId === 'string' ? body.productId : '';
-    const type = body.type === 'REMOVE' ? 'REMOVE' : 'ADD';
+    const adjustmentType = body.type === 'REMOVE' ? 'REMOVE' : 'ADD';
     const qty = Number(body.qty);
     const notes = typeof body.notes === 'string' ? body.notes : null;
 
@@ -51,11 +51,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Product not found.' }, { status: 404 });
     }
 
-    if (type === 'REMOVE' && qty > product.stockQty) {
+    if (adjustmentType === 'REMOVE' && qty > product.stockQty) {
       return NextResponse.json({ error: 'Cannot remove more stock than available.' }, { status: 400 });
     }
 
-    const qtyChange = type === 'REMOVE' ? -qty : qty;
+    const qtyChange = adjustmentType === 'REMOVE' ? -qty : qty;
 
     const result = await prisma.$transaction(async (tx) => {
       const updatedProduct = await tx.product.update({
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
         data: {
           shopId,
           productId: product.id,
-          type,
+          type: 'MANUAL_ADJUSTMENT',
           qtyChange,
           notes,
           referenceId: null
@@ -85,13 +85,13 @@ export async function POST(request: Request) {
           action: 'inventory.adjusted',
           entityType: 'product',
           entityId: product.id,
-          description: `${type === 'REMOVE' ? 'Removed' : 'Added'} ${qty} stock for ${product.name}`,
+          description: `${adjustmentType === 'REMOVE' ? 'Removed' : 'Added'} ${qty} stock for ${product.name}`,
           metadata: {
             productId: product.id,
             productName: product.name,
             qty,
             qtyChange,
-            type,
+            adjustmentType,
             notes
           }
         }

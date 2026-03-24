@@ -43,7 +43,7 @@ export default function CategoryManager({ initialCategories }: { initialCategori
     });
     const data = await response.json().catch(() => null);
     if (!response.ok || !data?.category) return;
-    setCategories((prev) => prev.map((entry) => entry.id === category.id ? data.category : entry));
+    setCategories((prev) => prev.map((entry) => (entry.id === category.id ? data.category : entry)));
   }
 
   async function removeCategory(category: Category) {
@@ -66,7 +66,11 @@ export default function CategoryManager({ initialCategories }: { initialCategori
             <label className="mb-2 block text-sm font-semibold">Parent category</label>
             <select className="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm" value={parentId} onChange={(event) => setParentId(event.target.value)}>
               <option value="">No parent</option>
-              {parents.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+              {parents.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
             </select>
           </div>
           {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
@@ -76,20 +80,24 @@ export default function CategoryManager({ initialCategories }: { initialCategori
       <Card>
         <h2 className="text-xl font-black text-stone-900">Category list</h2>
         <div className="mt-4 space-y-3">
-          {categories.length ? categories.map((category) => (
-            <div key={category.id} className="rounded-2xl border border-stone-200 p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="font-semibold text-stone-900">{category.name}</div>
-                  <div className="text-sm text-stone-500">{category.parentId ? 'Subcategory' : 'Top-level category'} • {category._count?.products ?? 0} product(s)</div>
-                </div>
-                <div className="flex gap-2">
-                  <Button type="button" variant="secondary" onClick={() => toggleActive(category)}>{category.isActive ? 'Archive' : 'Activate'}</Button>
-                  <Button type="button" variant="danger" onClick={() => removeCategory(category)}>Delete</Button>
+          {categories.length ? (
+            categories.map((category) => (
+              <div key={category.id} className="rounded-2xl border border-stone-200 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="font-semibold text-stone-900">{category.name}</div>
+                    <div className="text-sm text-stone-500">{category.parentId ? 'Subcategory' : 'Top-level category'} • {category._count?.products ?? 0} product(s)</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button type="button" variant="secondary" onClick={() => toggleActive(category)}>{category.isActive ? 'Archive' : 'Activate'}</Button>
+                    <Button type="button" variant="danger" onClick={() => removeCategory(category)}>Delete</Button>
+                  </div>
                 </div>
               </div>
-            </div>
-          )) : <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 p-5 text-sm text-stone-500">No categories yet.</div>}
+            ))
+          ) : (
+            <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 p-5 text-sm text-stone-500">No categories yet.</div>
+          )}
         </div>
       </Card>
     </div>
