@@ -64,6 +64,12 @@ enum DocumentSequenceType {
   PURCHASE
 }
 
+enum CashSessionStatus {
+  OPEN
+  CLOSED
+  OVERRIDE_CLOSED
+}
+
 model User {
   id                       String               @id @default(cuid())
   email                    String               @unique
@@ -74,6 +80,7 @@ model User {
   ownedShops               Shop[]               @relation("ShopOwner")
   memberships              UserShop[]
   cashierSales             Sale[]               @relation("CashierUser")
+  cashSessions             CashSession[]
   activities               ActivityLog[]
   authAuditLogs            AuthAuditLog[]
   passwordResetTokens      PasswordResetToken[] @relation("PasswordResetTokenUser")
@@ -103,6 +110,7 @@ model Shop {
   sales          Sale[]
   suppliers      Supplier[]
   purchases      PurchaseOrder[]
+  cashSessions   CashSession[]
   settings       ShopSetting?
   notifications  Notification[]
   activities          ActivityLog[]
@@ -211,6 +219,26 @@ model Sale {
   @@unique([shopId, saleNumber])
   @@unique([shopId, receiptNumber])
   @@index([shopId, createdAt])
+}
+
+model CashSession {
+  id              String            @id @default(cuid())
+  shopId          String
+  userId          String
+  openedAt        DateTime          @default(now())
+  openingFloat    Decimal           @db.Decimal(12, 2)
+  closedAt        DateTime?
+  closingExpected Decimal?          @db.Decimal(12, 2)
+  closingActual   Decimal?          @db.Decimal(12, 2)
+  variance        Decimal?          @db.Decimal(12, 2)
+  notes           String?
+  status          CashSessionStatus @default(OPEN)
+  shop            Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  user            User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([shopId, openedAt])
+  @@index([shopId, userId, status])
+  @@index([userId, openedAt])
 }
 
 model SaleItem {

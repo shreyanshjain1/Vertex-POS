@@ -1,4 +1,5 @@
 import {
+  CashSessionStatus,
   DocumentSequenceType,
   PrismaClient,
   PurchaseStatus,
@@ -232,6 +233,21 @@ async function main() {
     });
   }
 
+  const seededCashSession = await prisma.cashSession.create({
+    data: {
+      shopId: shop.id,
+      userId: cashier.id,
+      openedAt: new Date(Date.now() - 1000 * 60 * 60 * 9),
+      openingFloat: 500,
+      closedAt: new Date(Date.now() - 1000 * 60 * 60 * 2),
+      closingExpected: 500,
+      closingActual: 495,
+      variance: -5,
+      notes: 'Seeded closeout with a small short count after the drawer recount.',
+      status: CashSessionStatus.CLOSED
+    }
+  });
+
   await prisma.activityLog.createMany({
     data: [
       {
@@ -249,6 +265,14 @@ async function main() {
         entityType: 'PurchaseOrder',
         entityId: purchase.id,
         description: `Received purchase ${purchase.purchaseNumber}.`
+      },
+      {
+        shopId: shop.id,
+        userId: cashier.id,
+        action: 'REGISTER_CLOSED',
+        entityType: 'CashSession',
+        entityId: seededCashSession.id,
+        description: 'Closed a seeded register session after end-of-day count.'
       }
     ]
   });
