@@ -1,14 +1,16 @@
 'use client';
 
+import { ShopRole } from '@prisma/client';
 import { AnimatePresence, motion } from 'framer-motion';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 type SidebarProps = {
   shopName: string;
   shopType: string;
+  role: ShopRole;
 };
 
 type IconName =
@@ -21,44 +23,119 @@ type IconName =
   | 'suppliers'
   | 'purchases'
   | 'reports'
-  | 'settings';
+  | 'settings'
+  | 'activity';
 
 type NavLink = {
   href: string;
   label: string;
   description: string;
   icon: IconName;
+  minRole: ShopRole;
+};
+
+const ROLE_WEIGHT: Record<ShopRole, number> = {
+  CASHIER: 1,
+  MANAGER: 2,
+  ADMIN: 3
 };
 
 const sections: Array<{ title: string; links: NavLink[] }> = [
   {
     title: 'Overview',
     links: [
-      { href: '/dashboard', label: 'Dashboard', description: 'Live business pulse and attention points.', icon: 'dashboard' },
-      { href: '/reports', label: 'Reports', description: 'Revenue, trends, and product performance.', icon: 'reports' }
+      {
+        href: '/dashboard',
+        label: 'Dashboard',
+        description: 'Live business pulse and attention points.',
+        icon: 'dashboard',
+        minRole: 'CASHIER'
+      },
+      {
+        href: '/sales',
+        label: 'Sales',
+        description: 'Review completed transactions and receipts.',
+        icon: 'sales',
+        minRole: 'CASHIER'
+      }
     ]
   },
   {
     title: 'Operations',
     links: [
-      { href: '/checkout', label: 'Checkout', description: 'Start a sale and issue receipts quickly.', icon: 'checkout' },
-      { href: '/sales', label: 'Sales', description: 'Review completed transactions and receipts.', icon: 'sales' },
-      { href: '/inventory', label: 'Inventory', description: 'Track stock levels and adjustments.', icon: 'inventory' },
-      { href: '/purchases', label: 'Purchases', description: 'Handle supplier orders and receiving.', icon: 'purchases' }
+      {
+        href: '/checkout',
+        label: 'Checkout',
+        description: 'Start a sale and issue receipts quickly.',
+        icon: 'checkout',
+        minRole: 'CASHIER'
+      },
+      {
+        href: '/inventory',
+        label: 'Inventory',
+        description: 'Track stock levels and adjustments.',
+        icon: 'inventory',
+        minRole: 'MANAGER'
+      },
+      {
+        href: '/purchases',
+        label: 'Purchases',
+        description: 'Handle supplier orders and receiving.',
+        icon: 'purchases',
+        minRole: 'MANAGER'
+      },
+      {
+        href: '/activity',
+        label: 'Activity',
+        description: 'Review the operational audit trail.',
+        icon: 'activity',
+        minRole: 'MANAGER'
+      }
     ]
   },
   {
     title: 'Catalog',
     links: [
-      { href: '/products', label: 'Products', description: 'Manage sellable items and pricing.', icon: 'products' },
-      { href: '/categories', label: 'Categories', description: 'Keep the catalog organized cleanly.', icon: 'categories' },
-      { href: '/suppliers', label: 'Suppliers', description: 'Maintain vendor relationships and details.', icon: 'suppliers' }
+      {
+        href: '/products',
+        label: 'Products',
+        description: 'Manage sellable items and pricing.',
+        icon: 'products',
+        minRole: 'MANAGER'
+      },
+      {
+        href: '/categories',
+        label: 'Categories',
+        description: 'Keep the catalog organized cleanly.',
+        icon: 'categories',
+        minRole: 'MANAGER'
+      },
+      {
+        href: '/suppliers',
+        label: 'Suppliers',
+        description: 'Maintain vendor relationships and details.',
+        icon: 'suppliers',
+        minRole: 'MANAGER'
+      }
     ]
   },
   {
     title: 'Workspace',
     links: [
-      { href: '/settings', label: 'Settings', description: 'Shop rules, tax, receipts, and defaults.', icon: 'settings' }
+      {
+        href: '/reports',
+        label: 'Reports',
+        description: 'Revenue, trends, and product performance.',
+        icon: 'reports',
+        minRole: 'MANAGER'
+      },
+      {
+        href: '/settings',
+        label: 'Settings',
+        description: 'Shop rules, tax, receipts, and defaults.',
+        icon: 'settings',
+        minRole: 'MANAGER'
+      }
     ]
   }
 ];
@@ -153,6 +230,13 @@ function SidebarIcon({ name, active = false }: { name: IconName; active?: boolea
           <path d="m8 15 3-4 3 2 3-5" />
         </svg>
       );
+    case 'activity':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={`${common} ${color}`}>
+          <path d="M4 12h4l2-4 4 8 2-4h4" />
+          <path d="M4 5h16v14H4z" />
+        </svg>
+      );
     case 'settings':
       return (
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={`${common} ${color}`}>
@@ -163,12 +247,24 @@ function SidebarIcon({ name, active = false }: { name: IconName; active?: boolea
   }
 }
 
-export default function AppSidebar({ shopName, shopType }: SidebarProps) {
+export default function AppSidebar({ shopName, shopType, role }: SidebarProps) {
   const pathname = usePathname();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const shopTypeLabel = formatShopType(shopType);
-  const activeLink = sections
+
+  const visibleSections = useMemo(
+    () =>
+      sections
+        .map((section) => ({
+          ...section,
+          links: section.links.filter((link) => ROLE_WEIGHT[role] >= ROLE_WEIGHT[link.minRole])
+        }))
+        .filter((section) => section.links.length > 0),
+    [role]
+  );
+
+  const activeLink = visibleSections
     .flatMap((section) => section.links)
     .find((link) => pathname === link.href || pathname.startsWith(`${link.href}/`));
 
@@ -184,8 +280,13 @@ export default function AppSidebar({ shopName, shopType }: SidebarProps) {
               <>
                 <div className="mt-4 text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-700">Vertex POS</div>
                 <div className="mt-1 truncate text-xl font-black text-stone-950">{shopName}</div>
-                <div className="mt-2 inline-flex rounded-full bg-stone-100 px-3 py-1 text-xs font-semibold text-stone-600">
-                  {shopTypeLabel}
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <span className="inline-flex rounded-full bg-stone-100 px-3 py-1 text-xs font-semibold text-stone-600">
+                    {shopTypeLabel}
+                  </span>
+                  <span className="inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                    {role}
+                  </span>
                 </div>
               </>
             ) : null}
@@ -215,10 +316,12 @@ export default function AppSidebar({ shopName, shopType }: SidebarProps) {
       ) : null}
 
       <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
-        {sections.map((section) => (
+        {visibleSections.map((section) => (
           <div key={section.title}>
             {!isCollapsed ? (
-              <div className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-400">{section.title}</div>
+              <div className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-400">
+                {section.title}
+              </div>
             ) : null}
 
             <div className="space-y-2">
@@ -250,18 +353,6 @@ export default function AppSidebar({ shopName, shopType }: SidebarProps) {
                         <div className="mt-0.5 truncate text-xs text-stone-500">{link.description}</div>
                       </div>
                     ) : null}
-
-                    {!isCollapsed ? (
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        className={`h-4 w-4 shrink-0 transition ${active ? 'text-emerald-700' : 'text-stone-300 group-hover:text-stone-500'}`}
-                      >
-                        <path d="m9 6 6 6-6 6" />
-                      </svg>
-                    ) : null}
                   </Link>
                 );
               })}
@@ -272,22 +363,21 @@ export default function AppSidebar({ shopName, shopType }: SidebarProps) {
 
       {!isCollapsed ? (
         <div className="rounded-[28px] border border-stone-200/80 bg-white/80 p-4">
-          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">Quick jump</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">Fast lane</div>
           <div className="mt-3 grid grid-cols-3 gap-2">
-            {[
-              { href: '/checkout', label: 'Checkout' },
-              { href: '/products', label: 'Products' },
-              { href: '/reports', label: 'Reports' }
-            ].map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setIsMobileOpen(false)}
-                className="rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2 text-center text-xs font-semibold text-stone-700 transition hover:border-stone-300 hover:bg-white hover:text-stone-950"
-              >
-                {item.label}
-              </Link>
-            ))}
+            {visibleSections
+              .flatMap((section) => section.links)
+              .slice(0, 3)
+              .map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setIsMobileOpen(false)}
+                  className="rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2 text-center text-xs font-semibold text-stone-700 transition hover:border-stone-300 hover:bg-white hover:text-stone-950"
+                >
+                  {item.label}
+                </Link>
+              ))}
           </div>
         </div>
       ) : null}

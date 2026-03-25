@@ -1,18 +1,24 @@
 import Link from 'next/link';
 import DashboardStats from '@/components/dashboard/DashboardStats';
-import RecentSalesCard from '@/components/dashboard/RecentSalesCard';
 import LowStockCard from '@/components/dashboard/LowStockCard';
+import RecentSalesCard from '@/components/dashboard/RecentSalesCard';
 import Card from '@/components/ui/Card';
 import { getActiveShopContext } from '@/lib/auth/get-active-shop';
-import { money, shortDate } from '@/lib/format';
+import { dateTime, money, shortDate } from '@/lib/format';
 import { prisma } from '@/lib/prisma';
+import {
+  lowStockCardProductSelect,
+  recentSaleCardSelect,
+  serializeLowStockProduct,
+  serializeRecentSale
+} from '@/lib/serializers/dashboard';
 
 function pluralize(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
 export default async function DashboardPage() {
-  const { shopId, shop } = await getActiveShopContext();
+  const { shopId, shop, role } = await getActiveShopContext();
   const settings = await prisma.shopSetting.findUnique({ where: { shopId } });
   const now = new Date();
   const todayStart = new Date(now);
@@ -20,40 +26,92 @@ export default async function DashboardPage() {
   const weekStart = new Date(todayStart);
   weekStart.setDate(todayStart.getDate() - 6);
 
-  const [totalProducts, totalSuppliers, lowStockCount, lowStockProducts, recentSales, todaySales, todaySaleCount, weeklySales] =
-    await Promise.all([
-      prisma.product.count({ where: { shopId, isActive: true } }),
-      prisma.supplier.count({ where: { shopId, isActive: true } }),
-      prisma.product.count({ where: { shopId, isActive: true, stockQty: { lte: settings?.lowStockThreshold ?? 5 } } }),
-      prisma.product.findMany({
-        where: { shopId, isActive: true, stockQty: { lte: settings?.lowStockThreshold ?? 5 } },
-        include: { category: true },
-        orderBy: [{ stockQty: 'asc' }, { name: 'asc' }],
-        take: 8
-      }),
-      prisma.sale.findMany({
-        where: { shopId, status: 'COMPLETED' },
-        orderBy: { createdAt: 'desc' },
-        take: 8,
-        include: { items: true }
-      }),
-      prisma.sale.aggregate({ where: { shopId, status: 'COMPLETED', createdAt: { gte: todayStart } }, _sum: { totalAmount: true } }),
-      prisma.sale.count({ where: { shopId, status: 'COMPLETED', createdAt: { gte: todayStart } } }),
-      prisma.sale.aggregate({ where: { shopId, status: 'COMPLETED', createdAt: { gte: weekStart } }, _sum: { totalAmount: true } })
-    ]);
+  const [
+    totalProducts,
+    lowStockCount,
+    lowStockProducts,
+    recentSales,
+    todaySales,
+    todaySaleCount,
+    weeklySales,
+    pendingPurchases,
+    recentMovements
+  ] = await Promise.all([
+    prisma.product.count({ where: { shopId, isActive: true } }),
+    prisma.product.count({
+      where: {
+        shopId,
+        isActive: true,
+        stockQty: { lte: settings?.lowStockThreshold ?? 5 }
+      }
+    }),
+    prisma.product.findMany({
+      where: {
+        shopId,
+        isActive: true,
+        stockQty: { lte: settings?.lowStockThreshold ?? 5 }
+      },
+      select: lowStockCardProductSelect,
+      orderBy: [{ stockQty: 'asc' }, { name: 'asc' }],
+      take: 8
+    }),
+    prisma.sale.findMany({
+      where: { shopId, status: 'COMPLETED' },
+      orderBy: { createdAt: 'desc' },
+      take: 8,
+      select: recentSaleCardSelect
+    }),
+    prisma.sale.aggregate({
+      where: { shopId, status: 'COMPLETED', createdAt: { gte: todayStart } },
+      _sum: { totalAmount: true }
+    }),
+    prisma.sale.count({
+      where: { shopId, status: 'COMPLETED', createdAt: { gte: todayStart } }
+    }),
+    prisma.sale.aggregate({
+      where: { shopId, status: 'COMPLETED', createdAt: { gte: weekStart } },
+      _sum: { totalAmount: true }
+    }),
+    prisma.purchaseOrder.count({
+      where: { shopId, status: 'DRAFT' }
+    }),
+    prisma.inventoryMovement.findMany({
+      where: { shopId },
+      include: {
+        product: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 6
+    })
+  ]);
 
-  const currency = settings?.currencySymbol ?? 'PHP ';
+  const currency = settings?.currencySymbol ?? '₱';
   const todaySalesValue = Number(todaySales._sum.totalAmount ?? 0);
   const weeklySalesValue = Number(weeklySales._sum.totalAmount ?? 0);
   const averageTicket = todaySaleCount > 0 ? todaySalesValue / todaySaleCount : 0;
-  const stockCoverage = totalProducts > 0 ? Math.max(0, Math.round(((totalProducts - lowStockCount) / totalProducts) * 100)) : 100;
-  const criticalLowStockCount = lowStockProducts.filter((product) => product.stockQty <= Math.max(1, Math.floor(product.reorderPoint / 2))).length;
-  const paymentMethodCounts = recentSales.reduce<Record<string, number>>((accumulator, sale) => {
-    const key = sale.paymentMethod;
-    accumulator[key] = (accumulator[key] ?? 0) + 1;
-    return accumulator;
-  }, {});
-  const leadingPaymentMethod = Object.entries(paymentMethodCounts).sort((left, right) => right[1] - left[1])[0]?.[0] ?? 'Cash';
+  const stockCoverage =
+    totalProducts > 0 ? Math.max(0, Math.round(((totalProducts - lowStockCount) / totalProducts) * 100)) : 100;
+  const criticalLowStockCount = lowStockProducts.filter(
+    (product) => product.stockQty <= Math.max(1, Math.floor(product.reorderPoint / 2))
+  ).length;
+
+  const allowedQuickLinks =
+    role === 'CASHIER'
+      ? [
+          { href: '/checkout', label: 'Start checkout' },
+          { href: '/sales', label: 'View sales' }
+        ]
+      : [
+          { href: '/checkout', label: 'Start checkout' },
+          { href: '/products', label: 'Add product' },
+          { href: '/purchases', label: 'Record purchase' },
+          { href: '/activity', label: 'Open activity log' }
+        ];
 
   return (
     <div className="space-y-6">
@@ -66,19 +124,15 @@ export default async function DashboardPage() {
             </div>
             <h1 className="mt-4 text-4xl font-black tracking-tight text-stone-950 sm:text-5xl">Dashboard</h1>
             <p className="mt-4 max-w-3xl text-base leading-7 text-stone-600 sm:text-lg">
-              Welcome back. {shop.name} is ready for today&apos;s operations, with checkout, inventory, and reporting all in one place.
+              Welcome back. {shop.name} is ready for today&apos;s operations, with checkout, stock control, and reporting all connected.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-3">
-              {[
-                { href: '/checkout', label: 'Start checkout', tone: 'bg-stone-950 text-white hover:bg-stone-800' },
-                { href: '/inventory', label: 'Review inventory', tone: 'bg-white text-stone-900 ring-1 ring-stone-200 hover:bg-stone-50' },
-                { href: '/products', label: 'Update catalog', tone: 'bg-white text-stone-900 ring-1 ring-stone-200 hover:bg-stone-50' }
-              ].map((action) => (
+              {allowedQuickLinks.map((action) => (
                 <Link
                   key={action.href}
                   href={action.href}
-                  className={`rounded-full px-5 py-3 text-sm font-semibold transition ${action.tone}`}
+                  className="rounded-full bg-white px-5 py-3 text-sm font-semibold text-stone-900 ring-1 ring-stone-200 transition hover:bg-stone-50"
                 >
                   {action.label}
                 </Link>
@@ -97,9 +151,9 @@ export default async function DashboardPage() {
                 <div className="mt-1 text-sm text-stone-500">Rolling revenue snapshot for the week.</div>
               </div>
               <div className="rounded-[26px] border border-white/80 bg-white/80 p-4 backdrop-blur">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">Stock coverage</div>
-                <div className="mt-2 text-2xl font-black text-stone-950">{stockCoverage}%</div>
-                <div className="mt-1 text-sm text-stone-500">Catalog currently above the reorder threshold.</div>
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">Pending purchases</div>
+                <div className="mt-2 text-2xl font-black text-stone-950">{pendingPurchases}</div>
+                <div className="mt-1 text-sm text-stone-500">Draft purchase order(s) still waiting to be received.</div>
               </div>
             </div>
           </div>
@@ -132,9 +186,11 @@ export default async function DashboardPage() {
                 </div>
 
                 <div className="rounded-[24px] border border-stone-200 bg-stone-50 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">Checkout mix</div>
-                  <div className="mt-2 text-2xl font-black text-stone-950">{leadingPaymentMethod}</div>
-                  <div className="mt-2 text-sm text-stone-500">Most common payment method across the latest receipts.</div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">Receiving queue</div>
+                  <div className="mt-2 text-2xl font-black text-stone-950">{pendingPurchases}</div>
+                  <div className="mt-2 text-sm text-stone-500">
+                    {pendingPurchases > 0 ? 'Draft purchases are waiting for stock receipt.' : 'No draft purchases are waiting.'}
+                  </div>
                 </div>
               </div>
 
@@ -158,7 +214,7 @@ export default async function DashboardPage() {
       <DashboardStats
         totalProducts={totalProducts}
         lowStockCount={lowStockCount}
-        totalSuppliers={totalSuppliers}
+        pendingPurchases={pendingPurchases}
         todaySales={money(todaySalesValue, currency)}
         todaySaleCount={todaySaleCount}
         stockCoverage={stockCoverage}
@@ -166,19 +222,48 @@ export default async function DashboardPage() {
 
       <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <RecentSalesCard
-          sales={recentSales.map((sale) => ({
-            ...sale,
-            createdAt: sale.createdAt.toISOString(),
-            totalAmount: sale.totalAmount.toString(),
-            items: sale.items.map((item) => ({ ...item, lineTotal: item.lineTotal.toString() }))
-          }))}
+          sales={recentSales.map(serializeRecentSale)}
           currencySymbol={currency}
         />
         <LowStockCard
-          products={lowStockProducts.map((product) => ({ ...product, price: product.price.toString() }))}
+          products={lowStockProducts.map(serializeLowStockProduct)}
           currencySymbol={currency}
         />
       </div>
+
+      <Card>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Movement watch</div>
+            <h2 className="mt-2 text-2xl font-black text-stone-950">Recent stock movements</h2>
+          </div>
+          <Link href="/inventory" className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">
+            Open inventory
+          </Link>
+        </div>
+
+        <div className="mt-5 space-y-3">
+          {recentMovements.length ? (
+            recentMovements.map((movement) => (
+              <div key={movement.id} className="flex items-center justify-between rounded-2xl border border-stone-200 p-4">
+                <div>
+                  <div className="font-semibold text-stone-900">{movement.product.name}</div>
+                  <div className="mt-1 text-sm text-stone-500">
+                    {movement.type.replaceAll('_', ' ')} / {dateTime(movement.createdAt)}
+                  </div>
+                </div>
+                <div className={`text-lg font-black ${movement.qtyChange >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                  {movement.qtyChange > 0 ? `+${movement.qtyChange}` : movement.qtyChange}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 p-5 text-sm text-stone-500">
+              No stock movement has been recorded yet.
+            </div>
+          )}
+        </div>
+      </Card>
     </div>
   );
 }

@@ -5,23 +5,13 @@ import Link from 'next/link';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import { dateTime, money } from '@/lib/format';
-
-type Sale = {
-  id: string;
-  saleNumber: string;
-  receiptNumber: string;
-  paymentMethod: string;
-  cashierName: string | null;
-  createdAt: string;
-  totalAmount: string;
-  items: { id: string; productName: string; qty: number; lineTotal: string }[];
-};
+import type { SerializedRecentSale } from '@/lib/serializers/dashboard';
 
 export default function RecentSalesCard({
   sales,
   currencySymbol
 }: {
-  sales: Sale[];
+  sales: SerializedRecentSale[];
   currencySymbol: string;
 }) {
   const paymentToneMap: Record<string, 'stone' | 'emerald' | 'amber' | 'red' | 'blue'> = {

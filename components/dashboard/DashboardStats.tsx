@@ -6,7 +6,7 @@ import Card from '@/components/ui/Card';
 type Props = {
   totalProducts: number;
   lowStockCount: number;
-  totalSuppliers: number;
+  pendingPurchases: number;
   todaySales: string;
   todaySaleCount: number;
   stockCoverage: number;
@@ -37,10 +37,11 @@ const items = [
     }
   },
   {
-    label: 'Suppliers',
-    helper: 'Partners ready to support procurement.',
-    meta: () => 'Vendor network is active',
-    icon: 'suppliers',
+    label: 'Pending purchases',
+    helper: 'Draft purchase orders still waiting to be received.',
+    meta: (_stockCoverage: number, _lowStockCount: number, pendingPurchases: number) =>
+      pendingPurchases === 0 ? 'Receiving queue is clear' : `${pendingPurchases} draft purchase(s)`,
+    icon: 'purchases',
     tone: {
       shell: 'border-sky-200/80 bg-[linear-gradient(135deg,rgba(14,165,233,0.16),rgba(255,255,255,0.95))]',
       icon: 'bg-sky-100 text-sky-700',
@@ -50,7 +51,8 @@ const items = [
   {
     label: 'Sales today',
     helper: 'Completed transactions captured today.',
-    meta: (_stockCoverage: number, _lowStockCount: number, todaySaleCount: number) => `${todaySaleCount} completed sale(s)`,
+    meta: (_stockCoverage: number, _lowStockCount: number, _pendingPurchases: number, todaySaleCount: number) =>
+      `${todaySaleCount} completed sale(s)`,
     icon: 'sales',
     tone: {
       shell: 'border-stone-300/80 bg-[linear-gradient(135deg,rgba(28,25,23,0.10),rgba(255,255,255,0.98))]',
@@ -60,7 +62,7 @@ const items = [
   }
 ] as const;
 
-function StatIcon({ icon }: { icon: 'products' | 'alert' | 'suppliers' | 'sales' }) {
+function StatIcon({ icon }: { icon: 'products' | 'alert' | 'purchases' | 'sales' }) {
   switch (icon) {
     case 'products':
       return (
@@ -79,11 +81,13 @@ function StatIcon({ icon }: { icon: 'products' | 'alert' | 'suppliers' | 'sales'
           <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.72 3h16.92a2 2 0 0 0 1.72-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
         </svg>
       );
-    case 'suppliers':
+    case 'purchases':
       return (
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
-          <path d="M4 18v-5a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v5" />
-          <path d="M12 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+          <path d="M7 7h10" />
+          <path d="M7 12h10" />
+          <path d="M7 17h6" />
+          <path d="M5 4h14v16H5z" />
         </svg>
       );
     case 'sales':
@@ -101,12 +105,12 @@ function StatIcon({ icon }: { icon: 'products' | 'alert' | 'suppliers' | 'sales'
 export default function DashboardStats({
   totalProducts,
   lowStockCount,
-  totalSuppliers,
+  pendingPurchases,
   todaySales,
   todaySaleCount,
   stockCoverage
 }: Props) {
-  const values = [String(totalProducts), String(lowStockCount), String(totalSuppliers), todaySales];
+  const values = [String(totalProducts), String(lowStockCount), String(pendingPurchases), todaySales];
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -124,7 +128,7 @@ export default function DashboardStats({
                 <StatIcon icon={item.icon} />
               </div>
               <div className={`rounded-full px-3 py-1 text-xs font-semibold ${item.tone.pill}`}>
-                {item.meta(stockCoverage, lowStockCount, todaySaleCount)}
+                {item.meta(stockCoverage, lowStockCount, pendingPurchases, todaySaleCount)}
               </div>
             </div>
 

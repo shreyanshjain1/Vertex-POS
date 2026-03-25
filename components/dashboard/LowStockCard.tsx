@@ -5,21 +5,13 @@ import Link from 'next/link';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import { money } from '@/lib/format';
-
-type Product = {
-  id: string;
-  name: string;
-  stockQty: number;
-  reorderPoint: number;
-  price: string;
-  category?: { name: string } | null;
-};
+import type { SerializedLowStockProduct } from '@/lib/serializers/dashboard';
 
 export default function LowStockCard({
   products,
   currencySymbol
 }: {
-  products: Product[];
+  products: SerializedLowStockProduct[];
   currencySymbol: string;
 }) {
   return (
