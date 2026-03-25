@@ -97,7 +97,9 @@ export async function POST(request: Request) {
         data: {
           userId: session.user.id,
           shopId: shop.id,
-          role: ShopRole.ADMIN
+          role: ShopRole.ADMIN,
+          isActive: true,
+          assignedAt: new Date()
         }
       });
 

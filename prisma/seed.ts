@@ -71,7 +71,13 @@ async function main() {
     [cashier.id, ShopRole.CASHIER]
   ] as const) {
     await prisma.userShop.create({
-      data: { userId, shopId: shop.id, role }
+      data: {
+        userId,
+        shopId: shop.id,
+        role,
+        isActive: true,
+        assignedAt: new Date()
+      }
     });
 
     await prisma.user.update({
@@ -243,6 +249,32 @@ async function main() {
         entityType: 'PurchaseOrder',
         entityId: purchase.id,
         description: `Received purchase ${purchase.purchaseNumber}.`
+      }
+    ]
+  });
+
+  await prisma.authAuditLog.createMany({
+    data: [
+      {
+        userId: owner.id,
+        shopId: shop.id,
+        action: 'LOGIN_SUCCESS',
+        email: owner.email,
+        createdAt: new Date(Date.now() - 1000 * 60 * 20)
+      },
+      {
+        userId: manager.id,
+        shopId: shop.id,
+        action: 'LOGIN_SUCCESS',
+        email: manager.email,
+        createdAt: new Date(Date.now() - 1000 * 60 * 70)
+      },
+      {
+        userId: cashier.id,
+        shopId: shop.id,
+        action: 'LOGIN_SUCCESS',
+        email: cashier.email,
+        createdAt: new Date(Date.now() - 1000 * 60 * 140)
       }
     ]
   });

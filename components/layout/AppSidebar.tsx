@@ -24,7 +24,8 @@ type IconName =
   | 'purchases'
   | 'reports'
   | 'settings'
-  | 'activity';
+  | 'activity'
+  | 'staff';
 
 type NavLink = {
   href: string;
@@ -90,6 +91,13 @@ const sections: Array<{ title: string; links: NavLink[] }> = [
         description: 'Review the operational audit trail.',
         icon: 'activity',
         minRole: 'MANAGER'
+      },
+      {
+        href: '/staff',
+        label: 'Staff',
+        description: 'Manage employees, roles, and access.',
+        icon: 'staff',
+        minRole: 'ADMIN'
       }
     ]
   },
@@ -242,6 +250,15 @@ function SidebarIcon({ name, active = false }: { name: IconName; active?: boolea
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={`${common} ${color}`}>
           <path d="M12 8.5A3.5 3.5 0 1 0 12 15.5A3.5 3.5 0 1 0 12 8.5Z" />
           <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V20a2 2 0 0 1-4 0v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H4a2 2 0 0 1 0-4h.2a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1a1 1 0 0 0 1.1.2 1 1 0 0 0 .6-.9V4a2 2 0 0 1 4 0v.2a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .9.6H20a2 2 0 0 1 0 4h-.2a1 1 0 0 0-.4 1.9" />
+        </svg>
+      );
+    case 'staff':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={`${common} ${color}`}>
+          <path d="M7 19v-1a4 4 0 0 1 4-4h2a4 4 0 0 1 4 4v1" />
+          <path d="M12 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+          <path d="M4 19v-.5A3.5 3.5 0 0 1 7.5 15" />
+          <path d="M20 19v-.5A3.5 3.5 0 0 0 16.5 15" />
         </svg>
       );
   }

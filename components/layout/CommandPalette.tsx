@@ -70,6 +70,13 @@ export default function CommandPalette({ role }: { role: ShopRole }) {
         href: '/activity'
       },
       {
+        id: 'staff',
+        label: 'Manage staff',
+        description: 'Open employee access, role, and login controls.',
+        minRole: 'ADMIN',
+        href: '/staff'
+      },
+      {
         id: 'export-inventory',
         label: 'Export inventory CSV',
         description: 'Download the current catalog stock snapshot.',

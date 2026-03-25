@@ -36,7 +36,8 @@ async function resolveActiveShopContext(mode: GuardMode) {
     ? await prisma.userShop.findFirst({
         where: {
           userId: session.user.id,
-          shopId: session.user.defaultShopId
+          shopId: session.user.defaultShopId,
+          isActive: true
         },
         include: { shop: true }
       })
@@ -45,17 +46,30 @@ async function resolveActiveShopContext(mode: GuardMode) {
   const membership =
     preferredMembership ??
     (await prisma.userShop.findFirst({
-      where: { userId: session.user.id },
+      where: {
+        userId: session.user.id,
+        isActive: true
+      },
       include: { shop: true },
-      orderBy: { createdAt: 'asc' }
+      orderBy: { assignedAt: 'asc' }
     }));
 
   if (!membership) {
+    const anyMembership = await prisma.userShop.findFirst({
+      where: { userId: session.user.id },
+      select: { id: true }
+    });
+
     if (mode === 'redirect') {
-      redirect('/onboard');
+      redirect(anyMembership ? '/login?error=shop-access-lost' : '/onboard');
     }
 
-    throw new ShopContextError('SHOP_REQUIRED', 'No active shop found for this user.');
+    throw new ShopContextError(
+      anyMembership ? 'SHOP_ACCESS_LOST' : 'SHOP_REQUIRED',
+      anyMembership
+        ? 'Your shop access is inactive. Contact an administrator.'
+        : 'No active shop found for this user.'
+    );
   }
 
   if (session.user.defaultShopId !== membership.shopId) {

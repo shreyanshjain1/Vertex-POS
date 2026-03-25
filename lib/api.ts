@@ -15,7 +15,7 @@ export function apiErrorResponse(error: unknown, fallbackMessage: string) {
   }
 
   if (error instanceof ShopContextError) {
-    return NextResponse.json({ error: error.message }, { status: 409 });
+    return NextResponse.json({ error: error.message }, { status: error.code === 'SHOP_ACCESS_LOST' ? 403 : 409 });
   }
 
   console.error(error);

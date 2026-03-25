@@ -2,16 +2,18 @@
 
 import { useState } from 'react';
 import { signIn } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Input from '@/components/ui/Input';
 import Button from '@/components/ui/Button';
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState('owner@vertexpos.local');
   const [password, setPassword] = useState('password123');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const inactiveAccess = searchParams.get('error') === 'shop-access-lost';
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -41,6 +43,11 @@ export default function LoginPage() {
         <div className="rounded-3xl border border-stone-200 bg-white p-8 shadow-lg md:p-10">
           <h2 className="text-3xl font-black text-stone-900">Sign in</h2>
           <p className="mt-2 text-sm text-stone-500">Use the seeded demo account or your own account.</p>
+          {inactiveAccess ? (
+            <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Your shop access is inactive. Contact an administrator if you still need access.
+            </div>
+          ) : null}
           <form onSubmit={onSubmit} className="mt-8 space-y-5">
             <div>
               <label className="mb-2 block text-sm font-semibold text-stone-800">Email</label>

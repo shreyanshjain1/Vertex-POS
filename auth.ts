@@ -1,6 +1,7 @@
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import { prisma } from '@/lib/prisma';
+import { getRequestMetadata, logAuthAudit } from '@/lib/auth/audit';
 import { loginSchema } from '@/lib/auth/validation';
 import { verifyPassword } from '@/lib/auth/password';
 import { ShopRole } from '@prisma/client';
@@ -23,26 +24,69 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         email: { label: 'Email', type: 'email' },
         password: { label: 'Password', type: 'password' }
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         const parsed = loginSchema.safeParse(credentials);
         if (!parsed.success) return null;
 
+        const metadata = getRequestMetadata(request);
+        const email = parsed.data.email;
+
         const user = await prisma.user.findUnique({
-          where: { email: parsed.data.email },
+          where: { email },
           include: {
             memberships: {
+              where: { isActive: true },
               include: { shop: true },
-              orderBy: { createdAt: 'asc' },
-              take: 1
+              orderBy: { assignedAt: 'asc' }
             }
           }
         });
 
-        if (!user) return null;
+        if (!user) {
+          await logAuthAudit({
+            action: 'LOGIN_FAILURE',
+            email,
+            ...metadata,
+            metadata: { reason: 'USER_NOT_FOUND' }
+          }).catch(() => null);
+
+          return null;
+        }
+
         const valid = await verifyPassword(parsed.data.password, user.passwordHash);
-        if (!valid) return null;
+        if (!valid) {
+          await logAuthAudit({
+            action: 'LOGIN_FAILURE',
+            userId: user.id,
+            email: user.email,
+            ...metadata,
+            metadata: { reason: 'INVALID_PASSWORD' }
+          }).catch(() => null);
+
+          return null;
+        }
 
         const primary = user.memberships.find((m) => m.shopId === user.defaultShopId) ?? user.memberships[0];
+
+        if (!primary) {
+          await logAuthAudit({
+            action: 'LOGIN_BLOCKED_INACTIVE',
+            userId: user.id,
+            email: user.email,
+            ...metadata,
+            metadata: { reason: 'NO_ACTIVE_SHOP_MEMBERSHIP' }
+          }).catch(() => null);
+
+          return null;
+        }
+
+        await logAuthAudit({
+          action: 'LOGIN_SUCCESS',
+          userId: user.id,
+          shopId: primary.shopId,
+          email: user.email,
+          ...metadata
+        }).catch(() => null);
 
         return {
           id: user.id,

@@ -37,7 +37,7 @@ export async function requirePageRole(minRole: ShopRole) {
     }
 
     if (error instanceof ShopContextError) {
-      redirect('/onboard');
+      redirect(error.code === 'SHOP_ACCESS_LOST' ? '/login?error=shop-access-lost' : '/onboard');
     }
 
     if (error instanceof AuthorizationError) {

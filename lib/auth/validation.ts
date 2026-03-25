@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+const shopRoleSchema = z.enum(['ADMIN', 'MANAGER', 'CASHIER']);
+const optionalText = () => z.string().trim().optional().nullable();
+
 export const loginSchema = z.object({
   email: z.string().trim().email('Enter a valid email').transform((value) => value.toLowerCase()),
   password: z.string().min(8, 'Password must be at least 8 characters')
@@ -18,25 +21,25 @@ export const registerSchema = z.object({
 export const onboardSchema = z.object({
   shopName: z.string().trim().min(2).max(120),
   posType: z.enum(['RETAIL', 'COFFEE', 'FOOD', 'BUILDING_MATERIALS', 'SERVICES']),
-  phone: z.string().trim().max(40).optional().nullable(),
+  phone: optionalText(),
   email: z.string().trim().email().optional().nullable().or(z.literal('')),
-  address: z.string().trim().max(255).optional().nullable(),
-  taxId: z.string().trim().max(60).optional().nullable(),
+  address: optionalText(),
+  taxId: optionalText(),
   currencyCode: z.string().trim().min(3).max(3),
   currencySymbol: z.string().trim().min(1).max(5),
   taxRate: z.coerce.number().min(0).max(100),
-  receiptHeader: z.string().trim().max(255).optional().nullable(),
-  receiptFooter: z.string().trim().max(255).optional().nullable(),
+  receiptHeader: optionalText(),
+  receiptFooter: optionalText(),
   lowStockThreshold: z.coerce.number().int().min(0).max(9999),
   categories: z.array(z.object({ name: z.string().trim().min(2).max(60) })).default([]),
   suppliers: z.array(z.object({
     name: z.string().trim().min(2).max(120),
-    contactName: z.string().trim().max(120).optional().nullable(),
+    contactName: optionalText(),
     phone: z.string().trim().max(40).optional().nullable()
   })).default([]),
   products: z.array(z.object({
     name: z.string().trim().min(2).max(120),
-    categoryName: z.string().trim().max(60).optional().nullable(),
+    categoryName: optionalText(),
     sku: z.string().trim().max(50).optional().nullable(),
     barcode: z.string().trim().max(60).optional().nullable(),
     cost: z.coerce.number().min(0),
@@ -48,7 +51,7 @@ export const onboardSchema = z.object({
 
 export const categoryCreateSchema = z.object({
   name: z.string().trim().min(2).max(60),
-  parentId: z.string().trim().optional().nullable()
+  parentId: optionalText()
 });
 
 export const categoryUpdateSchema = categoryCreateSchema.extend({
@@ -56,7 +59,7 @@ export const categoryUpdateSchema = categoryCreateSchema.extend({
 });
 
 export const productSchema = z.object({
-  categoryId: z.string().trim().optional().nullable(),
+  categoryId: optionalText(),
   sku: z.string().trim().max(50).optional().nullable(),
   barcode: z.string().trim().max(60).optional().nullable(),
   name: z.string().trim().min(2).max(120),
@@ -75,7 +78,7 @@ export const productUpdateSchema = productSchema.partial().extend({
 export const inventoryAdjustmentSchema = z.object({
   productId: z.string().trim().min(1),
   qtyChange: z.coerce.number().int().refine((value) => value !== 0, 'Quantity change must not be zero'),
-  notes: z.string().trim().max(250).optional().nullable()
+  notes: optionalText()
 });
 
 export const supplierSchema = z.object({
@@ -130,9 +133,37 @@ export const settingSchema = z.object({
   purchasePrefix: z.string().trim().min(2).max(10).regex(/^[A-Za-z0-9]+$/, 'Use letters or numbers only for the purchase prefix')
 });
 
-export const staffSchema = z.object({
+export const staffCreateSchema = z.object({
   name: z.string().trim().min(2).max(80),
   email: z.string().trim().email().transform((value) => value.toLowerCase()),
   password: z.string().min(8).max(72),
-  role: z.enum(['MANAGER', 'CASHIER'])
+  role: shopRoleSchema,
+  shopId: z.string().trim().min(1)
+});
+
+export const staffUpdateSchema = z.object({
+  role: shopRoleSchema,
+  shopId: z.string().trim().min(1),
+  isActive: z.coerce.boolean()
+});
+
+export const staffPinSchema = z.object({
+  pin: z
+    .string()
+    .trim()
+    .regex(/^\d{4,8}$/, 'PIN must be 4 to 8 digits.')
+    .nullable()
+});
+
+export const passwordResetGenerateSchema = z.object({
+  expiresInHours: z.coerce.number().int().min(1).max(72).default(24)
+});
+
+export const passwordResetConsumeSchema = z.object({
+  token: z.string().trim().min(20, 'Reset token is required.'),
+  password: z.string().min(8, 'Password must be at least 8 characters').max(72),
+  confirmPassword: z.string().min(8, 'Confirm your password')
+}).refine((input) => input.password === input.confirmPassword, {
+  path: ['confirmPassword'],
+  message: 'Passwords do not match'
 });

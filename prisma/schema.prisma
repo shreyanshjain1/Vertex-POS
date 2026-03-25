@@ -65,19 +65,22 @@ enum DocumentSequenceType {
 }
 
 model User {
-  id            String        @id @default(cuid())
-  email         String        @unique
-  name          String?
-  passwordHash  String
-  defaultShopId String?
-  defaultShop   Shop?         @relation("DefaultShop", fields: [defaultShopId], references: [id], onDelete: SetNull)
-  ownedShops    Shop[]        @relation("ShopOwner")
-  memberships   UserShop[]
-  cashierSales  Sale[]        @relation("CashierUser")
-  activities    ActivityLog[]
-  jobsCreated   WorkerJob[]   @relation("WorkerJobCreatedBy")
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id                       String               @id @default(cuid())
+  email                    String               @unique
+  name                     String?
+  passwordHash             String
+  defaultShopId            String?
+  defaultShop              Shop?                @relation("DefaultShop", fields: [defaultShopId], references: [id], onDelete: SetNull)
+  ownedShops               Shop[]               @relation("ShopOwner")
+  memberships              UserShop[]
+  cashierSales             Sale[]               @relation("CashierUser")
+  activities               ActivityLog[]
+  authAuditLogs            AuthAuditLog[]
+  passwordResetTokens      PasswordResetToken[] @relation("PasswordResetTokenUser")
+  resetTokensCreated       PasswordResetToken[] @relation("PasswordResetTokenCreatedBy")
+  jobsCreated              WorkerJob[]          @relation("WorkerJobCreatedBy")
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
 
   @@index([defaultShopId])
 }
@@ -102,22 +105,29 @@ model Shop {
   purchases      PurchaseOrder[]
   settings       ShopSetting?
   notifications  Notification[]
-  activities     ActivityLog[]
-  workerJobs     WorkerJob[]
-  inventoryMoves InventoryMovement[]
-  documentSeqs   DocumentSequence[]
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  activities          ActivityLog[]
+  authAuditLogs       AuthAuditLog[]
+  passwordResetTokens PasswordResetToken[]
+  workerJobs          WorkerJob[]
+  inventoryMoves      InventoryMovement[]
+  documentSeqs        DocumentSequence[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
   @@index([ownerId])
 }
 
 model UserShop {
-  id        String   @id @default(cuid())
-  userId    String
-  shopId    String
-  role      ShopRole @default(CASHIER)
-  createdAt DateTime @default(now())
+  id           String    @id @default(cuid())
+  userId       String
+  shopId       String
+  role         ShopRole  @default(CASHIER)
+  isActive     Boolean   @default(true)
+  assignedAt   DateTime  @default(now())
+  disabledAt   DateTime?
+  staffPinHash String?
+  pinSetAt     DateTime?
+  createdAt    DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
@@ -125,6 +135,7 @@ model UserShop {
   @@unique([userId, shopId])
   @@index([userId])
   @@index([shopId])
+  @@index([shopId, isActive])
 }
 
 model Category {
@@ -315,6 +326,42 @@ model ActivityLog {
   createdAt   DateTime @default(now())
 
   @@index([shopId, createdAt])
+}
+
+model AuthAuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  shopId    String?
+  action    String
+  email     String?
+  ipAddress String?
+  userAgent String?
+  metadata  Json?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  shop      Shop?    @relation(fields: [shopId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([shopId, createdAt])
+  @@index([email, createdAt])
+}
+
+model PasswordResetToken {
+  id          String   @id @default(cuid())
+  userId      String
+  shopId      String?
+  createdById String?
+  tokenHash   String   @unique
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime @default(now())
+  user        User     @relation("PasswordResetTokenUser", fields: [userId], references: [id], onDelete: Cascade)
+  shop        Shop?    @relation(fields: [shopId], references: [id], onDelete: SetNull)
+  createdBy   User?    @relation("PasswordResetTokenCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([shopId, createdAt])
+  @@index([expiresAt])
 }
 
 model ShopSetting {
