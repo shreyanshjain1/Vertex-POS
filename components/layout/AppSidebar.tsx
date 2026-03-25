@@ -16,6 +16,7 @@ type SidebarProps = {
 type IconName =
   | 'dashboard'
   | 'checkout'
+  | 'register'
   | 'sales'
   | 'products'
   | 'categories'
@@ -69,6 +70,27 @@ const sections: Array<{ title: string; links: NavLink[] }> = [
         label: 'Checkout',
         description: 'Start a sale and issue receipts quickly.',
         icon: 'checkout',
+        minRole: 'CASHIER'
+      },
+      {
+        href: '/register/open',
+        label: 'Open register',
+        description: 'Start a drawer session with the opening cash float.',
+        icon: 'register',
+        minRole: 'CASHIER'
+      },
+      {
+        href: '/register/close',
+        label: 'Close register',
+        description: 'Count cash, compare totals, and close active drawers.',
+        icon: 'register',
+        minRole: 'CASHIER'
+      },
+      {
+        href: '/register/history',
+        label: 'Register history',
+        description: 'Review past drawer sessions and variances.',
+        icon: 'register',
         minRole: 'CASHIER'
       },
       {
@@ -176,6 +198,14 @@ function SidebarIcon({ name, active = false }: { name: IconName; active?: boolea
           <path d="M6 4h12l1 5H5z" />
           <path d="M7 9v10h10V9" />
           <path d="M10 13h4" />
+        </svg>
+      );
+    case 'register':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={`${common} ${color}`}>
+          <path d="M5 7.5A2.5 2.5 0 0 1 7.5 5h9A2.5 2.5 0 0 1 19 7.5v9A2.5 2.5 0 0 1 16.5 19h-9A2.5 2.5 0 0 1 5 16.5z" />
+          <path d="M5 10h14" />
+          <path d="M9 14h6" />
         </svg>
       );
     case 'sales':

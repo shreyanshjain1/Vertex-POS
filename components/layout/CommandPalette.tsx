@@ -35,6 +35,27 @@ export default function CommandPalette({ role }: { role: ShopRole }) {
         href: '/checkout'
       },
       {
+        id: 'open-register',
+        label: 'Open register',
+        description: 'Start a cashier drawer session with an opening float.',
+        minRole: 'CASHIER',
+        href: '/register/open'
+      },
+      {
+        id: 'close-register',
+        label: 'Close register',
+        description: 'Count the drawer and close an active cash session.',
+        minRole: 'CASHIER',
+        href: '/register/close'
+      },
+      {
+        id: 'register-history',
+        label: 'Register history',
+        description: 'Review previous drawer sessions and variances.',
+        minRole: 'CASHIER',
+        href: '/register/history'
+      },
+      {
         id: 'add-product',
         label: 'Add product',
         description: 'Open the catalog manager to add a product.',
