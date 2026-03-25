@@ -17,7 +17,12 @@ export default async function PrintReceiptPage({
   const [sale, settings] = await Promise.all([
     prisma.sale.findFirst({
       where: { id, shopId },
-      include: { items: true }
+      include: {
+        items: true,
+        payments: {
+          orderBy: { createdAt: 'asc' }
+        }
+      }
     }),
     prisma.shopSetting.findUnique({
       where: { shopId }
@@ -27,6 +32,30 @@ export default async function PrintReceiptPage({
   if (!sale) {
     return notFound();
   }
+
+  const payments = sale.payments.length
+    ? sale.payments.map((payment) => ({
+        id: payment.id,
+        method: payment.method,
+        amount: payment.amount.toString(),
+        referenceNumber: payment.referenceNumber,
+        createdAt: payment.createdAt.toISOString()
+      }))
+    : [
+        {
+          id: `legacy-${sale.id}`,
+          method: sale.paymentMethod,
+          amount: sale.totalAmount.toString(),
+          referenceNumber: null,
+          createdAt: sale.createdAt.toISOString()
+        }
+      ];
+
+  const totalPaid = payments.reduce((sum, payment) => sum + Number(payment.amount), 0);
+  const cashReceived = payments
+    .filter((payment) => payment.method === 'Cash')
+    .reduce((sum, payment) => sum + Number(payment.amount), 0);
+  const changeDue = sale.payments.length ? Number(sale.changeDue) : 0;
 
   return (
     <main className="min-h-screen bg-stone-50 p-6">
@@ -54,8 +83,12 @@ export default async function PrintReceiptPage({
           taxAmount: sale.taxAmount.toString(),
           discountAmount: sale.discountAmount.toString(),
           totalAmount: sale.totalAmount.toString(),
+          totalPaid: totalPaid.toFixed(2),
+          cashReceived: cashReceived.toFixed(2),
+          changeDue: changeDue.toFixed(2),
           notes: sale.notes,
           createdAt: sale.createdAt.toISOString(),
+          payments,
           items: sale.items.map((item) => ({
             id: item.id,
             productName: item.productName,
