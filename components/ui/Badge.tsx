@@ -1,10 +1,15 @@
 export default function Badge({ children, tone = 'stone' }: { children: React.ReactNode; tone?: 'stone' | 'emerald' | 'amber' | 'red' | 'blue' }) {
   const classes = {
-    stone: 'bg-stone-100/90 text-stone-700 ring-1 ring-stone-200/80',
-    emerald: 'bg-emerald-100/90 text-emerald-700 ring-1 ring-emerald-200/80',
-    amber: 'bg-amber-100/90 text-amber-700 ring-1 ring-amber-200/80',
-    red: 'bg-red-100/90 text-red-700 ring-1 ring-red-200/80',
-    blue: 'bg-blue-100/90 text-blue-700 ring-1 ring-blue-200/80'
+    stone: 'border border-stone-200 bg-stone-100/90 text-stone-700',
+    emerald: 'border border-emerald-200 bg-emerald-100/90 text-emerald-700',
+    amber: 'border border-amber-200 bg-amber-100/90 text-amber-700',
+    red: 'border border-red-200 bg-red-100/90 text-red-700',
+    blue: 'border border-sky-200 bg-sky-100/90 text-sky-700'
   } as const;
-  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${classes[tone]}`}>{children}</span>;
+
+  return (
+    <span className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${classes[tone]}`}>
+      {children}
+    </span>
+  );
 }

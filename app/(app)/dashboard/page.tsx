@@ -115,43 +115,44 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-[32px] border border-white/80 bg-[linear-gradient(135deg,rgba(16,185,129,0.16),rgba(255,255,255,0.94),rgba(14,165,233,0.10))] p-6 shadow-[0_26px_90px_-40px_rgba(28,25,23,0.3)] sm:p-8">
-        <div className="absolute inset-y-0 right-0 hidden w-1/2 bg-[radial-gradient(circle_at_center,_rgba(16,185,129,0.20),_transparent_55%)] lg:block" />
-        <div className="relative grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+      <section className="relative overflow-hidden rounded-[34px] border border-white/80 bg-[linear-gradient(135deg,rgba(236,253,245,0.92),rgba(255,255,255,0.96),rgba(239,246,255,0.92))] p-6 shadow-[0_32px_100px_-48px_rgba(28,25,23,0.34)] sm:p-8">
+        <div className="absolute inset-y-0 right-0 hidden w-1/2 bg-[radial-gradient(circle_at_center,_rgba(16,185,129,0.18),_transparent_58%)] lg:block" />
+        <div className="absolute left-10 top-10 h-28 w-28 rounded-full bg-emerald-200/30 blur-3xl" />
+        <div className="relative grid gap-6 xl:grid-cols-[1.12fr_0.88fr]">
           <div>
-            <div className="inline-flex rounded-full border border-emerald-200 bg-white/80 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">
+            <div className="inline-flex rounded-full border border-emerald-200 bg-white/90 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700 shadow-sm">
               {shortDate(now)} / Live dashboard
             </div>
-            <h1 className="mt-4 text-4xl font-black tracking-tight text-stone-950 sm:text-5xl">Dashboard</h1>
+            <h1 className="mt-4 text-4xl font-black tracking-tight text-stone-950 sm:text-[3.3rem]">Dashboard</h1>
             <p className="mt-4 max-w-3xl text-base leading-7 text-stone-600 sm:text-lg">
               Welcome back. {shop.name} is ready for today&apos;s operations, with checkout, stock control, and reporting all connected.
             </p>
 
-            <div className="mt-6 flex flex-wrap gap-3">
+            <div className="mt-7 flex flex-wrap gap-3">
               {allowedQuickLinks.map((action) => (
                 <Link
                   key={action.href}
                   href={action.href}
-                  className="rounded-full bg-white px-5 py-3 text-sm font-semibold text-stone-900 ring-1 ring-stone-200 transition hover:bg-stone-50"
+                  className="rounded-full border border-white/90 bg-white/92 px-5 py-3 text-sm font-semibold text-stone-900 shadow-[0_16px_32px_-24px_rgba(28,25,23,0.35)] transition hover:-translate-y-0.5 hover:bg-white"
                 >
                   {action.label}
                 </Link>
               ))}
             </div>
 
-            <div className="mt-6 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-[26px] border border-white/80 bg-white/80 p-4 backdrop-blur">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">Average ticket</div>
+            <div className="mt-8 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-[28px] border border-white/80 bg-white/82 p-4 backdrop-blur">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Average ticket</div>
                 <div className="mt-2 text-2xl font-black text-stone-950">{money(averageTicket, currency)}</div>
                 <div className="mt-1 text-sm text-stone-500">Based on today&apos;s completed sales.</div>
               </div>
-              <div className="rounded-[26px] border border-white/80 bg-white/80 p-4 backdrop-blur">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">Last 7 days</div>
+              <div className="rounded-[28px] border border-white/80 bg-white/82 p-4 backdrop-blur">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Last 7 days</div>
                 <div className="mt-2 text-2xl font-black text-stone-950">{money(weeklySalesValue, currency)}</div>
                 <div className="mt-1 text-sm text-stone-500">Rolling revenue snapshot for the week.</div>
               </div>
-              <div className="rounded-[26px] border border-white/80 bg-white/80 p-4 backdrop-blur">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">Pending purchases</div>
+              <div className="rounded-[28px] border border-white/80 bg-white/82 p-4 backdrop-blur">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Pending purchases</div>
                 <div className="mt-2 text-2xl font-black text-stone-950">{pendingPurchases}</div>
                 <div className="mt-1 text-sm text-stone-500">Draft purchase order(s) still waiting to be received.</div>
               </div>
@@ -161,22 +162,22 @@ export default async function DashboardPage() {
           <Card className="border-white/70 bg-white/88">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">Operations pulse</div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Operations pulse</div>
                 <h2 className="mt-2 text-2xl font-black text-stone-950">What needs attention now</h2>
               </div>
-              <div className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">Live</div>
+              <div className="rounded-full border border-emerald-200 bg-emerald-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">Live</div>
             </div>
 
             <div className="mt-6 space-y-4">
-              <div className="rounded-[24px] bg-stone-950 p-4 text-white">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-300">Sales today</div>
+              <div className="rounded-[26px] bg-[linear-gradient(135deg,#0f172a,#111827,#1f2937)] p-5 text-white shadow-[0_24px_50px_-34px_rgba(15,23,42,0.8)]">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-300">Sales today</div>
                 <div className="mt-2 text-3xl font-black">{money(todaySalesValue, currency)}</div>
                 <div className="mt-2 text-sm text-stone-300">{pluralize(todaySaleCount, 'sale')} completed so far.</div>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-[24px] border border-stone-200 bg-stone-50 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">Restock pressure</div>
+                <div className="rounded-[24px] border border-stone-200 bg-stone-50/90 p-4">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Restock pressure</div>
                   <div className="mt-2 text-2xl font-black text-stone-950">{pluralize(lowStockCount, 'product')}</div>
                   <div className="mt-2 text-sm text-stone-500">
                     {criticalLowStockCount > 0
@@ -185,8 +186,8 @@ export default async function DashboardPage() {
                   </div>
                 </div>
 
-                <div className="rounded-[24px] border border-stone-200 bg-stone-50 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">Receiving queue</div>
+                <div className="rounded-[24px] border border-stone-200 bg-stone-50/90 p-4">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Receiving queue</div>
                   <div className="mt-2 text-2xl font-black text-stone-950">{pendingPurchases}</div>
                   <div className="mt-2 text-sm text-stone-500">
                     {pendingPurchases > 0 ? 'Draft purchases are waiting for stock receipt.' : 'No draft purchases are waiting.'}
@@ -195,12 +196,12 @@ export default async function DashboardPage() {
               </div>
 
               <div className="rounded-[24px] border border-stone-200 bg-white p-4">
-                <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">
+                <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">
                   <span>Catalog health</span>
                   <span>{stockCoverage}% stable</span>
                 </div>
-                <div className="mt-3 h-2 rounded-full bg-stone-200">
-                  <div className="h-full rounded-full bg-emerald-500" style={{ width: `${stockCoverage}%` }} />
+                <div className="mt-3 h-2.5 rounded-full bg-stone-200">
+                  <div className="h-full rounded-full bg-emerald-500 shadow-[0_10px_20px_-12px_rgba(16,185,129,0.9)]" style={{ width: `${stockCoverage}%` }} />
                 </div>
                 <div className="mt-3 text-sm text-stone-500">
                   Keep an eye on the restock queue so the sales floor stays ready throughout the day.
@@ -234,10 +235,10 @@ export default async function DashboardPage() {
       <Card>
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Movement watch</div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">Movement watch</div>
             <h2 className="mt-2 text-2xl font-black text-stone-950">Recent stock movements</h2>
           </div>
-          <Link href="/inventory" className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">
+          <Link href="/inventory" className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100">
             Open inventory
           </Link>
         </div>
@@ -245,20 +246,20 @@ export default async function DashboardPage() {
         <div className="mt-5 space-y-3">
           {recentMovements.length ? (
             recentMovements.map((movement) => (
-              <div key={movement.id} className="flex items-center justify-between rounded-2xl border border-stone-200 p-4">
+              <div key={movement.id} className="flex items-center justify-between rounded-[24px] border border-stone-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.86))] p-4 transition hover:border-stone-300">
                 <div>
                   <div className="font-semibold text-stone-900">{movement.product.name}</div>
                   <div className="mt-1 text-sm text-stone-500">
                     {movement.type.replaceAll('_', ' ')} / {dateTime(movement.createdAt)}
                   </div>
                 </div>
-                <div className={`text-lg font-black ${movement.qtyChange >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                <div className={`rounded-full px-3 py-1 text-lg font-black ${movement.qtyChange >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
                   {movement.qtyChange > 0 ? `+${movement.qtyChange}` : movement.qtyChange}
                 </div>
               </div>
             ))
           ) : (
-            <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 p-5 text-sm text-stone-500">
+            <div className="rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-5 text-sm text-stone-500">
               No stock movement has been recorded yet.
             </div>
           )}

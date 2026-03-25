@@ -18,7 +18,7 @@ export default function LowStockCard({
     <Card className="overflow-hidden border-stone-200/80 bg-white/95">
       <div className="mb-5 flex items-center justify-between gap-3">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-700">Restock queue</div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700">Restock queue</div>
           <h2 className="mt-2 text-2xl font-black text-stone-900">Low-stock watch</h2>
           <p className="mt-1 text-sm text-stone-500">Products that are approaching or already below their reorder threshold.</p>
         </div>
@@ -45,7 +45,7 @@ export default function LowStockCard({
                 whileHover={{ y: -4 }}
               >
                 <div
-                  className={`rounded-[26px] border p-4 shadow-[0_16px_32px_-28px_rgba(28,25,23,0.45)] ${
+                  className={`rounded-[28px] border p-4 shadow-[0_18px_36px_-28px_rgba(28,25,23,0.42)] ${
                     isCritical
                       ? 'border-red-200 bg-[linear-gradient(180deg,rgba(254,242,242,0.98),rgba(255,255,255,0.94))]'
                       : 'border-amber-200 bg-[linear-gradient(180deg,rgba(255,251,235,0.98),rgba(255,255,255,0.94))]'
@@ -59,12 +59,12 @@ export default function LowStockCard({
                     <Badge tone={isCritical ? 'red' : 'amber'}>{isCritical ? 'Critical' : 'Watch'}</Badge>
                   </div>
 
-                  <div className="mt-4 rounded-2xl bg-white/80 p-3">
-                    <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">
+                  <div className="mt-4 rounded-[22px] bg-white/86 p-3">
+                    <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">
                       <span>On hand {product.stockQty}</span>
                       <span>Reorder point {product.reorderPoint}</span>
                     </div>
-                    <div className="mt-3 h-2 rounded-full bg-stone-200">
+                    <div className="mt-3 h-2.5 rounded-full bg-stone-200">
                       <div
                         className={`h-full rounded-full ${isCritical ? 'bg-red-500' : 'bg-amber-500'}`}
                         style={{ width: `${fill}%` }}
@@ -81,7 +81,7 @@ export default function LowStockCard({
             );
           })
         ) : (
-          <div className="rounded-[26px] border border-dashed border-stone-300 bg-stone-50 p-5 text-sm text-stone-500">
+          <div className="rounded-[28px] border border-dashed border-stone-300 bg-stone-50 p-5 text-sm text-stone-500">
             No low-stock products right now.
           </div>
         )}

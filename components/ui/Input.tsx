@@ -4,7 +4,7 @@ export default function Input(props: React.InputHTMLAttributes<HTMLInputElement>
   return (
     <input
       {...props}
-      className={`w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm text-stone-900 outline-none transition focus:border-emerald-500 focus:bg-white ${props.className ?? ''}`}
+      className={`h-11 w-full rounded-2xl border border-stone-200 bg-white/88 px-4 text-sm text-stone-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] outline-none transition placeholder:text-stone-400 hover:border-stone-300 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 ${props.className ?? ''}`}
     />
   );
 }

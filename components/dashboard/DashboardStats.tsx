@@ -124,16 +124,16 @@ export default function DashboardStats({
         >
           <Card className={`overflow-hidden border ${item.tone.shell}`}>
             <div className="flex items-start justify-between gap-3">
-              <div className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl ${item.tone.icon}`}>
+              <div className={`inline-flex h-12 w-12 items-center justify-center rounded-[18px] shadow-[0_16px_28px_-20px_rgba(28,25,23,0.38)] ${item.tone.icon}`}>
                 <StatIcon icon={item.icon} />
               </div>
-              <div className={`rounded-full px-3 py-1 text-xs font-semibold ${item.tone.pill}`}>
+              <div className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${item.tone.pill}`}>
                 {item.meta(stockCoverage, lowStockCount, pendingPurchases, todaySaleCount)}
               </div>
             </div>
 
-            <div className="mt-6 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">{item.label}</div>
-            <div className="mt-3 text-3xl font-black text-stone-950">{values[index]}</div>
+            <div className="mt-7 text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500">{item.label}</div>
+            <div className="mt-3 text-3xl font-black tracking-tight text-stone-950">{values[index]}</div>
             <div className="mt-2 text-sm leading-6 text-stone-600">{item.helper}</div>
           </Card>
         </motion.div>

@@ -270,21 +270,22 @@ export default function AppSidebar({ shopName, shopType, role }: SidebarProps) {
 
   const sidebarContent = (
     <div className="flex h-full flex-col gap-4 p-4">
-      <div className="rounded-[30px] border border-white/80 bg-white/80 p-4 shadow-[0_18px_40px_-28px_rgba(28,25,23,0.35)] backdrop-blur">
+      <div className="rounded-[32px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(255,255,255,0.84))] p-4 shadow-[0_24px_48px_-30px_rgba(28,25,23,0.36)] backdrop-blur">
         <div className="flex items-start justify-between gap-3">
           <div className={`min-w-0 ${isCollapsed ? 'w-full text-center' : ''}`}>
-            <div className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-stone-950 text-base font-black text-white shadow-lg shadow-emerald-500/20 ${isCollapsed ? 'mx-auto' : ''}`}>
+            <div className={`inline-flex h-12 w-12 items-center justify-center rounded-[18px] bg-[linear-gradient(180deg,#111827,#0f172a)] text-base font-black text-white shadow-[0_18px_30px_-16px_rgba(15,23,42,0.7)] ${isCollapsed ? 'mx-auto' : ''}`}>
               V
             </div>
             {!isCollapsed ? (
               <>
                 <div className="mt-4 text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-700">Vertex POS</div>
                 <div className="mt-1 truncate text-xl font-black text-stone-950">{shopName}</div>
+                <div className="mt-1 text-sm text-stone-500">Modern back office for checkout, stock, and operations.</div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <span className="inline-flex rounded-full bg-stone-100 px-3 py-1 text-xs font-semibold text-stone-600">
+                  <span className="inline-flex rounded-full border border-stone-200 bg-stone-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-600">
                     {shopTypeLabel}
                   </span>
-                  <span className="inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                  <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
                     {role}
                   </span>
                 </div>
@@ -295,7 +296,7 @@ export default function AppSidebar({ shopName, shopType, role }: SidebarProps) {
           <button
             type="button"
             onClick={() => setIsCollapsed((value) => !value)}
-            className="hidden h-11 w-11 items-center justify-center rounded-2xl border border-stone-200 bg-white text-stone-500 transition hover:border-stone-300 hover:text-stone-900 lg:inline-flex"
+            className="hidden h-11 w-11 items-center justify-center rounded-2xl border border-stone-200 bg-white text-stone-500 transition hover:border-stone-300 hover:bg-stone-50 hover:text-stone-900 lg:inline-flex"
             aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
@@ -306,8 +307,8 @@ export default function AppSidebar({ shopName, shopType, role }: SidebarProps) {
       </div>
 
       {!isCollapsed ? (
-        <div className="rounded-[28px] border border-emerald-100 bg-[linear-gradient(135deg,rgba(16,185,129,0.12),rgba(14,165,233,0.08))] p-4">
-          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">Current focus</div>
+        <div className="rounded-[30px] border border-emerald-100 bg-[linear-gradient(145deg,rgba(236,253,245,0.92),rgba(255,255,255,0.88),rgba(239,246,255,0.86))] p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">Current focus</div>
           <div className="mt-2 text-lg font-black text-stone-950">{activeLink?.label ?? 'Workspace'}</div>
           <p className="mt-2 text-sm leading-6 text-stone-600">
             {activeLink?.description ?? 'Move between sales, catalog, and back-office work without losing context.'}
@@ -335,13 +336,13 @@ export default function AppSidebar({ shopName, shopType, role }: SidebarProps) {
                     title={isCollapsed ? link.label : undefined}
                     className={`group flex items-center gap-3 rounded-[26px] border px-3 py-3 transition duration-200 ${
                       active
-                        ? 'border-emerald-200 bg-emerald-500/10 text-stone-950 shadow-[0_14px_32px_-24px_rgba(5,150,105,0.7)]'
+                        ? 'border-emerald-200 bg-[linear-gradient(180deg,rgba(236,253,245,0.95),rgba(255,255,255,0.96))] text-stone-950 shadow-[0_18px_36px_-26px_rgba(5,150,105,0.65)]'
                         : 'border-transparent text-stone-600 hover:border-stone-200 hover:bg-white/75 hover:text-stone-950'
                     } ${isCollapsed ? 'justify-center px-2' : ''}`}
                   >
                     <div
                       className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition ${
-                        active ? 'bg-white shadow-sm shadow-emerald-500/10' : 'bg-stone-100 group-hover:bg-white'
+                        active ? 'bg-white shadow-[0_12px_24px_-18px_rgba(5,150,105,0.55)]' : 'bg-stone-100 group-hover:bg-white'
                       }`}
                     >
                       <SidebarIcon name={link.icon} active={active} />
@@ -362,8 +363,8 @@ export default function AppSidebar({ shopName, shopType, role }: SidebarProps) {
       </nav>
 
       {!isCollapsed ? (
-        <div className="rounded-[28px] border border-stone-200/80 bg-white/80 p-4">
-          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">Fast lane</div>
+        <div className="rounded-[30px] border border-stone-200/80 bg-white/82 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Fast lane</div>
           <div className="mt-3 grid grid-cols-3 gap-2">
             {visibleSections
               .flatMap((section) => section.links)
@@ -373,7 +374,7 @@ export default function AppSidebar({ shopName, shopType, role }: SidebarProps) {
                   key={item.href}
                   href={item.href}
                   onClick={() => setIsMobileOpen(false)}
-                  className="rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2 text-center text-xs font-semibold text-stone-700 transition hover:border-stone-300 hover:bg-white hover:text-stone-950"
+                  className="rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2.5 text-center text-xs font-semibold text-stone-700 transition hover:border-stone-300 hover:bg-white hover:text-stone-950"
                 >
                   {item.label}
                 </Link>
@@ -386,7 +387,7 @@ export default function AppSidebar({ shopName, shopType, role }: SidebarProps) {
         type="button"
         onClick={() => signOut({ callbackUrl: '/login' })}
         aria-label="Sign out"
-        className={`inline-flex items-center justify-center rounded-[22px] border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-900 transition hover:border-stone-400 hover:bg-stone-50 ${isCollapsed ? 'px-0' : ''}`}
+        className={`inline-flex items-center justify-center rounded-[22px] border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-900 shadow-[0_16px_28px_-22px_rgba(28,25,23,0.4)] transition hover:border-stone-400 hover:bg-stone-50 ${isCollapsed ? 'px-0' : ''}`}
       >
         {isCollapsed ? (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
@@ -403,7 +404,7 @@ export default function AppSidebar({ shopName, shopType, role }: SidebarProps) {
 
   return (
     <>
-      <div className="border-b border-white/70 bg-white/75 px-4 py-3 backdrop-blur lg:hidden">
+      <div className="border-b border-white/70 bg-white/78 px-4 py-3 backdrop-blur lg:hidden">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">Vertex POS</div>
@@ -415,7 +416,7 @@ export default function AppSidebar({ shopName, shopType, role }: SidebarProps) {
               setIsCollapsed(false);
               setIsMobileOpen(true);
             }}
-            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-stone-200 bg-white text-stone-700 shadow-sm"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-stone-200 bg-white text-stone-700 shadow-[0_14px_28px_-20px_rgba(28,25,23,0.45)]"
             aria-label="Open sidebar"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
@@ -437,7 +438,7 @@ export default function AppSidebar({ shopName, shopType, role }: SidebarProps) {
             onClick={() => setIsMobileOpen(false)}
           >
             <motion.aside
-              className="h-full w-[88vw] max-w-sm border-r border-white/70 bg-[linear-gradient(180deg,rgba(249,250,251,0.98),rgba(244,244,240,0.96))] shadow-2xl"
+              className="h-full w-[88vw] max-w-sm border-r border-white/70 bg-[linear-gradient(180deg,rgba(249,250,251,0.98),rgba(244,244,240,0.96))] shadow-[0_40px_120px_-48px_rgba(28,25,23,0.65)]"
               initial={{ x: -28, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -24, opacity: 0 }}

@@ -123,10 +123,19 @@ export default function CommandPalette({ role }: { role: ShopRole }) {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="inline-flex items-center gap-3 rounded-full border border-stone-200 bg-white/90 px-4 py-2.5 text-sm font-semibold text-stone-700 shadow-sm transition hover:border-emerald-200 hover:text-stone-950"
+          className="inline-flex items-center gap-3 rounded-full border border-white/80 bg-white/82 px-4 py-2.5 text-sm font-semibold text-stone-700 shadow-[0_18px_36px_-28px_rgba(28,25,23,0.35)] backdrop-blur transition hover:-translate-y-0.5 hover:border-emerald-200 hover:text-stone-950"
         >
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
+              <path d="M10 6H6a2 2 0 0 0-2 2v10h10a2 2 0 0 0 2-2v-4" />
+              <path d="M14 4h6v6" />
+              <path d="m20 4-9 9" />
+            </svg>
+          </span>
           <span>Quick actions</span>
-          <span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs text-stone-500">Ctrl K</span>
+          <span className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-stone-500">
+            Ctrl K
+          </span>
         </button>
       </div>
 
@@ -136,12 +145,13 @@ export default function CommandPalette({ role }: { role: ShopRole }) {
           onClick={() => setOpen(false)}
         >
           <div
-            className="mx-auto max-w-2xl rounded-[28px] border border-stone-200 bg-white p-5 shadow-2xl"
+            className="mx-auto max-w-2xl rounded-[30px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))] p-5 shadow-[0_40px_120px_-48px_rgba(28,25,23,0.55)] backdrop-blur"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-black text-stone-950">Quick actions</h2>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">Launcher</div>
+                <h2 className="mt-2 text-2xl font-black text-stone-950">Quick actions</h2>
                 <p className="mt-1 text-sm text-stone-500">
                   Search for common operational tasks and jump there instantly.
                 </p>
@@ -149,7 +159,7 @@ export default function CommandPalette({ role }: { role: ShopRole }) {
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="rounded-full border border-stone-200 px-3 py-1.5 text-sm font-semibold text-stone-500 hover:text-stone-900"
+                className="rounded-full border border-stone-200 bg-white px-3 py-1.5 text-sm font-semibold text-stone-500 hover:text-stone-900"
               >
                 Esc
               </button>
@@ -169,19 +179,19 @@ export default function CommandPalette({ role }: { role: ShopRole }) {
                     key={item.id}
                     type="button"
                     onClick={() => runAction(item)}
-                    className="flex w-full items-start justify-between gap-4 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-left transition hover:border-emerald-200 hover:bg-emerald-50"
+                    className="flex w-full items-start justify-between gap-4 rounded-[24px] border border-stone-200 bg-[linear-gradient(180deg,rgba(250,250,249,0.98),rgba(245,245,244,0.88))] px-4 py-3.5 text-left transition hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-[linear-gradient(180deg,rgba(236,253,245,0.96),rgba(255,255,255,0.96))]"
                   >
                     <div>
                       <div className="font-semibold text-stone-900">{item.label}</div>
                       <div className="mt-1 text-sm text-stone-500">{item.description}</div>
                     </div>
-                    <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-stone-500">
+                    <div className="rounded-full border border-stone-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-500">
                       {item.minRole}
                     </div>
                   </button>
                 ))
               ) : (
-                <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 p-5 text-sm text-stone-500">
+                <div className="rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-5 text-sm text-stone-500">
                   No quick actions matched that search.
                 </div>
               )}

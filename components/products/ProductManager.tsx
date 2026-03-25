@@ -24,6 +24,9 @@ type Product = {
   category?: { id: string; name: string } | null;
 };
 
+const selectClassName =
+  'h-11 w-full rounded-2xl border border-stone-200 bg-white/88 px-4 text-sm text-stone-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] outline-none transition hover:border-stone-300 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10';
+
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <label className="mb-2 block text-sm font-semibold text-stone-700">{children}</label>;
 }
@@ -74,6 +77,12 @@ export default function ProductManager({
       return matchesTerm && matchesCategory;
     });
   }, [products, query, categoryFilter]);
+
+  const activeCount = products.filter((product) => product.isActive).length;
+  const archivedCount = products.length - activeCount;
+  const lowStockCount = products.filter(
+    (product) => getStockLevel(product.stockQty, product.reorderPoint, lowStockThreshold) !== 'IN_STOCK'
+  ).length;
 
   function resetForm() {
     setEditingId(null);
@@ -212,140 +221,166 @@ export default function ProductManager({
   return (
     <div className="space-y-6">
       <Card>
-        <div id="new-product" className="mb-1 text-2xl font-black text-stone-900">
-          {editingId ? 'Edit product' : 'Add product'}
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">Catalog editor</div>
+            <div id="new-product" className="mt-2 text-2xl font-black text-stone-900">
+              {editingId ? 'Edit product' : 'Add product'}
+            </div>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">
+              Set pricing, tax-ready sell values, archive status, and opening stock. Ongoing stock changes should happen through purchases or inventory adjustments.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Active</div>
+              <div className="mt-1 text-xl font-black text-stone-950">{activeCount}</div>
+            </div>
+            <div className="rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Low stock</div>
+              <div className="mt-1 text-xl font-black text-amber-700">{lowStockCount}</div>
+            </div>
+            <div className="rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Archived</div>
+              <div className="mt-1 text-xl font-black text-stone-950">{archivedCount}</div>
+            </div>
+          </div>
         </div>
-        <p className="mb-6 text-sm text-stone-500">
-          Set pricing, tax-ready sell values, archive status, and opening stock. Ongoing stock changes should happen through purchases or inventory adjustments.
-        </p>
 
         <form onSubmit={saveProduct} className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <div>
-              <FieldLabel>Product name</FieldLabel>
-              <Input
-                placeholder="e.g. Iced Latte"
-                value={form.name}
-                onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                required
-              />
-            </div>
+          <div className="rounded-[26px] border border-stone-200 bg-stone-50/80 p-4 sm:p-5">
+            <div className="mb-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Core details</div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <FieldLabel>Product name</FieldLabel>
+                <Input
+                  placeholder="e.g. Iced Latte"
+                  value={form.name}
+                  onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                  required
+                />
+              </div>
 
-            <div>
-              <FieldLabel>Category</FieldLabel>
-              <select
-                className="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm outline-none transition focus:border-emerald-500 focus:bg-white"
-                value={form.categoryId}
-                onChange={(event) => setForm((current) => ({ ...current, categoryId: event.target.value }))}
-              >
-                <option value="">Uncategorized</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+              <div>
+                <FieldLabel>Category</FieldLabel>
+                <select
+                  className={selectClassName}
+                  value={form.categoryId}
+                  onChange={(event) => setForm((current) => ({ ...current, categoryId: event.target.value }))}
+                >
+                  <option value="">Uncategorized</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div>
-              <FieldLabel>SKU</FieldLabel>
-              <Input
-                placeholder="e.g. COF-ICE-001"
-                value={form.sku}
-                onChange={(event) => setForm((current) => ({ ...current, sku: event.target.value }))}
-              />
-            </div>
+              <div>
+                <FieldLabel>SKU</FieldLabel>
+                <Input
+                  placeholder="e.g. COF-ICE-001"
+                  value={form.sku}
+                  onChange={(event) => setForm((current) => ({ ...current, sku: event.target.value }))}
+                />
+              </div>
 
-            <div>
-              <FieldLabel>Barcode</FieldLabel>
-              <Input
-                placeholder="Scan or type barcode"
-                value={form.barcode}
-                onChange={(event) => setForm((current) => ({ ...current, barcode: event.target.value }))}
-              />
-            </div>
+              <div>
+                <FieldLabel>Barcode</FieldLabel>
+                <Input
+                  placeholder="Scan or type barcode"
+                  value={form.barcode}
+                  onChange={(event) => setForm((current) => ({ ...current, barcode: event.target.value }))}
+                />
+              </div>
 
-            <div>
-              <FieldLabel>Cost price</FieldLabel>
-              <Input
-                type="number"
-                step="0.01"
-                placeholder="0.00"
-                value={form.cost}
-                onChange={(event) => setForm((current) => ({ ...current, cost: event.target.value }))}
-              />
-            </div>
+              <div>
+                <FieldLabel>Cost price</FieldLabel>
+                <Input
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={form.cost}
+                  onChange={(event) => setForm((current) => ({ ...current, cost: event.target.value }))}
+                />
+              </div>
 
-            <div>
-              <FieldLabel>Selling price</FieldLabel>
-              <Input
-                type="number"
-                step="0.01"
-                placeholder="0.00"
-                value={form.price}
-                onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))}
-              />
-            </div>
+              <div>
+                <FieldLabel>Selling price</FieldLabel>
+                <Input
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={form.price}
+                  onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))}
+                />
+              </div>
 
-            <div>
-              <FieldLabel>{editingId ? 'Current stock' : 'Opening stock quantity'}</FieldLabel>
-              <Input
-                type="number"
-                placeholder="0"
-                value={form.stockQty}
-                onChange={(event) => setForm((current) => ({ ...current, stockQty: event.target.value }))}
-                disabled={Boolean(editingId)}
-              />
-            </div>
+              <div>
+                <FieldLabel>{editingId ? 'Current stock' : 'Opening stock quantity'}</FieldLabel>
+                <Input
+                  type="number"
+                  placeholder="0"
+                  value={form.stockQty}
+                  onChange={(event) => setForm((current) => ({ ...current, stockQty: event.target.value }))}
+                  disabled={Boolean(editingId)}
+                />
+              </div>
 
-            <div>
-              <FieldLabel>Low-stock reorder level</FieldLabel>
-              <Input
-                type="number"
-                placeholder="5"
-                value={form.reorderPoint}
-                onChange={(event) => setForm((current) => ({ ...current, reorderPoint: event.target.value }))}
-              />
+              <div>
+                <FieldLabel>Low-stock reorder level</FieldLabel>
+                <Input
+                  type="number"
+                  placeholder="5"
+                  value={form.reorderPoint}
+                  onChange={(event) => setForm((current) => ({ ...current, reorderPoint: event.target.value }))}
+                />
+              </div>
             </div>
           </div>
 
           {editingId ? (
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+            <div className="rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
               Stock is adjusted from the Inventory or Purchases pages so every change keeps an audit trail.
             </div>
           ) : null}
 
-          <div>
-            <FieldLabel>Description</FieldLabel>
-            <Input
-              placeholder="Optional product description"
-              value={form.description}
-              onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
-            />
+          <div className="rounded-[26px] border border-stone-200 bg-white/70 p-4 sm:p-5">
+            <div className="mb-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Selling details</div>
+            <div>
+              <FieldLabel>Description</FieldLabel>
+              <Input
+                placeholder="Optional product description"
+                value={form.description}
+                onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+              />
+            </div>
+
+            <label className="mt-4 inline-flex items-center gap-3 text-sm font-medium text-stone-700">
+              <input
+                type="checkbox"
+                checked={form.isActive}
+                onChange={(event) => setForm((current) => ({ ...current, isActive: event.target.checked }))}
+              />
+              Product is active and available for selling
+            </label>
           </div>
 
-          <label className="inline-flex items-center gap-3 text-sm font-medium text-stone-700">
-            <input
-              type="checkbox"
-              checked={form.isActive}
-              onChange={(event) => setForm((current) => ({ ...current, isActive: event.target.checked }))}
-            />
-            Product is active and available for selling
-          </label>
-
           {error ? (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
             </div>
           ) : null}
 
           {success ? (
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
               {success}
             </div>
           ) : null}
 
-          <div className="flex gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row">
             <Button type="submit" disabled={loading}>
               {loading ? 'Saving product...' : editingId ? 'Update product' : 'Save product'}
             </Button>
@@ -374,7 +409,7 @@ export default function ProductManager({
               className="md:w-72"
             />
             <select
-              className="rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm"
+              className={`${selectClassName} md:w-56`}
               value={categoryFilter}
               onChange={(event) => setCategoryFilter(event.target.value)}
             >
@@ -388,64 +423,66 @@ export default function ProductManager({
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="text-stone-500">
-              <tr>
-                <th className="px-3 py-3">Name</th>
-                <th className="px-3 py-3">Category</th>
-                <th className="px-3 py-3">SKU / Barcode</th>
-                <th className="px-3 py-3">Cost</th>
-                <th className="px-3 py-3">Price</th>
-                <th className="px-3 py-3">Stock</th>
-                <th className="px-3 py-3">Status</th>
-                <th className="px-3 py-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((product) => {
-                const level = getStockLevel(product.stockQty, product.reorderPoint, lowStockThreshold);
-                return (
-                  <tr key={product.id} className="border-t border-stone-200">
-                    <td className="px-3 py-3">
-                      <div className="font-semibold text-stone-900">{product.name}</div>
-                      <div className="text-xs text-stone-500">{product.description ?? 'No description'}</div>
-                    </td>
-                    <td className="px-3 py-3">{product.category?.name ?? 'Uncategorized'}</td>
-                    <td className="px-3 py-3 text-stone-600">
-                      {(product.sku || 'N/A')} / {(product.barcode || 'N/A')}
-                    </td>
-                    <td className="px-3 py-3">{money(product.cost, currencySymbol)}</td>
-                    <td className="px-3 py-3">{money(product.price, currencySymbol)}</td>
-                    <td className="px-3 py-3 font-semibold text-stone-900">{product.stockQty}</td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-wrap gap-2">
-                        <Badge tone={product.isActive ? 'emerald' : 'stone'}>
-                          {product.isActive ? 'Active' : 'Archived'}
-                        </Badge>
-                        <Badge tone={level === 'OUT_OF_STOCK' ? 'red' : level === 'LOW_STOCK' ? 'amber' : 'blue'}>
-                          {stockLevelLabel(level)}
-                        </Badge>
-                      </div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex gap-2">
-                        <Button type="button" variant="secondary" onClick={() => beginEdit(product)}>
-                          Edit
-                        </Button>
-                        <Button type="button" variant="ghost" onClick={() => toggleArchive(product)}>
-                          {product.isActive ? 'Archive' : 'Restore'}
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="overflow-hidden rounded-[26px] border border-stone-200">
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-stone-50 text-stone-500">
+                <tr>
+                  <th className="px-4 py-3.5">Name</th>
+                  <th className="px-4 py-3.5">Category</th>
+                  <th className="px-4 py-3.5">SKU / Barcode</th>
+                  <th className="px-4 py-3.5">Cost</th>
+                  <th className="px-4 py-3.5">Price</th>
+                  <th className="px-4 py-3.5">Stock</th>
+                  <th className="px-4 py-3.5">Status</th>
+                  <th className="px-4 py-3.5">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((product) => {
+                  const level = getStockLevel(product.stockQty, product.reorderPoint, lowStockThreshold);
+                  return (
+                    <tr key={product.id} className="border-t border-stone-200 bg-white transition hover:bg-stone-50/70">
+                      <td className="px-4 py-4">
+                        <div className="font-semibold text-stone-900">{product.name}</div>
+                        <div className="mt-1 text-xs text-stone-500">{product.description ?? 'No description'}</div>
+                      </td>
+                      <td className="px-4 py-4">{product.category?.name ?? 'Uncategorized'}</td>
+                      <td className="px-4 py-4 text-stone-600">
+                        {(product.sku || 'N/A')} / {(product.barcode || 'N/A')}
+                      </td>
+                      <td className="px-4 py-4">{money(product.cost, currencySymbol)}</td>
+                      <td className="px-4 py-4 font-semibold text-stone-900">{money(product.price, currencySymbol)}</td>
+                      <td className="px-4 py-4 font-semibold text-stone-900">{product.stockQty}</td>
+                      <td className="px-4 py-4">
+                        <div className="flex flex-wrap gap-2">
+                          <Badge tone={product.isActive ? 'emerald' : 'stone'}>
+                            {product.isActive ? 'Active' : 'Archived'}
+                          </Badge>
+                          <Badge tone={level === 'OUT_OF_STOCK' ? 'red' : level === 'LOW_STOCK' ? 'amber' : 'blue'}>
+                            {stockLevelLabel(level)}
+                          </Badge>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex gap-2">
+                          <Button type="button" variant="secondary" onClick={() => beginEdit(product)}>
+                            Edit
+                          </Button>
+                          <Button type="button" variant="ghost" className="text-xs uppercase tracking-[0.14em]" onClick={() => toggleArchive(product)}>
+                            {product.isActive ? 'Archive' : 'Restore'}
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
           {!filtered.length ? (
-            <div className="py-10 text-center text-sm text-stone-500">
+            <div className="border-t border-stone-200 bg-stone-50 py-10 text-center text-sm text-stone-500">
               No products matched that filter. Add a product above or clear the search to see the full catalog.
             </div>
           ) : null}
