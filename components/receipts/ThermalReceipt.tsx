@@ -52,10 +52,14 @@ export default function ThermalReceipt({
   autoprint?: boolean;
 }) {
   useEffect(() => {
-    if (!autoprint) return;
+    if (!autoprint) {
+      return;
+    }
+
     const timer = setTimeout(() => {
       window.print();
     }, 450);
+
     return () => clearTimeout(timer);
   }, [autoprint]);
 
@@ -111,7 +115,7 @@ export default function ThermalReceipt({
           <div className="text-base font-black text-stone-900">{receiptHeader || shop.name}</div>
           {shop.address ? <div className="mt-1 text-[11px] text-stone-600">{shop.address}</div> : null}
           <div className="mt-1 text-[11px] text-stone-600">
-            {shop.phone || '—'} {shop.email ? `• ${shop.email}` : ''}
+            {shop.phone || 'N/A'} {shop.email ? `• ${shop.email}` : ''}
           </div>
         </div>
 
@@ -154,7 +158,7 @@ export default function ThermalReceipt({
               <div className="font-medium text-stone-900">{item.productName}</div>
               <div className="mt-1 flex justify-between text-stone-600">
                 <span>
-                  {item.qty} × {money(item.unitPrice, currencySymbol)}
+                  {item.qty} x {money(item.unitPrice, currencySymbol)}
                 </span>
                 <span>{money(item.lineTotal, currencySymbol)}</span>
               </div>
@@ -168,7 +172,7 @@ export default function ThermalReceipt({
             <span>{money(sale.subtotal, currencySymbol)}</span>
           </div>
           <div className="flex justify-between">
-            <span>VAT</span>
+            <span>Tax</span>
             <span>{money(sale.taxAmount, currencySymbol)}</span>
           </div>
           <div className="flex justify-between">

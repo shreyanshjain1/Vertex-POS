@@ -1,5 +1,8 @@
 'use client';
 
+import Badge from '@/components/ui/Badge';
+import { dateTime } from '@/lib/format';
+
 type Movement = {
   id: string;
   type: string;
@@ -12,28 +15,25 @@ type Movement = {
   };
 };
 
-function formatDateTime(value: string) {
-  return new Date(value).toLocaleString();
-}
-
 function toneForType(type: string) {
   const normalized = type.toUpperCase();
 
-  if (normalized.includes('SALE') || normalized === 'REMOVE' || normalized.includes('OUT')) {
-    return 'text-red-600 bg-red-50 border-red-200';
+  if (normalized.includes('SALE')) {
+    return 'red';
   }
 
-  if (normalized.includes('PURCHASE') || normalized === 'ADD' || normalized.includes('IN')) {
-    return 'text-emerald-600 bg-emerald-50 border-emerald-200';
+  if (normalized.includes('PURCHASE') || normalized.includes('OPENING')) {
+    return 'emerald';
   }
 
-  return 'text-stone-700 bg-stone-50 border-stone-200';
+  return 'stone';
 }
 
 export default function InventoryMovementTable({
   movements
 }: {
   movements: Movement[];
+  lowStockThreshold: number;
 }) {
   if (!movements.length) {
     return (
@@ -59,18 +59,16 @@ export default function InventoryMovementTable({
         <tbody>
           {movements.map((movement) => (
             <tr key={movement.id} className="border-t border-stone-200">
-              <td className="px-3 py-3 text-stone-600">{formatDateTime(movement.createdAt)}</td>
+              <td className="px-3 py-3 text-stone-600">{dateTime(movement.createdAt)}</td>
               <td className="px-3 py-3 font-medium text-stone-900">{movement.product.name}</td>
               <td className="px-3 py-3">
-                <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${toneForType(movement.type)}`}>
-                  {movement.type}
-                </span>
+                <Badge tone={toneForType(movement.type)}>{movement.type.replaceAll('_', ' ')}</Badge>
               </td>
               <td className={`px-3 py-3 font-semibold ${movement.qtyChange >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                 {movement.qtyChange > 0 ? `+${movement.qtyChange}` : movement.qtyChange}
               </td>
-              <td className="px-3 py-3 text-stone-600">{movement.referenceId ?? '—'}</td>
-              <td className="px-3 py-3 text-stone-600">{movement.notes ?? '—'}</td>
+              <td className="px-3 py-3 text-stone-600">{movement.referenceId ?? 'N/A'}</td>
+              <td className="px-3 py-3 text-stone-600">{movement.notes ?? 'N/A'}</td>
             </tr>
           ))}
         </tbody>

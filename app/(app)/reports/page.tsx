@@ -1,37 +1,72 @@
 import AppHeader from '@/components/layout/AppHeader';
 import Card from '@/components/ui/Card';
-import { getActiveShopContext } from '@/lib/auth/get-active-shop';
+import { requirePageRole } from '@/lib/authz';
 import { money } from '@/lib/format';
 import { prisma } from '@/lib/prisma';
 
 export default async function ReportsPage() {
-  const { shopId } = await getActiveShopContext();
+  const { shopId } = await requirePageRole('MANAGER');
   const settings = await prisma.shopSetting.findUnique({ where: { shopId } });
   const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - 6);
-  weekStart.setHours(0, 0, 0, 0);
+  const weekStart = new Date(todayStart);
+  weekStart.setDate(todayStart.getDate() - 6);
 
   const [daily, weekly, monthly, topProducts, lowStock, purchaseSummary] = await Promise.all([
-    prisma.sale.aggregate({ where: { shopId, createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } }, _sum: { totalAmount: true }, _count: true }),
-    prisma.sale.aggregate({ where: { shopId, createdAt: { gte: weekStart } }, _sum: { totalAmount: true }, _count: true }),
-    prisma.sale.aggregate({ where: { shopId, createdAt: { gte: monthStart } }, _sum: { totalAmount: true }, _count: true }),
-    prisma.saleItem.groupBy({ by: ['productId', 'productName'], where: { sale: { shopId } }, _sum: { qty: true, lineTotal: true }, orderBy: { _sum: { qty: 'desc' } }, take: 8 }),
-    prisma.product.findMany({ where: { shopId, isActive: true, stockQty: { lte: settings?.lowStockThreshold ?? 5 } }, orderBy: { stockQty: 'asc' }, take: 8 }),
-    prisma.purchaseOrder.aggregate({ where: { shopId, createdAt: { gte: monthStart } }, _sum: { totalAmount: true }, _count: true })
+    prisma.sale.aggregate({
+      where: { shopId, status: 'COMPLETED', createdAt: { gte: todayStart } },
+      _sum: { totalAmount: true },
+      _count: true
+    }),
+    prisma.sale.aggregate({
+      where: { shopId, status: 'COMPLETED', createdAt: { gte: weekStart } },
+      _sum: { totalAmount: true },
+      _count: true
+    }),
+    prisma.sale.aggregate({
+      where: { shopId, status: 'COMPLETED', createdAt: { gte: monthStart } },
+      _sum: { totalAmount: true },
+      _count: true
+    }),
+    prisma.saleItem.groupBy({
+      by: ['productId', 'productName'],
+      where: { sale: { shopId, status: 'COMPLETED' } },
+      _sum: { qty: true, lineTotal: true },
+      orderBy: { _sum: { qty: 'desc' } },
+      take: 8
+    }),
+    prisma.product.findMany({
+      where: {
+        shopId,
+        isActive: true,
+        stockQty: { lte: settings?.lowStockThreshold ?? 5 }
+      },
+      orderBy: { stockQty: 'asc' },
+      take: 8
+    }),
+    prisma.purchaseOrder.aggregate({
+      where: { shopId, status: 'RECEIVED', createdAt: { gte: monthStart } },
+      _sum: { totalAmount: true },
+      _count: true
+    })
   ]);
+
   const currency = settings?.currencySymbol ?? '₱';
 
   return (
     <div className="space-y-6">
-      <AppHeader title="Reports" subtitle="Track revenue, purchasing, top sellers, and operational attention points." />
+      <AppHeader
+        title="Reports"
+        subtitle="Track revenue, purchasing, top sellers, and low-stock pressure using completed operational data only."
+      />
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {[
-          ['Today', money(daily._sum.totalAmount?.toString() ?? '0', currency), `${daily._count} sale(s)`],
-          ['Last 7 days', money(weekly._sum.totalAmount?.toString() ?? '0', currency), `${weekly._count} sale(s)`],
-          ['This month', money(monthly._sum.totalAmount?.toString() ?? '0', currency), `${monthly._count} sale(s)`],
-          ['Purchases this month', money(purchaseSummary._sum.totalAmount?.toString() ?? '0', currency), `${purchaseSummary._count} purchase(s)`]
+          ['Today', money(daily._sum.totalAmount?.toString() ?? '0', currency), `${daily._count} completed sale(s)`],
+          ['Last 7 days', money(weekly._sum.totalAmount?.toString() ?? '0', currency), `${weekly._count} completed sale(s)`],
+          ['This month', money(monthly._sum.totalAmount?.toString() ?? '0', currency), `${monthly._count} completed sale(s)`],
+          ['Purchases received', money(purchaseSummary._sum.totalAmount?.toString() ?? '0', currency), `${purchaseSummary._count} received purchase(s)`]
         ].map(([title, value, meta]) => (
           <Card key={title}>
             <div className="text-sm text-stone-500">{title}</div>
@@ -40,6 +75,7 @@ export default async function ReportsPage() {
           </Card>
         ))}
       </div>
+
       <div className="grid gap-6 xl:grid-cols-2">
         <Card>
           <h2 className="text-xl font-black text-stone-900">Top-selling products</h2>
@@ -51,14 +87,17 @@ export default async function ReportsPage() {
                     <div className="font-semibold text-stone-900">{item.productName}</div>
                     <div className="text-sm text-stone-500">{item._sum.qty ?? 0} units sold</div>
                   </div>
-                  <div className="font-black text-stone-900">{money(item._sum.lineTotal?.toString() ?? '0', currency)}</div>
+                  <div className="font-black text-stone-900">
+                    {money(item._sum.lineTotal?.toString() ?? '0', currency)}
+                  </div>
                 </div>
               ))
             ) : (
-              <div className="text-sm text-stone-500">No sales yet.</div>
+              <div className="text-sm text-stone-500">No completed sales yet.</div>
             )}
           </div>
         </Card>
+
         <Card>
           <h2 className="text-xl font-black text-stone-900">Low-stock products</h2>
           <div className="mt-4 space-y-3">
@@ -73,7 +112,7 @@ export default async function ReportsPage() {
                 </div>
               ))
             ) : (
-              <div className="text-sm text-stone-500">No low-stock products.</div>
+              <div className="text-sm text-stone-500">No low-stock products right now.</div>
             )}
           </div>
         </Card>

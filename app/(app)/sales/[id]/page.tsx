@@ -1,11 +1,11 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
-import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import Link from 'next/link';
+import Card from '@/components/ui/Card';
 import { getActiveShopContext } from '@/lib/auth/get-active-shop';
-import { prisma } from '@/lib/prisma';
 import { dateTime, money } from '@/lib/format';
+import { prisma } from '@/lib/prisma';
 
 export default async function SaleDetailPage({
   params
@@ -25,16 +25,15 @@ export default async function SaleDetailPage({
     })
   ]);
 
-  if (!sale) return notFound();
+  if (!sale) {
+    return notFound();
+  }
 
   const currencySymbol = settings?.currencySymbol ?? '₱';
 
   return (
     <div className="space-y-6">
-      <AppHeader
-        title={sale.saleNumber}
-        subtitle={`Receipt ${sale.receiptNumber} • ${dateTime(sale.createdAt)}`}
-      />
+      <AppHeader title={sale.saleNumber} subtitle={`Receipt ${sale.receiptNumber} | ${dateTime(sale.createdAt)}`} />
 
       <div className="flex flex-wrap gap-3">
         <Link href={`/print/receipt/${sale.id}`}>
@@ -58,26 +57,16 @@ export default async function SaleDetailPage({
             </div>
 
             <div className="grid gap-2 md:grid-cols-2">
-              <div>
-                Receipt number: <span className="font-semibold">{sale.receiptNumber}</span>
-              </div>
-              <div>
-                Cashier: <span className="font-semibold">{sale.cashierName ?? 'Cashier'}</span>
-              </div>
-              <div>
-                Payment method: <span className="font-semibold">{sale.paymentMethod}</span>
-              </div>
-              <div>
-                Date: <span className="font-semibold">{dateTime(sale.createdAt)}</span>
-              </div>
+              <div>Receipt number: <span className="font-semibold">{sale.receiptNumber}</span></div>
+              <div>Cashier: <span className="font-semibold">{sale.cashierName ?? 'Cashier'}</span></div>
+              <div>Payment method: <span className="font-semibold">{sale.paymentMethod}</span></div>
+              <div>Date: <span className="font-semibold">{dateTime(sale.createdAt)}</span></div>
             </div>
 
             <div className="space-y-2 rounded-2xl border border-stone-200 p-4">
               {sale.items.map((item) => (
                 <div key={item.id} className="flex justify-between">
-                  <span>
-                    {item.productName} × {item.qty}
-                  </span>
+                  <span>{item.productName} x {item.qty}</span>
                   <span>{money(item.lineTotal.toString(), currencySymbol)}</span>
                 </div>
               ))}
@@ -89,12 +78,12 @@ export default async function SaleDetailPage({
                 <span>{money(sale.subtotal.toString(), currencySymbol)}</span>
               </div>
               <div className="flex justify-between">
-                <span>VAT</span>
+                <span>Tax</span>
                 <span>{money(sale.taxAmount.toString(), currencySymbol)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Discount</span>
-                <span>{money(sale.discountAmount.toString(), currencySymbol)}</span>
+                <span>-{money(sale.discountAmount.toString(), currencySymbol)}</span>
               </div>
               <div className="flex justify-between border-t border-stone-200 pt-2 text-lg font-black">
                 <span>Total</span>
@@ -102,27 +91,17 @@ export default async function SaleDetailPage({
               </div>
             </div>
 
-            <div className="text-xs text-stone-500">
-              {settings?.receiptFooter ?? 'Thank you for your purchase.'}
-            </div>
+            <div className="text-xs text-stone-500">{settings?.receiptFooter ?? 'Thank you for your purchase.'}</div>
           </div>
         </Card>
 
         <Card>
           <h2 className="text-xl font-black text-stone-900">Sale metadata</h2>
           <div className="mt-5 space-y-3 text-sm text-stone-600">
-            <div>
-              Customer: <span className="font-semibold text-stone-900">{sale.customerName ?? 'Walk-in customer'}</span>
-            </div>
-            <div>
-              Phone: <span className="font-semibold text-stone-900">{sale.customerPhone ?? '—'}</span>
-            </div>
-            <div>
-              Notes: <span className="font-semibold text-stone-900">{sale.notes ?? '—'}</span>
-            </div>
-            <div>
-              Status: <span className="font-semibold text-stone-900">{sale.status}</span>
-            </div>
+            <div>Customer: <span className="font-semibold text-stone-900">{sale.customerName ?? 'Walk-in customer'}</span></div>
+            <div>Phone: <span className="font-semibold text-stone-900">{sale.customerPhone ?? 'N/A'}</span></div>
+            <div>Notes: <span className="font-semibold text-stone-900">{sale.notes ?? 'N/A'}</span></div>
+            <div>Status: <span className="font-semibold text-stone-900">{sale.status}</span></div>
           </div>
         </Card>
       </div>

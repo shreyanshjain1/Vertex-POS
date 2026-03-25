@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
-import Button from '@/components/ui/Button';
 import { money } from '@/lib/format';
 
 type Category = {
@@ -39,7 +39,6 @@ export default function CheckoutClient({
   cashierName: string;
 }) {
   const router = useRouter();
-
   const [selectedCategory, setSelectedCategory] = useState('');
   const [query, setQuery] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -57,7 +56,6 @@ export default function CheckoutClient({
     return products
       .filter((product) => {
         const matchesCategory = !selectedCategory || product.categoryId === selectedCategory;
-
         const matchesTerm =
           !term ||
           [product.name, product.barcode ?? '', product.sku ?? '', product.category?.name ?? '']
@@ -70,58 +68,93 @@ export default function CheckoutClient({
       .slice(0, 30);
   }, [products, query, selectedCategory]);
 
+  const itemCount = cart.reduce((sum, item) => sum + item.qty, 0);
+  const subtotal = cart.reduce((sum, item) => sum + Number(item.price) * item.qty, 0);
+  const taxAmount = subtotal * (taxRate / 100);
+  const discount = Number(discountAmount || 0);
+  const total = Math.max(subtotal + taxAmount - discount, 0);
+
   function addToCart(product: Product) {
     setError('');
+    setCart((currentCart) => {
+      const existing = currentCart.find((item) => item.id === product.id);
 
-    setCart((prev) => {
-      const current = prev.find((item) => item.id === product.id);
-
-      if (current) {
-        if (current.qty + 1 > product.stockQty) {
+      if (existing) {
+        if (existing.qty + 1 > product.stockQty) {
           setError(`Cannot oversell. ${product.name} only has ${product.stockQty} in stock.`);
-          return prev;
+          return currentCart;
         }
 
-        return prev.map((item) => (item.id === product.id ? { ...item, qty: item.qty + 1 } : item));
+        return currentCart.map((item) =>
+          item.id === product.id ? { ...item, qty: item.qty + 1 } : item
+        );
       }
 
       if (product.stockQty <= 0) {
         setError(`${product.name} is out of stock.`);
-        return prev;
+        return currentCart;
       }
 
-      return [...prev, { ...product, qty: 1 }];
+      return [...currentCart, { ...product, qty: 1 }];
     });
   }
 
-  function decreaseQty(productId: string) {
-    setCart((prev) =>
-      prev
-        .map((item) => (item.id === productId ? { ...item, qty: Math.max(item.qty - 1, 0) } : item))
-        .filter((item) => item.qty > 0)
-    );
-  }
+  function updateQty(productId: string, direction: 'increase' | 'decrease') {
+    const product = products.find((item) => item.id === productId);
+    if (!product) {
+      return;
+    }
 
-  function increaseQty(productId: string) {
-    const hit = products.find((product) => product.id === productId);
-    if (!hit) return;
-    addToCart(hit);
+    setCart((currentCart) => {
+      const existing = currentCart.find((item) => item.id === productId);
+      if (!existing) {
+        return currentCart;
+      }
+
+      const nextQty = direction === 'increase' ? existing.qty + 1 : existing.qty - 1;
+      if (nextQty <= 0) {
+        return currentCart.filter((item) => item.id !== productId);
+      }
+
+      if (nextQty > product.stockQty) {
+        setError(`Cannot oversell. ${product.name} only has ${product.stockQty} in stock.`);
+        return currentCart;
+      }
+
+      return currentCart.map((item) =>
+        item.id === productId ? { ...item, qty: nextQty } : item
+      );
+    });
   }
 
   function removeFromCart(productId: string) {
-    setCart((prev) => prev.filter((item) => item.id !== productId));
+    setCart((currentCart) => currentCart.filter((item) => item.id !== productId));
   }
 
-  const subtotal = cart.reduce((sum, item) => sum + Number(item.price) * item.qty, 0);
-  const vatAmount = subtotal * (taxRate / 100);
-  const discount = Number(discountAmount || 0);
-  const total = Math.max(subtotal + vatAmount - discount, 0);
+  function clearCart() {
+    setCart([]);
+    setDiscountAmount('0');
+    setCustomerName('');
+    setCustomerPhone('');
+    setNotes('');
+    setError('');
+  }
 
   async function completeSale() {
     setError('');
 
     if (!cart.length) {
-      setError('Please add at least one item to cart.');
+      setError('Please add at least one item to the cart.');
+      return;
+    }
+
+    if (discount < 0) {
+      setError('Discount amount cannot be negative.');
+      return;
+    }
+
+    if (discount > subtotal + taxAmount) {
+      setError('Discount cannot exceed the sale total.');
       return;
     }
 
@@ -155,12 +188,7 @@ export default function CheckoutClient({
         return;
       }
 
-      setCart([]);
-      setDiscountAmount('0');
-      setCustomerName('');
-      setCustomerPhone('');
-      setNotes('');
-
+      clearCart();
       router.push(`/print/receipt/${data.sale.id}?autoprint=1`);
       router.refresh();
     } catch {
@@ -176,7 +204,7 @@ export default function CheckoutClient({
           <div>
             <h2 className="text-2xl font-black text-stone-900">Find products</h2>
             <p className="mt-1 text-sm text-stone-500">
-              Choose a category first, then search or scan a barcode.
+              Search by name, SKU, barcode, or category to build a reliable cart quickly.
             </p>
           </div>
 
@@ -184,7 +212,7 @@ export default function CheckoutClient({
             <select
               className="rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-emerald-500 focus:bg-white"
               value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
+              onChange={(event) => setSelectedCategory(event.target.value)}
             >
               <option value="">All categories</option>
               {categories.map((category) => (
@@ -195,9 +223,9 @@ export default function CheckoutClient({
             </select>
 
             <Input
-              placeholder="Search by name, SKU, barcode..."
+              placeholder="Search by product name, SKU, barcode..."
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(event) => setQuery(event.target.value)}
             />
           </div>
         </div>
@@ -211,19 +239,13 @@ export default function CheckoutClient({
               className="rounded-2xl border border-stone-200 bg-stone-50 p-4 text-left transition hover:border-emerald-300 hover:bg-emerald-50"
             >
               <div className="font-semibold text-stone-900">{product.name}</div>
-              <div className="mt-1 text-sm text-stone-500">
-                {product.category?.name ?? 'Uncategorized'}
-              </div>
+              <div className="mt-1 text-sm text-stone-500">{product.category?.name ?? 'Uncategorized'}</div>
               <div className="mt-1 text-xs text-stone-500">
-                SKU: {product.sku ?? '—'} • Barcode: {product.barcode ?? '—'}
+                SKU: {product.sku ?? 'N/A'} | Barcode: {product.barcode ?? 'N/A'}
               </div>
               <div className="mt-3 flex items-center justify-between">
-                <div className="font-black text-emerald-700">
-                  {money(product.price, currencySymbol)}
-                </div>
-                <div className="text-xs font-medium text-stone-500">
-                  {product.stockQty} in stock
-                </div>
+                <div className="font-black text-emerald-700">{money(product.price, currencySymbol)}</div>
+                <div className="text-xs font-medium text-stone-500">{product.stockQty} in stock</div>
               </div>
             </button>
           ))}
@@ -231,17 +253,23 @@ export default function CheckoutClient({
 
         {!filtered.length ? (
           <div className="mt-6 rounded-2xl border border-dashed border-stone-300 bg-stone-50 p-5 text-sm text-stone-500">
-            No matching products found.
+            No products matched that search. Try a different term or clear the category filter.
           </div>
         ) : null}
       </Card>
 
       <Card>
-        <div className="mb-4">
-          <h2 className="text-2xl font-black text-stone-900">Current cart</h2>
-          <p className="mt-1 text-sm text-stone-500">
-            Cashier: <span className="font-semibold text-stone-700">{cashierName}</span>
-          </p>
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-black text-stone-900">Checkout summary</h2>
+            <p className="mt-1 text-sm text-stone-500">
+              Cashier: <span className="font-semibold text-stone-700">{cashierName}</span>
+            </p>
+          </div>
+          <div className="rounded-2xl bg-stone-100 px-4 py-2 text-right">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Items</div>
+            <div className="text-xl font-black text-stone-950">{itemCount}</div>
+          </div>
         </div>
 
         <div className="space-y-3">
@@ -251,17 +279,15 @@ export default function CheckoutClient({
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="font-semibold text-stone-900">{item.name}</div>
-                    <div className="text-sm text-stone-500">
-                      {money(item.price, currencySymbol)} each
-                    </div>
+                    <div className="text-sm text-stone-500">{money(item.price, currencySymbol)} each</div>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <Button type="button" variant="secondary" onClick={() => decreaseQty(item.id)}>
+                    <Button type="button" variant="secondary" onClick={() => updateQty(item.id, 'decrease')}>
                       -
                     </Button>
                     <span className="w-8 text-center font-semibold">{item.qty}</span>
-                    <Button type="button" variant="secondary" onClick={() => increaseQty(item.id)}>
+                    <Button type="button" variant="secondary" onClick={() => updateQty(item.id, 'increase')}>
                       +
                     </Button>
                     <Button type="button" variant="ghost" onClick={() => removeFromCart(item.id)}>
@@ -277,7 +303,7 @@ export default function CheckoutClient({
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 p-5 text-sm text-stone-500">
-              No items in cart yet.
+              No items in the cart yet. Add products from the catalog to start the sale.
             </div>
           )}
         </div>
@@ -287,12 +313,12 @@ export default function CheckoutClient({
             <Input
               placeholder="Customer name"
               value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
+              onChange={(event) => setCustomerName(event.target.value)}
             />
             <Input
               placeholder="Customer phone"
               value={customerPhone}
-              onChange={(e) => setCustomerPhone(e.target.value)}
+              onChange={(event) => setCustomerPhone(event.target.value)}
             />
           </div>
 
@@ -300,7 +326,7 @@ export default function CheckoutClient({
             <select
               className="rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm"
               value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value)}
+              onChange={(event) => setPaymentMethod(event.target.value)}
             >
               <option>Cash</option>
               <option>Card</option>
@@ -313,14 +339,14 @@ export default function CheckoutClient({
               step="0.01"
               placeholder="Discount amount"
               value={discountAmount}
-              onChange={(e) => setDiscountAmount(e.target.value)}
+              onChange={(event) => setDiscountAmount(event.target.value)}
             />
           </div>
 
           <Input
             placeholder="Notes for this sale"
             value={notes}
-            onChange={(e) => setNotes(e.target.value)}
+            onChange={(event) => setNotes(event.target.value)}
           />
         </div>
 
@@ -331,8 +357,8 @@ export default function CheckoutClient({
               <span>{money(subtotal, currencySymbol)}</span>
             </div>
             <div className="flex justify-between">
-              <span>VAT ({taxRate}%)</span>
-              <span>{money(vatAmount, currencySymbol)}</span>
+              <span>Tax ({taxRate}%)</span>
+              <span>{money(taxAmount, currencySymbol)}</span>
             </div>
             <div className="flex justify-between">
               <span>Discount</span>
@@ -343,6 +369,12 @@ export default function CheckoutClient({
               <span>{money(total, currencySymbol)}</span>
             </div>
           </div>
+
+          <div className="mt-4 rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-600">
+            {cart.length
+              ? `${itemCount} item(s) across ${cart.length} line(s) are ready for validation and receipt printing.`
+              : 'Add at least one product before finalizing the sale.'}
+          </div>
         </div>
 
         {error ? (
@@ -351,14 +383,14 @@ export default function CheckoutClient({
           </div>
         ) : null}
 
-        <Button
-          type="button"
-          className="mt-4 w-full"
-          disabled={!cart.length || loading}
-          onClick={completeSale}
-        >
-          {loading ? 'Completing sale...' : 'Complete sale'}
-        </Button>
+        <div className="mt-4 flex gap-3">
+          <Button type="button" className="flex-1" disabled={!cart.length || loading} onClick={completeSale}>
+            {loading ? 'Completing sale...' : 'Complete sale'}
+          </Button>
+          <Button type="button" variant="secondary" disabled={!cart.length || loading} onClick={clearCart}>
+            Clear
+          </Button>
+        </div>
       </Card>
     </div>
   );

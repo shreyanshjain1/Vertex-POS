@@ -8,14 +8,13 @@ type Product = {
   id: string;
   name: string;
   stockQty: number;
+  reorderPoint: number;
+  isActive: boolean;
 };
 
-export default function AdjustmentForm({
-  products
-}: {
-  products: Product[];
-}) {
-  const [productId, setProductId] = useState(products[0]?.id ?? '');
+export default function AdjustmentForm({ products }: { products: Product[] }) {
+  const activeProducts = products.filter((product) => product.isActive);
+  const [productId, setProductId] = useState(activeProducts[0]?.id ?? '');
   const [adjustmentType, setAdjustmentType] = useState<'ADD' | 'REMOVE'>('ADD');
   const [qty, setQty] = useState('1');
   const [notes, setNotes] = useState('');
@@ -24,8 +23,8 @@ export default function AdjustmentForm({
   const [success, setSuccess] = useState('');
 
   const selectedProduct = useMemo(
-    () => products.find((product) => product.id === productId),
-    [products, productId]
+    () => activeProducts.find((product) => product.id === productId),
+    [activeProducts, productId]
   );
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -53,15 +52,14 @@ export default function AdjustmentForm({
     setLoading(true);
 
     try {
-      const response = await fetch('/api/inventory/adjust', {
+      const response = await fetch('/api/inventory/adjustments', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           productId,
-          type: adjustmentType,
-          qty: parsedQty,
+          qtyChange: adjustmentType === 'REMOVE' ? parsedQty * -1 : parsedQty,
           notes: notes.trim() || null
         })
       });
@@ -77,7 +75,7 @@ export default function AdjustmentForm({
         return;
       }
 
-      setSuccess('Inventory adjustment recorded successfully.');
+      setSuccess('Inventory adjustment recorded successfully. Refresh the page to see the latest stock snapshot.');
       setQty('1');
       setNotes('');
     } catch {
@@ -93,11 +91,11 @@ export default function AdjustmentForm({
         <select
           className="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-emerald-500 focus:bg-white"
           value={productId}
-          onChange={(e) => setProductId(e.target.value)}
+          onChange={(event) => setProductId(event.target.value)}
         >
-          {products.map((product) => (
+          {activeProducts.map((product) => (
             <option key={product.id} value={product.id}>
-              {product.name} • Current stock: {product.stockQty}
+              {product.name} | Current stock: {product.stockQty}
             </option>
           ))}
         </select>
@@ -109,7 +107,7 @@ export default function AdjustmentForm({
           <select
             className="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-emerald-500 focus:bg-white"
             value={adjustmentType}
-            onChange={(e) => setAdjustmentType(e.target.value as 'ADD' | 'REMOVE')}
+            onChange={(event) => setAdjustmentType(event.target.value as 'ADD' | 'REMOVE')}
           >
             <option value="ADD">Add stock</option>
             <option value="REMOVE">Remove stock</option>
@@ -118,45 +116,30 @@ export default function AdjustmentForm({
 
         <div>
           <label className="mb-2 block text-sm font-semibold text-stone-700">Quantity</label>
-          <Input
-            type="number"
-            min="1"
-            placeholder="Enter quantity"
-            value={qty}
-            onChange={(e) => setQty(e.target.value)}
-          />
+          <Input type="number" min="1" placeholder="Enter quantity" value={qty} onChange={(event) => setQty(event.target.value)} />
         </div>
       </div>
 
       <div>
         <label className="mb-2 block text-sm font-semibold text-stone-700">Notes</label>
-        <Input
-          placeholder="Reason for adjustment"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-        />
+        <Input placeholder="Reason for adjustment" value={notes} onChange={(event) => setNotes(event.target.value)} />
       </div>
 
       {selectedProduct ? (
         <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
-          Selected product: <span className="font-semibold text-stone-900">{selectedProduct.name}</span>{' '}
-          • Current stock: <span className="font-semibold text-stone-900">{selectedProduct.stockQty}</span>
+          Selected product: <span className="font-semibold text-stone-900">{selectedProduct.name}</span> | Current stock: <span className="font-semibold text-stone-900">{selectedProduct.stockQty}</span>
         </div>
       ) : null}
 
       {error ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       ) : null}
 
       {success ? (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          {success}
-        </div>
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div>
       ) : null}
 
-      <Button type="submit" disabled={loading}>
+      <Button type="submit" disabled={loading || !activeProducts.length}>
         {loading ? 'Saving adjustment...' : 'Save adjustment'}
       </Button>
     </form>

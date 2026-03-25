@@ -1,10 +1,12 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
-import Input from '@/components/ui/Input';
 import Card from '@/components/ui/Card';
+import Input from '@/components/ui/Input';
 import { money } from '@/lib/format';
+import { getStockLevel, stockLevelLabel } from '@/lib/inventory';
 
 type Category = { id: string; name: string; parentId: string | null };
 type Product = {
@@ -19,7 +21,7 @@ type Product = {
   stockQty: number;
   reorderPoint: number;
   isActive: boolean;
-  category?: { name: string } | null;
+  category?: { id: string; name: string } | null;
 };
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -29,11 +31,13 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 export default function ProductManager({
   initialProducts,
   categories,
-  currencySymbol
+  currencySymbol,
+  lowStockThreshold
 }: {
   initialProducts: Product[];
   categories: Category[];
   currencySymbol: string;
+  lowStockThreshold: number;
 }) {
   const [products, setProducts] = useState(initialProducts);
   const [query, setQuery] = useState('');
@@ -52,6 +56,7 @@ export default function ProductManager({
     isActive: true
   });
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
   const filtered = useMemo(() => {
@@ -66,7 +71,6 @@ export default function ProductManager({
           .includes(term);
 
       const matchesCategory = !categoryFilter || product.categoryId === categoryFilter;
-
       return matchesTerm && matchesCategory;
     });
   }, [products, query, categoryFilter]);
@@ -89,6 +93,8 @@ export default function ProductManager({
 
   function beginEdit(product: Product) {
     setEditingId(product.id);
+    setError('');
+    setSuccess('');
     setForm({
       categoryId: product.categoryId ?? '',
       sku: product.sku ?? '',
@@ -106,6 +112,7 @@ export default function ProductManager({
   async function saveProduct(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
+    setSuccess('');
 
     if (!form.name.trim()) {
       setError('Product name is required.');
@@ -117,8 +124,13 @@ export default function ProductManager({
       return;
     }
 
-    if (Number(form.stockQty) < 0 || Number(form.reorderPoint) < 0) {
-      setError('Stock quantity and reorder level must not be negative.');
+    if (!editingId && Number(form.stockQty) < 0) {
+      setError('Opening stock must not be negative.');
+      return;
+    }
+
+    if (Number(form.reorderPoint) < 0) {
+      setError('Low-stock reorder level must not be negative.');
       return;
     }
 
@@ -130,10 +142,10 @@ export default function ProductManager({
       sku: form.sku || null,
       barcode: form.barcode || null,
       description: form.description || null,
-      stockQty: Number(form.stockQty),
-      reorderPoint: Number(form.reorderPoint),
       cost: Number(form.cost),
-      price: Number(form.price)
+      price: Number(form.price),
+      reorderPoint: Number(form.reorderPoint),
+      ...(editingId ? {} : { stockQty: Number(form.stockQty) })
     };
 
     const response = await fetch(editingId ? `/api/products/${editingId}` : '/api/products', {
@@ -156,26 +168,43 @@ export default function ProductManager({
       price: String(data.product.price)
     };
 
-    setProducts((prev) =>
-      editingId ? prev.map((item) => (item.id === editingId ? product : item)) : [product, ...prev]
+    setProducts((currentProducts) =>
+      editingId
+        ? currentProducts.map((item) => (item.id === editingId ? product : item))
+        : [product, ...currentProducts]
     );
 
+    setSuccess(editingId ? 'Product updated successfully.' : 'Product created successfully.');
     resetForm();
   }
 
-  async function archiveProduct(product: Product) {
+  async function toggleArchive(product: Product) {
+    const confirmed = window.confirm(
+      `${product.isActive ? 'Archive' : 'Restore'} ${product.name}?`
+    );
+    if (!confirmed) {
+      return;
+    }
+
     const response = await fetch(`/api/products/${product.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isActive: !product.isActive })
+      body: JSON.stringify({
+        isActive: !product.isActive
+      })
     });
 
     const data = await response.json().catch(() => null);
-    if (!response.ok || !data?.product) return;
+    if (!response.ok || !data?.product) {
+      setError(data?.error ?? 'Unable to update product status.');
+      return;
+    }
 
-    setProducts((prev) =>
-      prev.map((item) =>
-        item.id === product.id ? { ...item, isActive: data.product.isActive } : item
+    setProducts((currentProducts) =>
+      currentProducts.map((item) =>
+        item.id === product.id
+          ? { ...item, isActive: data.product.isActive }
+          : item
       )
     );
   }
@@ -183,11 +212,11 @@ export default function ProductManager({
   return (
     <div className="space-y-6">
       <Card>
-        <div className="mb-1 text-2xl font-black text-stone-900">
+        <div id="new-product" className="mb-1 text-2xl font-black text-stone-900">
           {editingId ? 'Edit product' : 'Add product'}
         </div>
         <p className="mb-6 text-sm text-stone-500">
-          Set pricing, stock levels, barcode, and reorder behavior clearly so cashiers and managers understand each item.
+          Set pricing, tax-ready sell values, archive status, and opening stock. Ongoing stock changes should happen through purchases or inventory adjustments.
         </p>
 
         <form onSubmit={saveProduct} className="space-y-6">
@@ -197,7 +226,7 @@ export default function ProductManager({
               <Input
                 placeholder="e.g. Iced Latte"
                 value={form.name}
-                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
                 required
               />
             </div>
@@ -207,7 +236,7 @@ export default function ProductManager({
               <select
                 className="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm outline-none transition focus:border-emerald-500 focus:bg-white"
                 value={form.categoryId}
-                onChange={(e) => setForm((p) => ({ ...p, categoryId: e.target.value }))}
+                onChange={(event) => setForm((current) => ({ ...current, categoryId: event.target.value }))}
               >
                 <option value="">Uncategorized</option>
                 {categories.map((category) => (
@@ -223,7 +252,7 @@ export default function ProductManager({
               <Input
                 placeholder="e.g. COF-ICE-001"
                 value={form.sku}
-                onChange={(e) => setForm((p) => ({ ...p, sku: e.target.value }))}
+                onChange={(event) => setForm((current) => ({ ...current, sku: event.target.value }))}
               />
             </div>
 
@@ -232,7 +261,7 @@ export default function ProductManager({
               <Input
                 placeholder="Scan or type barcode"
                 value={form.barcode}
-                onChange={(e) => setForm((p) => ({ ...p, barcode: e.target.value }))}
+                onChange={(event) => setForm((current) => ({ ...current, barcode: event.target.value }))}
               />
             </div>
 
@@ -243,7 +272,7 @@ export default function ProductManager({
                 step="0.01"
                 placeholder="0.00"
                 value={form.cost}
-                onChange={(e) => setForm((p) => ({ ...p, cost: e.target.value }))}
+                onChange={(event) => setForm((current) => ({ ...current, cost: event.target.value }))}
               />
             </div>
 
@@ -254,17 +283,18 @@ export default function ProductManager({
                 step="0.01"
                 placeholder="0.00"
                 value={form.price}
-                onChange={(e) => setForm((p) => ({ ...p, price: e.target.value }))}
+                onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))}
               />
             </div>
 
             <div>
-              <FieldLabel>Opening stock quantity</FieldLabel>
+              <FieldLabel>{editingId ? 'Current stock' : 'Opening stock quantity'}</FieldLabel>
               <Input
                 type="number"
                 placeholder="0"
                 value={form.stockQty}
-                onChange={(e) => setForm((p) => ({ ...p, stockQty: e.target.value }))}
+                onChange={(event) => setForm((current) => ({ ...current, stockQty: event.target.value }))}
+                disabled={Boolean(editingId)}
               />
             </div>
 
@@ -274,17 +304,23 @@ export default function ProductManager({
                 type="number"
                 placeholder="5"
                 value={form.reorderPoint}
-                onChange={(e) => setForm((p) => ({ ...p, reorderPoint: e.target.value }))}
+                onChange={(event) => setForm((current) => ({ ...current, reorderPoint: event.target.value }))}
               />
             </div>
           </div>
+
+          {editingId ? (
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+              Stock is adjusted from the Inventory or Purchases pages so every change keeps an audit trail.
+            </div>
+          ) : null}
 
           <div>
             <FieldLabel>Description</FieldLabel>
             <Input
               placeholder="Optional product description"
               value={form.description}
-              onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+              onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
             />
           </div>
 
@@ -292,7 +328,7 @@ export default function ProductManager({
             <input
               type="checkbox"
               checked={form.isActive}
-              onChange={(e) => setForm((p) => ({ ...p, isActive: e.target.checked }))}
+              onChange={(event) => setForm((current) => ({ ...current, isActive: event.target.checked }))}
             />
             Product is active and available for selling
           </label>
@@ -300,6 +336,12 @@ export default function ProductManager({
           {error ? (
             <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
+            </div>
+          ) : null}
+
+          {success ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+              {success}
             </div>
           ) : null}
 
@@ -321,22 +363,20 @@ export default function ProductManager({
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-xl font-black text-stone-900">Product catalog</h2>
-            <p className="text-sm text-stone-500">
-              Search, filter, and manage active or archived products.
-            </p>
+            <p className="text-sm text-stone-500">Search, filter, and manage active or archived products.</p>
           </div>
 
           <div className="flex flex-col gap-3 md:flex-row">
             <Input
               placeholder="Search products..."
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(event) => setQuery(event.target.value)}
               className="md:w-72"
             />
             <select
               className="rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm"
               value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
+              onChange={(event) => setCategoryFilter(event.target.value)}
             >
               <option value="">All categories</option>
               {categories.map((category) => (
@@ -358,47 +398,55 @@ export default function ProductManager({
                 <th className="px-3 py-3">Cost</th>
                 <th className="px-3 py-3">Price</th>
                 <th className="px-3 py-3">Stock</th>
+                <th className="px-3 py-3">Status</th>
                 <th className="px-3 py-3">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((product) => (
-                <tr key={product.id} className="border-t border-stone-200">
-                  <td className="px-3 py-3">
-                    <div className="font-semibold text-stone-900">{product.name}</div>
-                    <div className="text-xs text-stone-500">{product.description ?? 'No description'}</div>
-                  </td>
-                  <td className="px-3 py-3">{product.category?.name ?? '—'}</td>
-                  <td className="px-3 py-3 text-stone-600">
-                    {product.sku ?? '—'} / {product.barcode ?? '—'}
-                  </td>
-                  <td className="px-3 py-3">{money(product.cost, currencySymbol)}</td>
-                  <td className="px-3 py-3">{money(product.price, currencySymbol)}</td>
-                  <td
-                    className={`px-3 py-3 font-semibold ${
-                      product.stockQty <= product.reorderPoint ? 'text-red-600' : 'text-stone-900'
-                    }`}
-                  >
-                    {product.stockQty}
-                  </td>
-                  <td className="px-3 py-3">
-                    <div className="flex gap-2">
-                      <Button type="button" variant="secondary" onClick={() => beginEdit(product)}>
-                        Edit
-                      </Button>
-                      <Button type="button" variant="ghost" onClick={() => archiveProduct(product)}>
-                        {product.isActive ? 'Archive' : 'Activate'}
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((product) => {
+                const level = getStockLevel(product.stockQty, product.reorderPoint, lowStockThreshold);
+                return (
+                  <tr key={product.id} className="border-t border-stone-200">
+                    <td className="px-3 py-3">
+                      <div className="font-semibold text-stone-900">{product.name}</div>
+                      <div className="text-xs text-stone-500">{product.description ?? 'No description'}</div>
+                    </td>
+                    <td className="px-3 py-3">{product.category?.name ?? 'Uncategorized'}</td>
+                    <td className="px-3 py-3 text-stone-600">
+                      {(product.sku || 'N/A')} / {(product.barcode || 'N/A')}
+                    </td>
+                    <td className="px-3 py-3">{money(product.cost, currencySymbol)}</td>
+                    <td className="px-3 py-3">{money(product.price, currencySymbol)}</td>
+                    <td className="px-3 py-3 font-semibold text-stone-900">{product.stockQty}</td>
+                    <td className="px-3 py-3">
+                      <div className="flex flex-wrap gap-2">
+                        <Badge tone={product.isActive ? 'emerald' : 'stone'}>
+                          {product.isActive ? 'Active' : 'Archived'}
+                        </Badge>
+                        <Badge tone={level === 'OUT_OF_STOCK' ? 'red' : level === 'LOW_STOCK' ? 'amber' : 'blue'}>
+                          {stockLevelLabel(level)}
+                        </Badge>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex gap-2">
+                        <Button type="button" variant="secondary" onClick={() => beginEdit(product)}>
+                          Edit
+                        </Button>
+                        <Button type="button" variant="ghost" onClick={() => toggleArchive(product)}>
+                          {product.isActive ? 'Archive' : 'Restore'}
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
 
           {!filtered.length ? (
             <div className="py-10 text-center text-sm text-stone-500">
-              No products found. Add your first product above to start selling.
+              No products matched that filter. Add a product above or clear the search to see the full catalog.
             </div>
           ) : null}
         </div>

@@ -20,7 +20,7 @@ export default async function CheckoutPage() {
       }
     }),
     prisma.category.findMany({
-      where: { shopId },
+      where: { shopId, isActive: true },
       orderBy: { name: 'asc' },
       select: {
         id: true,

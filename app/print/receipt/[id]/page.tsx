@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import ThermalReceipt from '@/components/receipts/ThermalReceipt';
-import { prisma } from '@/lib/prisma';
 import { getActiveShopContext } from '@/lib/auth/get-active-shop';
+import { prisma } from '@/lib/prisma';
 
 export default async function PrintReceiptPage({
   params,
@@ -24,7 +24,9 @@ export default async function PrintReceiptPage({
     })
   ]);
 
-  if (!sale) return notFound();
+  if (!sale) {
+    return notFound();
+  }
 
   return (
     <main className="min-h-screen bg-stone-50 p-6">

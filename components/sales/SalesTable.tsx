@@ -1,5 +1,6 @@
-import Card from '@/components/ui/Card';
 import Link from 'next/link';
+import Card from '@/components/ui/Card';
+import Badge from '@/components/ui/Badge';
 import { dateTime, money } from '@/lib/format';
 
 type Sale = {
@@ -11,6 +12,7 @@ type Sale = {
   createdAt: string;
   totalAmount: string;
   customerName: string | null;
+  status: string;
 };
 
 export default function SalesTable({
@@ -48,21 +50,18 @@ export default function SalesTable({
                   <div className="text-xs text-stone-500">{sale.receiptNumber}</div>
                 </td>
                 <td className="px-3 py-3">{sale.customerName ?? 'Walk-in customer'}</td>
-                <td className="px-3 py-3">{sale.paymentMethod}</td>
+                <td className="px-3 py-3">
+                  <Badge tone="blue">{sale.paymentMethod}</Badge>
+                </td>
                 <td className="px-3 py-3">{sale.cashierName ?? 'Cashier'}</td>
                 <td className="px-3 py-3">{dateTime(sale.createdAt)}</td>
-                <td className="px-3 py-3 font-semibold text-stone-900">
-                  {money(sale.totalAmount, currencySymbol)}
-                </td>
+                <td className="px-3 py-3 font-semibold text-stone-900">{money(sale.totalAmount, currencySymbol)}</td>
                 <td className="px-3 py-3">
                   <div className="flex flex-col gap-1">
                     <Link href={`/sales/${sale.id}`} className="text-xs font-semibold text-emerald-600">
                       View
                     </Link>
-                    <Link
-                      href={`/sales/${sale.id}/receipt`}
-                      className="text-xs font-semibold text-stone-600 hover:text-stone-900"
-                    >
+                    <Link href={`/sales/${sale.id}/receipt`} className="text-xs font-semibold text-stone-600 hover:text-stone-900">
                       Receipt
                     </Link>
                   </div>
@@ -72,9 +71,7 @@ export default function SalesTable({
           </tbody>
         </table>
 
-        {!sales.length ? (
-          <div className="py-6 text-sm text-stone-500">No sales yet.</div>
-        ) : null}
+        {!sales.length ? <div className="py-6 text-sm text-stone-500">No sales yet.</div> : null}
       </div>
     </Card>
   );
