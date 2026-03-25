@@ -167,3 +167,13 @@ export const passwordResetConsumeSchema = z.object({
   path: ['confirmPassword'],
   message: 'Passwords do not match'
 });
+
+export const cashSessionOpenSchema = z.object({
+  openingFloat: z.coerce.number().min(0, 'Opening float must be zero or greater.').max(999999.99),
+  notes: z.string().trim().max(500).optional().nullable()
+});
+
+export const cashSessionCloseSchema = z.object({
+  closingActual: z.coerce.number().min(0, 'Actual counted cash must be zero or greater.').max(999999.99),
+  notes: z.string().trim().max(500).optional().nullable()
+});
