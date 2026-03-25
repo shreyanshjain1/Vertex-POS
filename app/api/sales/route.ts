@@ -7,6 +7,7 @@ import { logActivity } from '@/lib/activity';
 import { getNextDocumentNumber } from '@/lib/document-sequence';
 import { collapseSaleItems, normalizeText, roundCurrency } from '@/lib/inventory';
 import { prisma } from '@/lib/prisma';
+import { CASH_PAYMENT_METHOD, getActiveCashSession } from '@/lib/register';
 
 function serializeSale<T extends { createdAt: Date; subtotal: { toString(): string }; taxAmount: { toString(): string }; discountAmount: { toString(): string }; totalAmount: { toString(): string } }>(
   sale: T
@@ -56,6 +57,16 @@ export async function POST(request: Request) {
         { error: parsed.error.issues[0]?.message ?? 'Invalid sale payload.' },
         { status: 400 }
       );
+    }
+
+    if (parsed.data.paymentMethod.trim() === CASH_PAYMENT_METHOD) {
+      const activeCashSession = await getActiveCashSession(prisma, shopId, userId);
+      if (!activeCashSession) {
+        return NextResponse.json(
+          { error: 'Open a register session before accepting cash sales.' },
+          { status: 409 }
+        );
+      }
     }
 
     const items = collapseSaleItems(parsed.data.items);
