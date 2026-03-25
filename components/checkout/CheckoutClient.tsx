@@ -40,13 +40,15 @@ export default function CheckoutClient({
   categories,
   taxRate,
   currencySymbol,
-  cashierName
+  cashierName,
+  hasActiveCashSession
 }: {
   products: Product[];
   categories: Category[];
   taxRate: number;
   currencySymbol: string;
   cashierName: string;
+  hasActiveCashSession: boolean;
 }) {
   const router = useRouter();
   const scanInputRef = useRef<HTMLInputElement>(null);
@@ -56,13 +58,14 @@ export default function CheckoutClient({
   const [scanQuery, setScanQuery] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [discountAmount, setDiscountAmount] = useState('0');
-  const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [paymentMethod, setPaymentMethod] = useState(() => (hasActiveCashSession ? 'Cash' : 'Card'));
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
   const [scanFeedback, setScanFeedback] = useState<ScanFeedback>(null);
   const [loading, setLoading] = useState(false);
+  const canAcceptCash = hasActiveCashSession;
 
   const filtered = useMemo(() => {
     const term = query.toLowerCase().trim();
@@ -551,6 +554,12 @@ export default function CheckoutClient({
             <p className="mt-1 text-sm text-stone-500">Optional customer details help with receipt context and follow-up support.</p>
           </div>
 
+          {!canAcceptCash ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Open a register session first to accept cash payments. Non-cash payments can still be processed safely.
+            </div>
+          ) : null}
+
           <div className="grid gap-3 md:grid-cols-2">
             <Input
               placeholder="Customer name"
@@ -570,7 +579,9 @@ export default function CheckoutClient({
               value={paymentMethod}
               onChange={(event) => setPaymentMethod(event.target.value)}
             >
-              <option>Cash</option>
+              <option value="Cash" disabled={!canAcceptCash}>
+                {canAcceptCash ? 'Cash' : 'Cash (open register required)'}
+              </option>
               <option>Card</option>
               <option>E-Wallet</option>
               <option>Bank Transfer</option>

@@ -2,11 +2,12 @@ import AppHeader from '@/components/layout/AppHeader';
 import CheckoutClient from '@/components/checkout/CheckoutClient';
 import { getActiveShopContext } from '@/lib/auth/get-active-shop';
 import { prisma } from '@/lib/prisma';
+import { getActiveCashSession } from '@/lib/register';
 
 export default async function CheckoutPage() {
   const { shopId, session } = await getActiveShopContext();
 
-  const [products, categories, settings] = await Promise.all([
+  const [products, categories, settings, activeCashSession] = await Promise.all([
     prisma.product.findMany({
       where: { shopId, isActive: true },
       orderBy: { name: 'asc' },
@@ -29,7 +30,8 @@ export default async function CheckoutPage() {
     }),
     prisma.shopSetting.findUnique({
       where: { shopId }
-    })
+    }),
+    getActiveCashSession(prisma, shopId, session.user.id)
   ]);
 
   return (
@@ -57,8 +59,9 @@ export default async function CheckoutPage() {
         }))}
         categories={categories}
         taxRate={Number(settings?.taxRate ?? 12)}
-        currencySymbol={settings?.currencySymbol ?? '₱'}
+        currencySymbol={settings?.currencySymbol ?? 'â‚±'}
         cashierName={session.user.name ?? 'Cashier'}
+        hasActiveCashSession={Boolean(activeCashSession)}
       />
     </div>
   );
