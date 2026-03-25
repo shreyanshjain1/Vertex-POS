@@ -206,6 +206,7 @@ model Sale {
   taxAmount      Decimal     @db.Decimal(12, 2)
   discountAmount Decimal     @db.Decimal(12, 2)
   totalAmount    Decimal     @db.Decimal(12, 2)
+  changeDue      Decimal     @default(0) @db.Decimal(12, 2)
   paymentMethod  String
   notes          String?
   cashierName    String?
@@ -213,6 +214,7 @@ model Sale {
   shop           Shop        @relation(fields: [shopId], references: [id], onDelete: Cascade)
   cashierUser    User?       @relation("CashierUser", fields: [cashierUserId], references: [id], onDelete: SetNull)
   items          SaleItem[]
+  payments       SalePayment[]
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
@@ -254,6 +256,19 @@ model SaleItem {
 
   @@index([saleId])
   @@index([productId])
+}
+
+model SalePayment {
+  id              String   @id @default(cuid())
+  saleId          String
+  method          String
+  amount          Decimal  @db.Decimal(12, 2)
+  referenceNumber String?
+  createdAt       DateTime @default(now())
+  sale            Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId, createdAt])
+  @@index([method, createdAt])
 }
 
 model InventoryMovement {
