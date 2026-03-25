@@ -110,6 +110,17 @@ export const saleSchema = z.object({
   })).min(1)
 });
 
+export const parkedSaleCreateSchema = z.object({
+  customerName: z.string().trim().max(120).optional().nullable(),
+  customerPhone: z.string().trim().max(40).optional().nullable(),
+  discountAmount: z.coerce.number().min(0).default(0),
+  notes: z.string().trim().max(300).optional().nullable(),
+  items: z.array(z.object({
+    productId: z.string().trim().min(1),
+    qty: z.coerce.number().int().positive()
+  })).min(1, 'Add at least one item before holding the cart.')
+});
+
 export const purchaseSchema = z.object({
   supplierId: z.string().trim().min(1),
   status: z.enum(['DRAFT', 'RECEIVED', 'CANCELLED']).default('DRAFT'),
