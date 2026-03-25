@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
@@ -24,9 +24,16 @@ type Product = {
 };
 
 type CartItem = Product & { qty: number };
+type ScanFeedback = { tone: 'success' | 'error'; message: string } | null;
 
-const selectClassName =
-  'h-11 w-full rounded-2xl border border-stone-200 bg-white/88 px-4 text-sm text-stone-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] outline-none transition hover:border-stone-300 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10';
+function isTypingTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  const tagName = target.tagName;
+  return target.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
+}
 
 export default function CheckoutClient({
   products,
@@ -42,8 +49,11 @@ export default function CheckoutClient({
   cashierName: string;
 }) {
   const router = useRouter();
+  const scanInputRef = useRef<HTMLInputElement>(null);
+  const cartRef = useRef<CartItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [query, setQuery] = useState('');
+  const [scanQuery, setScanQuery] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [discountAmount, setDiscountAmount] = useState('0');
   const [paymentMethod, setPaymentMethod] = useState('Cash');
@@ -51,6 +61,7 @@ export default function CheckoutClient({
   const [customerPhone, setCustomerPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
+  const [scanFeedback, setScanFeedback] = useState<ScanFeedback>(null);
   const [loading, setLoading] = useState(false);
 
   const filtered = useMemo(() => {
@@ -76,30 +87,49 @@ export default function CheckoutClient({
   const taxAmount = subtotal * (taxRate / 100);
   const discount = Number(discountAmount || 0);
   const total = Math.max(subtotal + taxAmount - discount, 0);
+  const canCompleteSale = cart.length > 0 && !loading && discount >= 0 && discount <= subtotal + taxAmount;
+
+  useEffect(() => {
+    cartRef.current = cart;
+  }, [cart]);
+
+  function focusScanInput(selectText = false) {
+    const input = scanInputRef.current;
+    if (!input) {
+      return;
+    }
+
+    input.focus();
+    if (selectText) {
+      input.select();
+    }
+  }
 
   function addToCart(product: Product) {
     setError('');
-    setCart((currentCart) => {
-      const existing = currentCart.find((item) => item.id === product.id);
+    const existing = cartRef.current.find((item) => item.id === product.id);
 
-      if (existing) {
-        if (existing.qty + 1 > product.stockQty) {
-          setError(`Cannot oversell. ${product.name} only has ${product.stockQty} in stock.`);
-          return currentCart;
-        }
+    if (existing) {
+      if (existing.qty + 1 > product.stockQty) {
+        setError(`Cannot oversell. ${product.name} only has ${product.stockQty} in stock.`);
+        return false;
+      }
 
-        return currentCart.map((item) =>
+      setCart((currentCart) =>
+        currentCart.map((item) =>
           item.id === product.id ? { ...item, qty: item.qty + 1 } : item
-        );
-      }
+        )
+      );
+      return true;
+    }
 
-      if (product.stockQty <= 0) {
-        setError(`${product.name} is out of stock.`);
-        return currentCart;
-      }
+    if (product.stockQty <= 0) {
+      setError(`${product.name} is out of stock.`);
+      return false;
+    }
 
-      return [...currentCart, { ...product, qty: 1 }];
-    });
+    setCart((currentCart) => [...currentCart, { ...product, qty: 1 }]);
+    return true;
   }
 
   function updateQty(productId: string, direction: 'increase' | 'decrease') {
@@ -108,6 +138,8 @@ export default function CheckoutClient({
       return;
     }
 
+    setError('');
+    setScanFeedback(null);
     setCart((currentCart) => {
       const existing = currentCart.find((item) => item.id === productId);
       if (!existing) {
@@ -131,6 +163,8 @@ export default function CheckoutClient({
   }
 
   function removeFromCart(productId: string) {
+    setError('');
+    setScanFeedback(null);
     setCart((currentCart) => currentCart.filter((item) => item.id !== productId));
   }
 
@@ -140,7 +174,74 @@ export default function CheckoutClient({
     setCustomerName('');
     setCustomerPhone('');
     setNotes('');
+    setScanQuery('');
+    setScanFeedback(null);
     setError('');
+  }
+
+  function requestClearCart() {
+    if (!cart.length || loading) {
+      return;
+    }
+
+    const shouldClear = window.confirm('Clear all items from the current cart?');
+    if (!shouldClear) {
+      return;
+    }
+
+    clearCart();
+    focusScanInput();
+  }
+
+  function findProductByScan(value: string) {
+    const normalizedValue = value.trim();
+    const normalizedSku = normalizedValue.toLowerCase();
+
+    return (
+      products.find((product) => product.barcode?.trim() === normalizedValue) ??
+      products.find((product) => product.sku?.trim().toLowerCase() === normalizedSku) ??
+      null
+    );
+  }
+
+  function handleScanSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const value = scanQuery.trim();
+    setError('');
+    setScanFeedback(null);
+
+    if (!value) {
+      setScanFeedback({
+        tone: 'error',
+        message: 'Scan or enter a barcode/SKU, then press Enter to add it.'
+      });
+      focusScanInput();
+      return;
+    }
+
+    const product = findProductByScan(value);
+    if (!product) {
+      setScanFeedback({
+        tone: 'error',
+        message: `No product matched barcode/SKU "${value}".`
+      });
+      focusScanInput(true);
+      return;
+    }
+
+    const added = addToCart(product);
+    if (!added) {
+      focusScanInput(true);
+      return;
+    }
+
+    setScanQuery('');
+    setScanFeedback({
+      tone: 'success',
+      message: `${product.name} added to cart.`
+    });
+    focusScanInput();
   }
 
   async function completeSale() {
@@ -200,6 +301,42 @@ export default function CheckoutClient({
     }
   }
 
+  const handleCompleteSaleShortcut = useEffectEvent(() => {
+    void completeSale();
+  });
+
+  const handleClearCartShortcut = useEffectEvent(() => {
+    requestClearCart();
+  });
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'F2') {
+        event.preventDefault();
+        focusScanInput(true);
+        return;
+      }
+
+      if (isTypingTarget(event.target)) {
+        return;
+      }
+
+      if (event.key === 'F9' && canCompleteSale) {
+        event.preventDefault();
+        handleCompleteSaleShortcut();
+        return;
+      }
+
+      if (event.key === 'F4' && cart.length) {
+        event.preventDefault();
+        handleClearCartShortcut();
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [canCompleteSale, cart.length]);
+
   return (
     <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
       <Card className="overflow-hidden">
@@ -225,19 +362,18 @@ export default function CheckoutClient({
           </div>
 
           <div className="rounded-[24px] border border-stone-200 bg-stone-50/80 p-3 sm:p-4">
-            <div className="grid gap-3 md:grid-cols-[240px_1fr]">
-              <select
-                className={selectClassName}
-                value={selectedCategory}
-                onChange={(event) => setSelectedCategory(event.target.value)}
-              >
-                <option value="">All categories</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,320px)_1fr]">
+              <form onSubmit={handleScanSubmit} className="flex gap-3">
+                <Input
+                  ref={scanInputRef}
+                  placeholder="Scan barcode or enter SKU"
+                  value={scanQuery}
+                  onChange={(event) => setScanQuery(event.target.value)}
+                />
+                <Button type="submit" variant="secondary" className="shrink-0">
+                  Add
+                </Button>
+              </form>
 
               <Input
                 placeholder="Search by product name, SKU, barcode..."
@@ -245,6 +381,58 @@ export default function CheckoutClient({
                 onChange={(event) => setQuery(event.target.value)}
               />
             </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedCategory('')}
+                className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                  !selectedCategory
+                    ? 'border-emerald-600 bg-emerald-600 text-white shadow-[0_14px_28px_-22px_rgba(5,150,105,0.9)]'
+                    : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300 hover:bg-stone-50'
+                }`}
+              >
+                All
+              </button>
+              {categories.map((category) => (
+                <button
+                  key={category.id}
+                  type="button"
+                  onClick={() => setSelectedCategory(category.id)}
+                  className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                    selectedCategory === category.id
+                      ? 'border-emerald-600 bg-emerald-600 text-white shadow-[0_14px_28px_-22px_rgba(5,150,105,0.9)]'
+                      : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300 hover:bg-stone-50'
+                  }`}
+                >
+                  {category.name}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-500">
+              <span className="rounded-full border border-stone-200 bg-white px-3 py-1.5 font-semibold text-stone-600">
+                F2 focus scan
+              </span>
+              <span className="rounded-full border border-stone-200 bg-white px-3 py-1.5 font-semibold text-stone-600">
+                F9 complete sale
+              </span>
+              <span className="rounded-full border border-stone-200 bg-white px-3 py-1.5 font-semibold text-stone-600">
+                F4 clear cart
+              </span>
+            </div>
+
+            {scanFeedback ? (
+              <div
+                className={`mt-3 rounded-2xl border px-4 py-3 text-sm ${
+                  scanFeedback.tone === 'success'
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : 'border-red-200 bg-red-50 text-red-700'
+                }`}
+              >
+                {scanFeedback.message}
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -261,7 +449,10 @@ export default function CheckoutClient({
               <button
                 key={product.id}
                 type="button"
-                onClick={() => addToCart(product)}
+                onClick={() => {
+                  setScanFeedback(null);
+                  addToCart(product);
+                }}
                 className="group rounded-[24px] border border-stone-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,245,244,0.92))] p-4 text-left shadow-[0_18px_36px_-30px_rgba(28,25,23,0.35)] transition hover:-translate-y-1 hover:border-emerald-300 hover:shadow-[0_22px_40px_-28px_rgba(5,150,105,0.35)]"
               >
                 <div className="flex items-start justify-between gap-3">
@@ -375,7 +566,7 @@ export default function CheckoutClient({
 
           <div className="grid gap-3 md:grid-cols-2">
             <select
-              className={selectClassName}
+              className="h-11 w-full rounded-2xl border border-stone-200 bg-white/88 px-4 text-sm text-stone-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] outline-none transition hover:border-stone-300 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
               value={paymentMethod}
               onChange={(event) => setPaymentMethod(event.target.value)}
             >
@@ -450,10 +641,10 @@ export default function CheckoutClient({
         ) : null}
 
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-          <Button type="button" className="flex-1" disabled={!cart.length || loading} onClick={completeSale}>
+          <Button type="button" className="flex-1" disabled={!canCompleteSale} onClick={() => void completeSale()}>
             {loading ? 'Completing sale...' : 'Complete sale'}
           </Button>
-          <Button type="button" variant="secondary" className="sm:min-w-32" disabled={!cart.length || loading} onClick={clearCart}>
+          <Button type="button" variant="secondary" className="sm:min-w-32" disabled={!cart.length || loading} onClick={requestClearCart}>
             Clear
           </Button>
         </div>

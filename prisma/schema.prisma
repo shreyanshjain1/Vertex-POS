@@ -325,6 +325,7 @@ model ShopSetting {
   taxRate            Decimal  @default(0) @db.Decimal(5, 2)
   receiptHeader      String?
   receiptFooter      String?
+  receiptWidth       String   @default("80mm")
   lowStockEnabled    Boolean  @default(true)
   lowStockThreshold  Int      @default(5)
   salePrefix         String   @default("SAL")

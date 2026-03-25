@@ -5,6 +5,8 @@ import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
 
+type ReceiptWidth = '58mm' | '80mm';
+
 type Props = {
   initialValues: {
     shopName: string;
@@ -17,6 +19,7 @@ type Props = {
     taxRate: string;
     receiptHeader: string | null;
     receiptFooter: string | null;
+    receiptWidth: ReceiptWidth;
     lowStockEnabled: boolean;
     lowStockThreshold: number;
     salePrefix: string;
@@ -24,6 +27,9 @@ type Props = {
     purchasePrefix: string;
   };
 };
+
+const selectClassName =
+  'h-11 w-full rounded-2xl border border-stone-200 bg-white/88 px-4 text-sm text-stone-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] outline-none transition hover:border-stone-300 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10';
 
 function Section({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   return (
@@ -106,9 +112,24 @@ export default function SettingsForm({ initialValues }: Props) {
       </Section>
 
       <Section title="Receipt content" description="Short, readable content prints best on thermal paper.">
-        <div className="grid gap-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-stone-700">Receipt width</div>
+            <select
+              className={selectClassName}
+              value={form.receiptWidth}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, receiptWidth: event.target.value as ReceiptWidth }))
+              }
+            >
+              <option value="58mm">58mm thermal roll</option>
+              <option value="80mm">80mm thermal roll</option>
+            </select>
+          </div>
           <Input placeholder="Receipt header" value={form.receiptHeader ?? ''} onChange={(event) => setForm((current) => ({ ...current, receiptHeader: event.target.value }))} />
-          <Input placeholder="Receipt footer" value={form.receiptFooter ?? ''} onChange={(event) => setForm((current) => ({ ...current, receiptFooter: event.target.value }))} />
+          <div className="md:col-span-2">
+            <Input placeholder="Receipt footer" value={form.receiptFooter ?? ''} onChange={(event) => setForm((current) => ({ ...current, receiptFooter: event.target.value }))} />
+          </div>
         </div>
       </Section>
 

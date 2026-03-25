@@ -35,6 +35,7 @@ export default async function PrintReceiptPage({
         currencySymbol={settings?.currencySymbol ?? '₱'}
         receiptHeader={settings?.receiptHeader}
         receiptFooter={settings?.receiptFooter}
+        receiptWidth={settings?.receiptWidth === '58mm' ? '58mm' : '80mm'}
         shop={{
           name: shop.name,
           address: shop.address,

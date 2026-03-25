@@ -57,6 +57,7 @@ async function main() {
       taxRate: 12,
       receiptHeader: 'Paws & Beans Demo',
       receiptFooter: 'Thank you for visiting Paws & Beans. See you again soon!',
+      receiptWidth: '80mm',
       lowStockThreshold: 8,
       salePrefix: 'SAL',
       receiptPrefix: 'RCP',

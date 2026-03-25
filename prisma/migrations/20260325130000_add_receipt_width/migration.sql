@@ -1,0 +1,2 @@
+ALTER TABLE "ShopSetting"
+ADD COLUMN "receiptWidth" TEXT NOT NULL DEFAULT '80mm';

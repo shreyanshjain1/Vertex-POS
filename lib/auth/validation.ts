@@ -122,6 +122,7 @@ export const settingSchema = z.object({
   taxRate: z.coerce.number().min(0).max(100),
   receiptHeader: z.string().trim().max(255).optional().nullable(),
   receiptFooter: z.string().trim().max(255).optional().nullable(),
+  receiptWidth: z.enum(['58mm', '80mm']),
   lowStockEnabled: z.coerce.boolean(),
   lowStockThreshold: z.coerce.number().int().min(0).max(9999),
   salePrefix: z.string().trim().min(2).max(10).regex(/^[A-Za-z0-9]+$/, 'Use letters or numbers only for the sale prefix'),
