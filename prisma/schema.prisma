@@ -70,6 +70,13 @@ enum CashSessionStatus {
   OVERRIDE_CLOSED
 }
 
+enum ParkedSaleStatus {
+  HELD
+  RESUMED
+  CANCELLED
+  EXPIRED
+}
+
 model User {
   id                       String               @id @default(cuid())
   email                    String               @unique
@@ -81,6 +88,7 @@ model User {
   memberships              UserShop[]
   cashierSales             Sale[]               @relation("CashierUser")
   cashSessions             CashSession[]
+  parkedSales              ParkedSale[]
   activities               ActivityLog[]
   authAuditLogs            AuthAuditLog[]
   passwordResetTokens      PasswordResetToken[] @relation("PasswordResetTokenUser")
@@ -108,6 +116,7 @@ model Shop {
   categories     Category[]
   products       Product[]
   sales          Sale[]
+  parkedSales    ParkedSale[]
   suppliers      Supplier[]
   purchases      PurchaseOrder[]
   cashSessions   CashSession[]
@@ -269,6 +278,47 @@ model SalePayment {
 
   @@index([saleId, createdAt])
   @@index([method, createdAt])
+}
+
+model ParkedSale {
+  id            String           @id @default(cuid())
+  shopId        String
+  cashierUserId String
+  customerName  String?
+  customerPhone String?
+  notes         String?
+  subtotal      Decimal          @db.Decimal(12, 2)
+  taxAmount     Decimal          @db.Decimal(12, 2)
+  discountAmount Decimal         @db.Decimal(12, 2)
+  totalAmount   Decimal          @db.Decimal(12, 2)
+  status        ParkedSaleStatus @default(HELD)
+  expiresAt     DateTime
+  resumedAt     DateTime?
+  cancelledAt   DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  shop          Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  cashier       User             @relation(fields: [cashierUserId], references: [id], onDelete: Restrict)
+  items         ParkedSaleItem[]
+
+  @@index([shopId, status, createdAt])
+  @@index([shopId, status, expiresAt])
+  @@index([cashierUserId, status, createdAt])
+}
+
+model ParkedSaleItem {
+  id           String     @id @default(cuid())
+  parkedSaleId String
+  productId    String
+  productName  String
+  qty          Int
+  unitPrice    Decimal    @db.Decimal(12, 2)
+  lineTotal    Decimal    @db.Decimal(12, 2)
+  createdAt    DateTime   @default(now())
+  parkedSale   ParkedSale @relation(fields: [parkedSaleId], references: [id], onDelete: Cascade)
+
+  @@index([parkedSaleId, createdAt])
+  @@index([productId])
 }
 
 model InventoryMovement {
