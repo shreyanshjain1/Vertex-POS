@@ -1,15 +1,23 @@
 import { NextResponse } from 'next/server';
-import { requireRole } from '@/lib/authz';
-import { prisma } from '@/lib/prisma';
 import { settingSchema } from '@/lib/auth/validation';
+import { requireRole } from '@/lib/authz';
+import { apiErrorResponse } from '@/lib/api';
+import { logActivity } from '@/lib/activity';
+import { normalizeText } from '@/lib/inventory';
+import { prisma } from '@/lib/prisma';
 
 export async function GET() {
-  const { shopId } = await requireRole('MANAGER');
-  const [shop, settings] = await Promise.all([
-    prisma.shop.findUnique({ where: { id: shopId } }),
-    prisma.shopSetting.findUnique({ where: { shopId } })
-  ]);
-  return NextResponse.json({ shop, settings });
+  try {
+    const { shopId } = await requireRole('MANAGER');
+    const [shop, settings] = await Promise.all([
+      prisma.shop.findUnique({ where: { id: shopId } }),
+      prisma.shopSetting.findUnique({ where: { shopId } })
+    ]);
+
+    return NextResponse.json({ shop, settings });
+  } catch (error) {
+    return apiErrorResponse(error, 'Unable to load settings.');
+  }
 }
 
 export async function PUT(request: Request) {
@@ -17,19 +25,68 @@ export async function PUT(request: Request) {
     const { shopId, userId } = await requireRole('MANAGER');
     const body = await request.json();
     const parsed = settingSchema.safeParse(body);
-    if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid settings.' }, { status: 400 });
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues[0]?.message ?? 'Invalid settings.' },
+        { status: 400 }
+      );
+    }
+
     await prisma.$transaction(async (tx) => {
-      await tx.shop.update({ where: { id: shopId }, data: { name: parsed.data.shopName, phone: parsed.data.phone || null, email: parsed.data.email || null, address: parsed.data.address || null, taxId: parsed.data.taxId || null } });
+      await tx.shop.update({
+        where: { id: shopId },
+        data: {
+          name: parsed.data.shopName.trim(),
+          phone: normalizeText(parsed.data.phone),
+          email: normalizeText(parsed.data.email),
+          address: normalizeText(parsed.data.address),
+          taxId: normalizeText(parsed.data.taxId)
+        }
+      });
+
       await tx.shopSetting.upsert({
         where: { shopId },
-        update: { currencyCode: parsed.data.currencyCode, currencySymbol: parsed.data.currencySymbol, taxRate: parsed.data.taxRate, receiptHeader: parsed.data.receiptHeader || null, receiptFooter: parsed.data.receiptFooter || null, lowStockEnabled: parsed.data.lowStockEnabled, lowStockThreshold: parsed.data.lowStockThreshold, salePrefix: parsed.data.salePrefix, receiptPrefix: parsed.data.receiptPrefix, purchasePrefix: parsed.data.purchasePrefix },
-        create: { shopId, currencyCode: parsed.data.currencyCode, currencySymbol: parsed.data.currencySymbol, taxRate: parsed.data.taxRate, receiptHeader: parsed.data.receiptHeader || null, receiptFooter: parsed.data.receiptFooter || null, lowStockEnabled: parsed.data.lowStockEnabled, lowStockThreshold: parsed.data.lowStockThreshold, salePrefix: parsed.data.salePrefix, receiptPrefix: parsed.data.receiptPrefix, purchasePrefix: parsed.data.purchasePrefix }
+        update: {
+          currencyCode: parsed.data.currencyCode.trim().toUpperCase(),
+          currencySymbol: parsed.data.currencySymbol.trim(),
+          taxRate: parsed.data.taxRate,
+          receiptHeader: normalizeText(parsed.data.receiptHeader),
+          receiptFooter: normalizeText(parsed.data.receiptFooter),
+          lowStockEnabled: parsed.data.lowStockEnabled,
+          lowStockThreshold: parsed.data.lowStockThreshold,
+          salePrefix: parsed.data.salePrefix.trim().toUpperCase(),
+          receiptPrefix: parsed.data.receiptPrefix.trim().toUpperCase(),
+          purchasePrefix: parsed.data.purchasePrefix.trim().toUpperCase()
+        },
+        create: {
+          shopId,
+          currencyCode: parsed.data.currencyCode.trim().toUpperCase(),
+          currencySymbol: parsed.data.currencySymbol.trim(),
+          taxRate: parsed.data.taxRate,
+          receiptHeader: normalizeText(parsed.data.receiptHeader),
+          receiptFooter: normalizeText(parsed.data.receiptFooter),
+          lowStockEnabled: parsed.data.lowStockEnabled,
+          lowStockThreshold: parsed.data.lowStockThreshold,
+          salePrefix: parsed.data.salePrefix.trim().toUpperCase(),
+          receiptPrefix: parsed.data.receiptPrefix.trim().toUpperCase(),
+          purchasePrefix: parsed.data.purchasePrefix.trim().toUpperCase()
+        }
       });
-      await tx.activityLog.create({ data: { shopId, userId, action: 'SETTINGS_UPDATED', entityType: 'ShopSetting', entityId: shopId, description: 'Updated shop settings.' } });
+
+      await logActivity({
+        tx,
+        shopId,
+        userId,
+        action: 'SETTINGS_UPDATED',
+        entityType: 'ShopSetting',
+        entityId: shopId,
+        description: 'Updated shop settings.'
+      });
     });
+
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: 'Unable to save settings.' }, { status: 500 });
+    return apiErrorResponse(error, 'Unable to save settings.');
   }
 }

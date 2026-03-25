@@ -1,4 +1,11 @@
-import { PrismaClient, PurchaseStatus, ShopRole, ShopType, WorkerJobType } from '@prisma/client';
+import {
+  DocumentSequenceType,
+  PrismaClient,
+  PurchaseStatus,
+  ShopRole,
+  ShopType,
+  WorkerJobType
+} from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -75,23 +82,18 @@ async function main() {
   const coffee = await prisma.category.create({
     data: { shopId: shop.id, name: 'Coffee', slug: 'coffee' }
   });
-
   const nonCoffee = await prisma.category.create({
     data: { shopId: shop.id, name: 'Non-Coffee', slug: 'non-coffee' }
   });
-
   const pastries = await prisma.category.create({
     data: { shopId: shop.id, name: 'Pastries', slug: 'pastries' }
   });
-
   const groomingPackages = await prisma.category.create({
     data: { shopId: shop.id, name: 'Grooming Packages', slug: 'grooming-packages' }
   });
-
   const groomingAddons = await prisma.category.create({
     data: { shopId: shop.id, name: 'Grooming Add-ons', slug: 'grooming-addons' }
   });
-
   const petCareRetail = await prisma.category.create({
     data: { shopId: shop.id, name: 'Pet Care Retail', slug: 'pet-care-retail' }
   });
@@ -108,7 +110,7 @@ async function main() {
     }
   });
 
-  const petSupplier = await prisma.supplier.create({
+  await prisma.supplier.create({
     data: {
       shopId: shop.id,
       name: 'Pet Grooming Essentials Hub',
@@ -121,34 +123,23 @@ async function main() {
   });
 
   const productData = [
-    // Coffee
     { categoryId: coffee.id, sku: 'COF-001', barcode: '480100100001', name: 'Espresso', description: 'Single shot espresso', cost: 28, price: 90, stockQty: 50, reorderPoint: 10 },
     { categoryId: coffee.id, sku: 'COF-002', barcode: '480100100002', name: 'Americano', description: 'Hot americano', cost: 30, price: 110, stockQty: 45, reorderPoint: 10 },
     { categoryId: coffee.id, sku: 'COF-003', barcode: '480100100003', name: 'Latte', description: 'Cafe latte', cost: 42, price: 150, stockQty: 35, reorderPoint: 10 },
     { categoryId: coffee.id, sku: 'COF-004', barcode: '480100100004', name: 'Cappuccino', description: 'Classic cappuccino', cost: 40, price: 145, stockQty: 28, reorderPoint: 8 },
     { categoryId: coffee.id, sku: 'COF-005', barcode: '480100100005', name: 'Mocha', description: 'Chocolate coffee drink', cost: 48, price: 165, stockQty: 22, reorderPoint: 8 },
-
-    // Non coffee
     { categoryId: nonCoffee.id, sku: 'NCO-001', barcode: '480100100006', name: 'Iced Tea', description: 'House iced tea', cost: 18, price: 75, stockQty: 30, reorderPoint: 8 },
     { categoryId: nonCoffee.id, sku: 'NCO-002', barcode: '480100100007', name: 'Matcha Latte', description: 'Creamy matcha latte', cost: 38, price: 155, stockQty: 18, reorderPoint: 6 },
-
-    // Pastries
     { categoryId: pastries.id, sku: 'PAS-001', barcode: '480100100008', name: 'Croissant', description: 'Butter croissant', cost: 28, price: 85, stockQty: 15, reorderPoint: 5 },
     { categoryId: pastries.id, sku: 'PAS-002', barcode: '480100100009', name: 'Blueberry Muffin', description: 'Blueberry muffin', cost: 32, price: 95, stockQty: 12, reorderPoint: 5 },
-
-    // Grooming packages
     { categoryId: groomingPackages.id, sku: 'GRM-001', barcode: '480100100010', name: 'Basic Bath', description: 'Dog bath and dry service', cost: 180, price: 450, stockQty: 999, reorderPoint: 0 },
     { categoryId: groomingPackages.id, sku: 'GRM-002', barcode: '480100100011', name: 'Full Grooming', description: 'Full grooming package', cost: 300, price: 850, stockQty: 999, reorderPoint: 0 },
-
-    // Grooming add-ons
     { categoryId: groomingAddons.id, sku: 'GRA-001', barcode: '480100100012', name: 'Nail Trimming', description: 'Quick nail trimming add-on', cost: 40, price: 120, stockQty: 999, reorderPoint: 0 },
     { categoryId: groomingAddons.id, sku: 'GRA-002', barcode: '480100100013', name: 'Ear Cleaning', description: 'Ear cleaning add-on', cost: 35, price: 100, stockQty: 999, reorderPoint: 0 },
     { categoryId: groomingAddons.id, sku: 'GRA-003', barcode: '480100100014', name: 'Tick & Flea Treatment', description: 'Treatment add-on', cost: 90, price: 220, stockQty: 999, reorderPoint: 0 },
     { categoryId: groomingAddons.id, sku: 'GRA-004', barcode: '480100100015', name: 'De-shedding Treatment', description: 'Premium de-shedding add-on', cost: 120, price: 280, stockQty: 999, reorderPoint: 0 },
     { categoryId: groomingAddons.id, sku: 'GRA-005', barcode: '480100100016', name: 'Teeth Brushing', description: 'Teeth brushing add-on', cost: 30, price: 90, stockQty: 999, reorderPoint: 0 },
     { categoryId: groomingAddons.id, sku: 'GRA-006', barcode: '480100100017', name: 'Paw Balm Treatment', description: 'Paw care add-on', cost: 25, price: 80, stockQty: 999, reorderPoint: 0 },
-
-    // Pet care retail
     { categoryId: petCareRetail.id, sku: 'PET-001', barcode: '480100100018', name: 'Pet Shampoo 250ml', description: 'Retail pet shampoo', cost: 120, price: 220, stockQty: 9, reorderPoint: 8 },
     { categoryId: petCareRetail.id, sku: 'PET-002', barcode: '480100100019', name: 'Dental Chew Pack', description: 'Dog dental chew pack', cost: 75, price: 145, stockQty: 11, reorderPoint: 6 }
   ];
@@ -173,13 +164,14 @@ async function main() {
   }
 
   for (const product of products) {
-    if (product.stockQty > 0 && product.stockQty < 999) {
+    if (product.stockQty > 0) {
       await prisma.inventoryMovement.create({
         data: {
           shopId: shop.id,
           productId: product.id,
           type: 'OPENING_STOCK',
           qtyChange: product.stockQty,
+          userId: owner.id,
           notes: 'Seed opening stock'
         }
       });
@@ -190,7 +182,7 @@ async function main() {
     data: {
       shopId: shop.id,
       supplierId: coffeeSupplier.id,
-      purchaseNumber: 'PO-20260323-1001',
+      purchaseNumber: 'PO-20260325-0001',
       status: PurchaseStatus.RECEIVED,
       totalAmount: 1510,
       receivedAt: new Date(),
@@ -206,32 +198,59 @@ async function main() {
     }
   });
 
-  await prisma.inventoryMovement.createMany({
+  for (const [index, qty, cost] of [
+    [0, 20, 28],
+    [2, 10, 42],
+    [7, 10, 28],
+    [8, 10, 25]
+  ] as const) {
+    await prisma.product.update({
+      where: { id: products[index].id },
+      data: {
+        stockQty: { increment: qty },
+        cost
+      }
+    });
+
+    await prisma.inventoryMovement.create({
+      data: {
+        shopId: shop.id,
+        productId: products[index].id,
+        type: 'PURCHASE_RECEIVED',
+        qtyChange: qty,
+        referenceId: purchase.id,
+        userId: manager.id,
+        notes: 'Seed purchase'
+      }
+    });
+  }
+
+  await prisma.activityLog.createMany({
     data: [
       {
         shopId: shop.id,
-        productId: products[0].id,
-        type: 'PURCHASE_RECEIVED',
-        qtyChange: 20,
-        referenceId: purchase.id,
-        notes: 'Seed purchase'
+        userId: owner.id,
+        action: 'SHOP_ONBOARDED',
+        entityType: 'Shop',
+        entityId: shop.id,
+        description: `Completed onboarding for ${shop.name}.`
       },
       {
         shopId: shop.id,
-        productId: products[2].id,
-        type: 'PURCHASE_RECEIVED',
-        qtyChange: 10,
-        referenceId: purchase.id,
-        notes: 'Seed purchase'
-      },
-      {
-        shopId: shop.id,
-        productId: products[7].id,
-        type: 'PURCHASE_RECEIVED',
-        qtyChange: 10,
-        referenceId: purchase.id,
-        notes: 'Seed purchase'
+        userId: manager.id,
+        action: 'PURCHASE_RECEIVED',
+        entityType: 'PurchaseOrder',
+        entityId: purchase.id,
+        description: `Received purchase ${purchase.purchaseNumber}.`
       }
+    ]
+  });
+
+  await prisma.documentSequence.createMany({
+    data: [
+      { shopId: shop.id, type: DocumentSequenceType.SALE, dateKey: '20260325', value: 0 },
+      { shopId: shop.id, type: DocumentSequenceType.RECEIPT, dateKey: '20260325', value: 0 },
+      { shopId: shop.id, type: DocumentSequenceType.PURCHASE, dateKey: '20260325', value: 1 }
     ]
   });
 
