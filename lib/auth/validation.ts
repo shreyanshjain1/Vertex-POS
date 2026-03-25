@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PAYMENT_METHODS } from '@/lib/payments';
 
 const shopRoleSchema = z.enum(['ADMIN', 'MANAGER', 'CASHIER']);
 const optionalText = () => z.string().trim().optional().nullable();
@@ -91,12 +92,18 @@ export const supplierSchema = z.object({
   isActive: z.coerce.boolean().optional().default(true)
 });
 
+const salePaymentSchema = z.object({
+  method: z.enum(PAYMENT_METHODS),
+  amount: z.coerce.number().positive('Payment amount must be greater than zero.').max(999999.99),
+  referenceNumber: z.string().trim().max(80).optional().nullable()
+});
+
 export const saleSchema = z.object({
   customerName: z.string().trim().max(120).optional().nullable(),
   customerPhone: z.string().trim().max(40).optional().nullable(),
-  paymentMethod: z.enum(['Cash', 'Card', 'E-Wallet', 'Bank Transfer']),
   discountAmount: z.coerce.number().min(0).default(0),
   notes: z.string().trim().max(300).optional().nullable(),
+  payments: z.array(salePaymentSchema).min(1, 'Add at least one payment line.'),
   items: z.array(z.object({
     productId: z.string().trim().min(1),
     qty: z.coerce.number().int().positive()
