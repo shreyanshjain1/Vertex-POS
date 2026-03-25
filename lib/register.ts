@@ -45,25 +45,61 @@ export async function computeClosingExpectedCash(
   session: Pick<CashSession, 'shopId' | 'userId' | 'openedAt' | 'openingFloat'>,
   closingAt: Date
 ) {
-  const cashSales = await db.sale.aggregate({
-    where: {
-      shopId: session.shopId,
-      cashierUserId: session.userId,
-      paymentMethod: CASH_PAYMENT_METHOD,
-      status: 'COMPLETED',
-      createdAt: {
-        gte: session.openedAt,
-        lte: closingAt
-      }
-    },
-    _sum: {
-      totalAmount: true
+  const baseSaleFilter = {
+    shopId: session.shopId,
+    cashierUserId: session.userId,
+    status: 'COMPLETED' as const,
+    createdAt: {
+      gte: session.openedAt,
+      lte: closingAt
     }
-  });
+  };
+
+  const [cashPayments, cashSalesWithChange, legacyCashSales] = await Promise.all([
+    db.salePayment.aggregate({
+      where: {
+        method: CASH_PAYMENT_METHOD,
+        sale: baseSaleFilter
+      },
+      _sum: {
+        amount: true
+      }
+    }),
+    db.sale.aggregate({
+      where: {
+        ...baseSaleFilter,
+        payments: {
+          some: {
+            method: CASH_PAYMENT_METHOD
+          }
+        }
+      },
+      _sum: {
+        changeDue: true
+      }
+    }),
+    db.sale.aggregate({
+      where: {
+        ...baseSaleFilter,
+        paymentMethod: CASH_PAYMENT_METHOD,
+        payments: {
+          none: {}
+        }
+      },
+      _sum: {
+        totalAmount: true
+      }
+    })
+  ]);
 
   const openingFloat = Number(session.openingFloat);
-  const cashSalesTotal = Number(cashSales._sum.totalAmount ?? 0);
-  return roundCurrency(openingFloat + cashSalesTotal);
+  const cashReceivedTotal = Number(cashPayments._sum.amount ?? 0);
+  const changeDueTotal = Number(cashSalesWithChange._sum.changeDue ?? 0);
+  const legacyCashSalesTotal = Number(legacyCashSales._sum.totalAmount ?? 0);
+
+  return roundCurrency(
+    openingFloat + cashReceivedTotal - changeDueTotal + legacyCashSalesTotal
+  );
 }
 
 export function appendRegisterNotes(

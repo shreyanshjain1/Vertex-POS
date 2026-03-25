@@ -6,12 +6,16 @@ import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
 import { money } from '@/lib/format';
+import { roundCurrency } from '@/lib/inventory';
+import {
+  getPaymentSummary,
+  getQuickCashAmounts,
+  PAYMENT_METHODS,
+  PaymentMethod,
+  requiresReferenceNumber
+} from '@/lib/payments';
 
-type Category = {
-  id: string;
-  name: string;
-};
-
+type Category = { id: string; name: string };
 type Product = {
   id: string;
   name: string;
@@ -22,17 +26,28 @@ type Product = {
   categoryId: string | null;
   category?: { id: string; name: string } | null;
 };
-
 type CartItem = Product & { qty: number };
 type ScanFeedback = { tone: 'success' | 'error'; message: string } | null;
+type PaymentLine = {
+  id: string;
+  method: PaymentMethod;
+  amount: string;
+  referenceNumber: string;
+};
 
 function isTypingTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-
+  if (!(target instanceof HTMLElement)) return false;
   const tagName = target.tagName;
   return target.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
+}
+
+function toNumber(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function createPaymentLine(method: PaymentMethod): PaymentLine {
+  return { id: crypto.randomUUID(), method, amount: '', referenceNumber: '' };
 }
 
 export default function CheckoutClient({
@@ -53,23 +68,25 @@ export default function CheckoutClient({
   const router = useRouter();
   const scanInputRef = useRef<HTMLInputElement>(null);
   const cartRef = useRef<CartItem[]>([]);
+  const canAcceptCash = hasActiveCashSession;
+
   const [selectedCategory, setSelectedCategory] = useState('');
   const [query, setQuery] = useState('');
   const [scanQuery, setScanQuery] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [discountAmount, setDiscountAmount] = useState('0');
-  const [paymentMethod, setPaymentMethod] = useState(() => (hasActiveCashSession ? 'Cash' : 'Card'));
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [notes, setNotes] = useState('');
+  const [payments, setPayments] = useState<PaymentLine[]>([
+    createPaymentLine(canAcceptCash ? 'Cash' : 'Card')
+  ]);
   const [error, setError] = useState('');
   const [scanFeedback, setScanFeedback] = useState<ScanFeedback>(null);
   const [loading, setLoading] = useState(false);
-  const canAcceptCash = hasActiveCashSession;
 
   const filtered = useMemo(() => {
     const term = query.toLowerCase().trim();
-
     return products
       .filter((product) => {
         const matchesCategory = !selectedCategory || product.categoryId === selectedCategory;
@@ -79,7 +96,6 @@ export default function CheckoutClient({
             .join(' ')
             .toLowerCase()
             .includes(term);
-
         return matchesCategory && matchesTerm;
       })
       .slice(0, 30);
@@ -90,7 +106,49 @@ export default function CheckoutClient({
   const taxAmount = subtotal * (taxRate / 100);
   const discount = Number(discountAmount || 0);
   const total = Math.max(subtotal + taxAmount - discount, 0);
-  const canCompleteSale = cart.length > 0 && !loading && discount >= 0 && discount <= subtotal + taxAmount;
+
+  const paymentInputs = useMemo(
+    () =>
+      payments.map((payment) => ({
+        method: payment.method,
+        amount: roundCurrency(toNumber(payment.amount)),
+        referenceNumber: payment.referenceNumber.trim() || null
+      })),
+    [payments]
+  );
+
+  const paymentSummary = useMemo(
+    () => getPaymentSummary(total, paymentInputs),
+    [paymentInputs, total]
+  );
+
+  const paymentError = useMemo(() => {
+    if (!payments.length) return 'Add at least one payment line.';
+
+    for (const payment of paymentInputs) {
+      if (payment.amount <= 0) return 'Each payment line needs an amount greater than zero.';
+      if (requiresReferenceNumber(payment.method) && !payment.referenceNumber) {
+        return `${payment.method} payments require a reference number.`;
+      }
+    }
+
+    if (paymentSummary.totalPaid < total) {
+      return 'Total paid must cover the sale total before checkout can finish.';
+    }
+
+    if (!paymentSummary.hasCashPayment && paymentSummary.totalPaid !== total) {
+      return 'Non-cash payments must match the sale total exactly.';
+    }
+
+    return '';
+  }, [paymentInputs, paymentSummary, payments.length, total]);
+
+  const canCompleteSale =
+    cart.length > 0 &&
+    !loading &&
+    discount >= 0 &&
+    discount <= subtotal + taxAmount &&
+    !paymentError;
 
   useEffect(() => {
     cartRef.current = cart;
@@ -98,14 +156,9 @@ export default function CheckoutClient({
 
   function focusScanInput(selectText = false) {
     const input = scanInputRef.current;
-    if (!input) {
-      return;
-    }
-
+    if (!input) return;
     input.focus();
-    if (selectText) {
-      input.select();
-    }
+    if (selectText) input.select();
   }
 
   function addToCart(product: Product) {
@@ -118,11 +171,7 @@ export default function CheckoutClient({
         return false;
       }
 
-      setCart((currentCart) =>
-        currentCart.map((item) =>
-          item.id === product.id ? { ...item, qty: item.qty + 1 } : item
-        )
-      );
+      setCart((current) => current.map((item) => (item.id === product.id ? { ...item, qty: item.qty + 1 } : item)));
       return true;
     }
 
@@ -131,44 +180,37 @@ export default function CheckoutClient({
       return false;
     }
 
-    setCart((currentCart) => [...currentCart, { ...product, qty: 1 }]);
+    setCart((current) => [...current, { ...product, qty: 1 }]);
     return true;
   }
 
   function updateQty(productId: string, direction: 'increase' | 'decrease') {
     const product = products.find((item) => item.id === productId);
-    if (!product) {
-      return;
-    }
+    if (!product) return;
 
     setError('');
     setScanFeedback(null);
-    setCart((currentCart) => {
-      const existing = currentCart.find((item) => item.id === productId);
-      if (!existing) {
-        return currentCart;
-      }
-
+    setCart((current) => {
+      const existing = current.find((item) => item.id === productId);
+      if (!existing) return current;
       const nextQty = direction === 'increase' ? existing.qty + 1 : existing.qty - 1;
-      if (nextQty <= 0) {
-        return currentCart.filter((item) => item.id !== productId);
-      }
-
+      if (nextQty <= 0) return current.filter((item) => item.id !== productId);
       if (nextQty > product.stockQty) {
         setError(`Cannot oversell. ${product.name} only has ${product.stockQty} in stock.`);
-        return currentCart;
+        return current;
       }
-
-      return currentCart.map((item) =>
-        item.id === productId ? { ...item, qty: nextQty } : item
-      );
+      return current.map((item) => (item.id === productId ? { ...item, qty: nextQty } : item));
     });
   }
 
   function removeFromCart(productId: string) {
     setError('');
     setScanFeedback(null);
-    setCart((currentCart) => currentCart.filter((item) => item.id !== productId));
+    setCart((current) => current.filter((item) => item.id !== productId));
+  }
+
+  function resetPayments() {
+    setPayments([createPaymentLine(canAcceptCash ? 'Cash' : 'Card')]);
   }
 
   function clearCart() {
@@ -180,18 +222,12 @@ export default function CheckoutClient({
     setScanQuery('');
     setScanFeedback(null);
     setError('');
+    resetPayments();
   }
 
   function requestClearCart() {
-    if (!cart.length || loading) {
-      return;
-    }
-
-    const shouldClear = window.confirm('Clear all items from the current cart?');
-    if (!shouldClear) {
-      return;
-    }
-
+    if (!cart.length || loading) return;
+    if (!window.confirm('Clear all items from the current cart?')) return;
     clearCart();
     focusScanInput();
   }
@@ -199,7 +235,6 @@ export default function CheckoutClient({
   function findProductByScan(value: string) {
     const normalizedValue = value.trim();
     const normalizedSku = normalizedValue.toLowerCase();
-
     return (
       products.find((product) => product.barcode?.trim() === normalizedValue) ??
       products.find((product) => product.sku?.trim().toLowerCase() === normalizedSku) ??
@@ -209,26 +244,19 @@ export default function CheckoutClient({
 
   function handleScanSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
     const value = scanQuery.trim();
     setError('');
     setScanFeedback(null);
 
     if (!value) {
-      setScanFeedback({
-        tone: 'error',
-        message: 'Scan or enter a barcode/SKU, then press Enter to add it.'
-      });
+      setScanFeedback({ tone: 'error', message: 'Scan or enter a barcode/SKU, then press Enter to add it.' });
       focusScanInput();
       return;
     }
 
     const product = findProductByScan(value);
     if (!product) {
-      setScanFeedback({
-        tone: 'error',
-        message: `No product matched barcode/SKU "${value}".`
-      });
+      setScanFeedback({ tone: 'error', message: `No product matched barcode/SKU "${value}".` });
       focusScanInput(true);
       return;
     }
@@ -240,30 +268,51 @@ export default function CheckoutClient({
     }
 
     setScanQuery('');
-    setScanFeedback({
-      tone: 'success',
-      message: `${product.name} added to cart.`
-    });
+    setScanFeedback({ tone: 'success', message: `${product.name} added to cart.` });
     focusScanInput();
+  }
+
+  function updatePaymentLine(lineId: string, patch: Partial<PaymentLine>) {
+    setPayments((current) =>
+      current.map((payment) => {
+        if (payment.id !== lineId) return payment;
+        const next = { ...payment, ...patch };
+        if (patch.method && !requiresReferenceNumber(patch.method)) next.referenceNumber = '';
+        return next;
+      })
+    );
+  }
+
+  function addPaymentLine() {
+    const nextMethod =
+      canAcceptCash && payments.every((payment) => payment.method !== 'Cash') ? 'Cash' : 'Card';
+    setPayments((current) => [...current, createPaymentLine(nextMethod)]);
+  }
+
+  function removePaymentLine(lineId: string) {
+    setPayments((current) => (current.length === 1 ? current : current.filter((payment) => payment.id !== lineId)));
+  }
+
+  function getExactAmountForLine(lineId: string) {
+    const paidExcludingLine = roundCurrency(
+      paymentInputs.reduce((sum, payment, index) => {
+        return payments[index]?.id === lineId ? sum : sum + payment.amount;
+      }, 0)
+    );
+    return roundCurrency(Math.max(total - paidExcludingLine, 0));
+  }
+
+  function setPaymentLineAmount(lineId: string, amount: number) {
+    updatePaymentLine(lineId, { amount: amount.toFixed(2) });
   }
 
   async function completeSale() {
     setError('');
 
-    if (!cart.length) {
-      setError('Please add at least one item to the cart.');
-      return;
-    }
-
-    if (discount < 0) {
-      setError('Discount amount cannot be negative.');
-      return;
-    }
-
-    if (discount > subtotal + taxAmount) {
-      setError('Discount cannot exceed the sale total.');
-      return;
-    }
+    if (!cart.length) return setError('Please add at least one item to the cart.');
+    if (discount < 0) return setError('Discount amount cannot be negative.');
+    if (discount > subtotal + taxAmount) return setError('Discount cannot exceed the sale total.');
+    if (paymentError) return setError(paymentError);
 
     setLoading(true);
 
@@ -274,20 +323,18 @@ export default function CheckoutClient({
         body: JSON.stringify({
           customerName: customerName || null,
           customerPhone: customerPhone || null,
-          paymentMethod,
           discountAmount: discount,
           notes: notes || null,
-          items: cart.map((item) => ({
-            productId: item.id,
-            qty: item.qty
-          }))
+          payments: payments.map((payment) => ({
+            method: payment.method,
+            amount: Number(payment.amount),
+            referenceNumber: payment.referenceNumber || null
+          })),
+          items: cart.map((item) => ({ productId: item.id, qty: item.qty }))
         })
       });
 
-      const data = await response.json().catch(() => ({
-        error: 'Failed to create sale.'
-      }));
-
+      const data = await response.json().catch(() => ({ error: 'Failed to create sale.' }));
       setLoading(false);
 
       if (!response.ok) {
@@ -319,17 +366,12 @@ export default function CheckoutClient({
         focusScanInput(true);
         return;
       }
-
-      if (isTypingTarget(event.target)) {
-        return;
-      }
-
+      if (isTypingTarget(event.target)) return;
       if (event.key === 'F9' && canCompleteSale) {
         event.preventDefault();
         handleCompleteSaleShortcut();
         return;
       }
-
       if (event.key === 'F4' && cart.length) {
         event.preventDefault();
         handleClearCartShortcut();
@@ -348,9 +390,7 @@ export default function CheckoutClient({
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">Product browser</div>
               <h2 className="mt-2 text-2xl font-black text-stone-900">Find products</h2>
-              <p className="mt-1 text-sm text-stone-500">
-                Search by name, SKU, barcode, or category to build a reliable cart quickly.
-              </p>
+              <p className="mt-1 text-sm text-stone-500">Search by name, SKU, barcode, or category to build a reliable cart quickly.</p>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:w-auto">
               <div className="rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-3">
@@ -367,131 +407,46 @@ export default function CheckoutClient({
           <div className="rounded-[24px] border border-stone-200 bg-stone-50/80 p-3 sm:p-4">
             <div className="grid gap-3 lg:grid-cols-[minmax(0,320px)_1fr]">
               <form onSubmit={handleScanSubmit} className="flex gap-3">
-                <Input
-                  ref={scanInputRef}
-                  placeholder="Scan barcode or enter SKU"
-                  value={scanQuery}
-                  onChange={(event) => setScanQuery(event.target.value)}
-                />
-                <Button type="submit" variant="secondary" className="shrink-0">
-                  Add
-                </Button>
+                <Input ref={scanInputRef} placeholder="Scan barcode or enter SKU" value={scanQuery} onChange={(event) => setScanQuery(event.target.value)} />
+                <Button type="submit" variant="secondary" className="shrink-0">Add</Button>
               </form>
-
-              <Input
-                placeholder="Search by product name, SKU, barcode..."
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
+              <Input placeholder="Search by product name, SKU, barcode..." value={query} onChange={(event) => setQuery(event.target.value)} />
             </div>
 
             <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setSelectedCategory('')}
-                className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                  !selectedCategory
-                    ? 'border-emerald-600 bg-emerald-600 text-white shadow-[0_14px_28px_-22px_rgba(5,150,105,0.9)]'
-                    : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300 hover:bg-stone-50'
-                }`}
-              >
-                All
-              </button>
+              <button type="button" onClick={() => setSelectedCategory('')} className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${!selectedCategory ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300 hover:bg-stone-50'}`}>All</button>
               {categories.map((category) => (
-                <button
-                  key={category.id}
-                  type="button"
-                  onClick={() => setSelectedCategory(category.id)}
-                  className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                    selectedCategory === category.id
-                      ? 'border-emerald-600 bg-emerald-600 text-white shadow-[0_14px_28px_-22px_rgba(5,150,105,0.9)]'
-                      : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300 hover:bg-stone-50'
-                  }`}
-                >
-                  {category.name}
-                </button>
+                <button key={category.id} type="button" onClick={() => setSelectedCategory(category.id)} className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${selectedCategory === category.id ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300 hover:bg-stone-50'}`}>{category.name}</button>
               ))}
             </div>
 
-            <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-500">
-              <span className="rounded-full border border-stone-200 bg-white px-3 py-1.5 font-semibold text-stone-600">
-                F2 focus scan
-              </span>
-              <span className="rounded-full border border-stone-200 bg-white px-3 py-1.5 font-semibold text-stone-600">
-                F9 complete sale
-              </span>
-              <span className="rounded-full border border-stone-200 bg-white px-3 py-1.5 font-semibold text-stone-600">
-                F4 clear cart
-              </span>
-            </div>
-
-            {scanFeedback ? (
-              <div
-                className={`mt-3 rounded-2xl border px-4 py-3 text-sm ${
-                  scanFeedback.tone === 'success'
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                    : 'border-red-200 bg-red-50 text-red-700'
-                }`}
-              >
-                {scanFeedback.message}
-              </div>
-            ) : null}
+            {scanFeedback ? <div className={`mt-3 rounded-2xl border px-4 py-3 text-sm ${scanFeedback.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'}`}>{scanFeedback.message}</div> : null}
           </div>
         </div>
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((product) => {
-            const stockTone =
-              product.stockQty <= 0
-                ? 'border-red-200 bg-red-50 text-red-700'
-                : product.stockQty <= 5
-                  ? 'border-amber-200 bg-amber-50 text-amber-700'
-                  : 'border-emerald-200 bg-emerald-50 text-emerald-700';
-
-            return (
-              <button
-                key={product.id}
-                type="button"
-                onClick={() => {
-                  setScanFeedback(null);
-                  addToCart(product);
-                }}
-                className="group rounded-[24px] border border-stone-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,245,244,0.92))] p-4 text-left shadow-[0_18px_36px_-30px_rgba(28,25,23,0.35)] transition hover:-translate-y-1 hover:border-emerald-300 hover:shadow-[0_22px_40px_-28px_rgba(5,150,105,0.35)]"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate font-semibold text-stone-900">{product.name}</div>
-                    <div className="mt-1 text-sm text-stone-500">{product.category?.name ?? 'Uncategorized'}</div>
-                  </div>
-                  <div className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${stockTone}`}>
-                    {product.stockQty <= 0 ? 'Out' : product.stockQty <= 5 ? 'Low' : 'Ready'}
-                  </div>
+          {filtered.map((product) => (
+            <button key={product.id} type="button" onClick={() => { setScanFeedback(null); addToCart(product); }} className="group rounded-[24px] border border-stone-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,245,244,0.92))] p-4 text-left shadow-[0_18px_36px_-30px_rgba(28,25,23,0.35)] transition hover:-translate-y-1 hover:border-emerald-300">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate font-semibold text-stone-900">{product.name}</div>
+                  <div className="mt-1 text-sm text-stone-500">{product.category?.name ?? 'Uncategorized'}</div>
                 </div>
-
-                <div className="mt-3 rounded-[20px] border border-stone-200/80 bg-white/80 px-3 py-2 text-xs text-stone-500">
-                  SKU: {product.sku ?? 'N/A'} / Barcode: {product.barcode ?? 'N/A'}
+                <div className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${product.stockQty <= 0 ? 'border-red-200 bg-red-50 text-red-700' : product.stockQty <= 5 ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{product.stockQty <= 0 ? 'Out' : product.stockQty <= 5 ? 'Low' : 'Ready'}</div>
+              </div>
+              <div className="mt-3 rounded-[20px] border border-stone-200/80 bg-white/80 px-3 py-2 text-xs text-stone-500">SKU: {product.sku ?? 'N/A'} / Barcode: {product.barcode ?? 'N/A'}</div>
+              <div className="mt-4 flex items-end justify-between gap-3">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Selling price</div>
+                  <div className="mt-1 text-2xl font-black text-emerald-700">{money(product.price, currencySymbol)}</div>
                 </div>
-
-                <div className="mt-4 flex items-end justify-between gap-3">
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Selling price</div>
-                    <div className="mt-1 text-2xl font-black text-emerald-700">{money(product.price, currencySymbol)}</div>
-                  </div>
-                  <div className="text-right text-xs font-medium text-stone-500">
-                    <div>{product.stockQty} in stock</div>
-                    <div className="mt-1 text-stone-400 group-hover:text-stone-500">Tap to add</div>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
+                <div className="text-right text-xs font-medium text-stone-500">{product.stockQty} in stock</div>
+              </div>
+            </button>
+          ))}
         </div>
 
-        {!filtered.length ? (
-          <div className="mt-6 rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-6 text-sm text-stone-500">
-            No products matched that search. Try a different term or clear the category filter.
-          </div>
-        ) : null}
+        {!filtered.length ? <div className="mt-6 rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-6 text-sm text-stone-500">No products matched that search.</div> : null}
       </Card>
 
       <Card className="xl:sticky xl:top-6">
@@ -499,9 +454,7 @@ export default function CheckoutClient({
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">Sale desk</div>
             <h2 className="mt-2 text-2xl font-black text-stone-900">Checkout summary</h2>
-            <p className="mt-1 text-sm text-stone-500">
-              Cashier: <span className="font-semibold text-stone-700">{cashierName}</span>
-            </p>
+            <p className="mt-1 text-sm text-stone-500">Cashier: <span className="font-semibold text-stone-700">{cashierName}</span></p>
           </div>
           <div className="rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-3 text-right">
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500">Items</div>
@@ -510,154 +463,111 @@ export default function CheckoutClient({
         </div>
 
         <div className="space-y-3">
-          {cart.length ? (
-            cart.map((item) => (
-              <div key={item.id} className="rounded-[24px] border border-stone-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,245,244,0.9))] p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="font-semibold text-stone-900">{item.name}</div>
-                    <div className="text-sm text-stone-500">{money(item.price, currencySymbol)} each</div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Button type="button" variant="secondary" className="h-10 w-10 px-0" onClick={() => updateQty(item.id, 'decrease')}>
-                      -
-                    </Button>
-                    <span className="inline-flex h-10 min-w-10 items-center justify-center rounded-2xl bg-white px-3 text-center font-semibold text-stone-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-                      {item.qty}
-                    </span>
-                    <Button type="button" variant="secondary" className="h-10 w-10 px-0" onClick={() => updateQty(item.id, 'increase')}>
-                      +
-                    </Button>
-                    <Button type="button" variant="ghost" className="h-10 px-3 text-xs uppercase tracking-[0.14em]" onClick={() => removeFromCart(item.id)}>
-                      Remove
-                    </Button>
-                  </div>
+          {cart.length ? cart.map((item) => (
+            <div key={item.id} className="rounded-[24px] border border-stone-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,245,244,0.9))] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-semibold text-stone-900">{item.name}</div>
+                  <div className="text-sm text-stone-500">{money(item.price, currencySymbol)} each</div>
                 </div>
-
-                <div className="mt-4 flex items-center justify-between gap-3 rounded-[20px] border border-stone-200/80 bg-white/80 px-3 py-2.5 text-sm">
-                  <span className="text-stone-500">Line total</span>
-                  <span className="font-semibold text-stone-900">{money(Number(item.price) * item.qty, currencySymbol)}</span>
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="secondary" className="h-10 w-10 px-0" onClick={() => updateQty(item.id, 'decrease')}>-</Button>
+                  <span className="inline-flex h-10 min-w-10 items-center justify-center rounded-2xl bg-white px-3 font-semibold text-stone-900">{item.qty}</span>
+                  <Button type="button" variant="secondary" className="h-10 w-10 px-0" onClick={() => updateQty(item.id, 'increase')}>+</Button>
+                  <Button type="button" variant="ghost" className="h-10 px-3 text-xs uppercase tracking-[0.14em]" onClick={() => removeFromCart(item.id)}>Remove</Button>
                 </div>
               </div>
-            ))
-          ) : (
-            <div className="rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-6 text-sm text-stone-500">
-              No items in the cart yet. Add products from the catalog to start the sale.
+              <div className="mt-4 flex items-center justify-between gap-3 rounded-[20px] border border-stone-200/80 bg-white/80 px-3 py-2.5 text-sm">
+                <span className="text-stone-500">Line total</span>
+                <span className="font-semibold text-stone-900">{money(Number(item.price) * item.qty, currencySymbol)}</span>
+              </div>
             </div>
-          )}
+          )) : <div className="rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-6 text-sm text-stone-500">No items in the cart yet.</div>}
         </div>
 
         <div className="mt-5 space-y-4 rounded-[26px] border border-stone-200 bg-stone-50/85 p-4">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Customer and payment</div>
-            <p className="mt-1 text-sm text-stone-500">Optional customer details help with receipt context and follow-up support.</p>
+            <p className="mt-1 text-sm text-stone-500">Capture payment lines quickly and keep totals accurate.</p>
           </div>
 
-          {!canAcceptCash ? (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              Open a register session first to accept cash payments. Non-cash payments can still be processed safely.
-            </div>
-          ) : null}
+          {!canAcceptCash ? <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Open a register session first to accept cash payments. Non-cash payments can still be processed safely.</div> : null}
 
           <div className="grid gap-3 md:grid-cols-2">
-            <Input
-              placeholder="Customer name"
-              value={customerName}
-              onChange={(event) => setCustomerName(event.target.value)}
-            />
-            <Input
-              placeholder="Customer phone"
-              value={customerPhone}
-              onChange={(event) => setCustomerPhone(event.target.value)}
-            />
+            <Input placeholder="Customer name" value={customerName} onChange={(event) => setCustomerName(event.target.value)} />
+            <Input placeholder="Customer phone" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} />
+            <Input type="number" step="0.01" placeholder="Discount amount" value={discountAmount} onChange={(event) => setDiscountAmount(event.target.value)} />
+            <Input placeholder="Notes for this sale" value={notes} onChange={(event) => setNotes(event.target.value)} />
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2">
-            <select
-              className="h-11 w-full rounded-2xl border border-stone-200 bg-white/88 px-4 text-sm text-stone-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] outline-none transition hover:border-stone-300 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
-              value={paymentMethod}
-              onChange={(event) => setPaymentMethod(event.target.value)}
-            >
-              <option value="Cash" disabled={!canAcceptCash}>
-                {canAcceptCash ? 'Cash' : 'Cash (open register required)'}
-              </option>
-              <option>Card</option>
-              <option>E-Wallet</option>
-              <option>Bank Transfer</option>
-            </select>
+          <div className="space-y-3">
+            {payments.map((payment) => {
+              const exactAmount = getExactAmountForLine(payment.id);
+              const quickAmounts = getQuickCashAmounts(exactAmount).filter((amount) => amount !== exactAmount);
+              return (
+                <div key={payment.id} className="rounded-[24px] border border-stone-200 bg-white p-4">
+                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_auto]">
+                    <select className="h-11 w-full rounded-2xl border border-stone-200 bg-white px-4 text-sm text-stone-900 outline-none focus:border-emerald-500" value={payment.method} onChange={(event) => updatePaymentLine(payment.id, { method: event.target.value as PaymentMethod })}>
+                      {PAYMENT_METHODS.map((method) => <option key={method} value={method} disabled={method === 'Cash' && !canAcceptCash}>{method === 'Cash' && !canAcceptCash ? 'Cash (open register required)' : method}</option>)}
+                    </select>
+                    <Input type="number" step="0.01" placeholder={payment.method === 'Cash' ? 'Cash received' : 'Amount'} value={payment.amount} onChange={(event) => updatePaymentLine(payment.id, { amount: event.target.value })} />
+                    <Button type="button" variant="ghost" onClick={() => removePaymentLine(payment.id)} disabled={payments.length === 1}>Remove</Button>
+                  </div>
 
-            <Input
-              type="number"
-              step="0.01"
-              placeholder="Discount amount"
-              value={discountAmount}
-              onChange={(event) => setDiscountAmount(event.target.value)}
-            />
+                  {requiresReferenceNumber(payment.method) ? <div className="mt-3"><Input placeholder={payment.method === 'Card' ? 'Card reference number' : 'E-wallet reference number'} value={payment.referenceNumber} onChange={(event) => updatePaymentLine(payment.id, { referenceNumber: event.target.value })} /></div> : null}
+
+                  {payment.method === 'Cash' ? (
+                    <div className="mt-3 space-y-2">
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" variant="secondary" className="h-9 px-3 text-xs" onClick={() => setPaymentLineAmount(payment.id, exactAmount)}>Exact amount</Button>
+                        {quickAmounts.map((amount) => <Button key={`${payment.id}-${amount}`} type="button" variant="secondary" className="h-9 px-3 text-xs" onClick={() => setPaymentLineAmount(payment.id, amount)}>{money(amount, currencySymbol)}</Button>)}
+                      </div>
+                      <div className="text-xs text-stone-500">Exact remaining for this line: {money(exactAmount, currencySymbol)}</div>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+
+            <Button type="button" variant="secondary" onClick={addPaymentLine}>Add payment line</Button>
           </div>
 
-          <Input
-            placeholder="Notes for this sale"
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-          />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-3"><div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Paid total</div><div className="mt-1 text-2xl font-black text-stone-950">{money(paymentSummary.totalPaid, currencySymbol)}</div></div>
+            <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-3"><div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Remaining</div><div className={`mt-1 text-2xl font-black ${paymentSummary.remainingAmount > 0 ? 'text-red-700' : 'text-emerald-700'}`}>{money(paymentSummary.remainingAmount, currencySymbol)}</div></div>
+            <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-3"><div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Cash received</div><div className="mt-1 text-2xl font-black text-stone-950">{money(paymentSummary.cashReceived, currencySymbol)}</div></div>
+            <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-3"><div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Change due</div><div className={`mt-1 text-2xl font-black ${paymentSummary.changeDue > 0 ? 'text-emerald-700' : 'text-stone-950'}`}>{money(paymentSummary.changeDue, currencySymbol)}</div></div>
+          </div>
         </div>
 
         <div className="mt-6 overflow-hidden rounded-[28px] border border-stone-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(245,245,244,0.96))]">
           <div className="border-b border-stone-200 bg-stone-950 px-5 py-4 text-white">
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-300">Payment summary</div>
             <div className="mt-2 flex items-end justify-between gap-4">
-              <div>
-                <div className="text-sm text-stone-300">Total due</div>
-                <div className="text-3xl font-black tracking-tight">{money(total, currencySymbol)}</div>
-              </div>
-              <div className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-200">
-                {itemCount} item(s)
-              </div>
+              <div><div className="text-sm text-stone-300">Total due</div><div className="text-3xl font-black tracking-tight">{money(total, currencySymbol)}</div></div>
+              <div className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-200">{itemCount} item(s)</div>
             </div>
           </div>
 
           <div className="space-y-3 p-5 text-sm">
-            <div className="flex justify-between">
-              <span>Subtotal</span>
-              <span>{money(subtotal, currencySymbol)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Tax ({taxRate}%)</span>
-              <span>{money(taxAmount, currencySymbol)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Discount</span>
-              <span>-{money(discount, currencySymbol)}</span>
-            </div>
-            <div className="flex justify-between border-t border-stone-200 pt-3 text-lg font-black text-stone-900">
-              <span>Total</span>
-              <span>{money(total, currencySymbol)}</span>
-            </div>
+            <div className="flex justify-between"><span>Subtotal</span><span>{money(subtotal, currencySymbol)}</span></div>
+            <div className="flex justify-between"><span>Tax ({taxRate}%)</span><span>{money(taxAmount, currencySymbol)}</span></div>
+            <div className="flex justify-between"><span>Discount</span><span>-{money(discount, currencySymbol)}</span></div>
+            <div className="flex justify-between"><span>Paid</span><span>{money(paymentSummary.totalPaid, currencySymbol)}</span></div>
+            <div className="flex justify-between"><span>Change</span><span>{money(paymentSummary.changeDue, currencySymbol)}</span></div>
+            <div className="flex justify-between border-t border-stone-200 pt-3 text-lg font-black text-stone-900"><span>Total</span><span>{money(total, currencySymbol)}</span></div>
           </div>
 
           <div className="px-5 pb-5">
-            <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-3 text-sm text-stone-600">
-              {cart.length
-                ? `${itemCount} item(s) across ${cart.length} line(s) are ready for validation and receipt printing.`
-                : 'Add at least one product before finalizing the sale.'}
-            </div>
+            <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-3 text-sm text-stone-600">{cart.length ? paymentError || `${itemCount} item(s) across ${cart.length} line(s) are ready for validation and receipt printing.` : 'Add at least one product before finalizing the sale.'}</div>
           </div>
         </div>
 
-        {error ? (
-          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
-          </div>
-        ) : null}
+        {error ? <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
 
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-          <Button type="button" className="flex-1" disabled={!canCompleteSale} onClick={() => void completeSale()}>
-            {loading ? 'Completing sale...' : 'Complete sale'}
-          </Button>
-          <Button type="button" variant="secondary" className="sm:min-w-32" disabled={!cart.length || loading} onClick={requestClearCart}>
-            Clear
-          </Button>
+          <Button type="button" className="flex-1" disabled={!canCompleteSale} onClick={() => void completeSale()}>{loading ? 'Completing sale...' : 'Complete sale'}</Button>
+          <Button type="button" variant="secondary" className="sm:min-w-32" disabled={!cart.length || loading} onClick={requestClearCart}>Clear</Button>
         </div>
       </Card>
     </div>

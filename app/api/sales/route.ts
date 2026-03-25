@@ -6,10 +6,14 @@ import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
 import { getNextDocumentNumber } from '@/lib/document-sequence';
 import { collapseSaleItems, normalizeText, roundCurrency } from '@/lib/inventory';
+import {
+  getSalePaymentSummaryLabel,
+  validatePaymentsForSale
+} from '@/lib/payments';
 import { prisma } from '@/lib/prisma';
 import { CASH_PAYMENT_METHOD, getActiveCashSession } from '@/lib/register';
 
-function serializeSale<T extends { createdAt: Date; subtotal: { toString(): string }; taxAmount: { toString(): string }; discountAmount: { toString(): string }; totalAmount: { toString(): string } }>(
+function serializeSale<T extends { createdAt: Date; subtotal: { toString(): string }; taxAmount: { toString(): string }; discountAmount: { toString(): string }; totalAmount: { toString(): string }; changeDue: { toString(): string } }>(
   sale: T
 ) {
   return {
@@ -18,6 +22,7 @@ function serializeSale<T extends { createdAt: Date; subtotal: { toString(): stri
     taxAmount: sale.taxAmount.toString(),
     discountAmount: sale.discountAmount.toString(),
     totalAmount: sale.totalAmount.toString(),
+    changeDue: sale.changeDue.toString(),
     createdAt: sale.createdAt.toISOString()
   };
 }
@@ -59,7 +64,15 @@ export async function POST(request: Request) {
       );
     }
 
-    if (parsed.data.paymentMethod.trim() === CASH_PAYMENT_METHOD) {
+    const rawPayments = parsed.data.payments.map((payment) => ({
+      method: payment.method,
+      amount: Number(payment.amount),
+      referenceNumber: payment.referenceNumber ?? null
+    }));
+
+    const hasCashPayment = rawPayments.some((payment) => payment.method === CASH_PAYMENT_METHOD);
+
+    if (hasCashPayment) {
       const activeCashSession = await getActiveCashSession(prisma, shopId, userId);
       if (!activeCashSession) {
         return NextResponse.json(
@@ -121,6 +134,16 @@ export async function POST(request: Request) {
     }
 
     const totalAmount = roundCurrency(subtotal + taxAmount - discountAmount);
+    const paymentValidation = validatePaymentsForSale(totalAmount, rawPayments);
+
+    if (!paymentValidation.ok) {
+      return NextResponse.json(
+        { error: paymentValidation.error },
+        { status: 400 }
+      );
+    }
+
+    const paymentMethodSummary = getSalePaymentSummaryLabel(paymentValidation.payments);
 
     const sale = await prisma.$transaction(async (tx) => {
       const saleNumber = await getNextDocumentNumber(tx, {
@@ -146,7 +169,8 @@ export async function POST(request: Request) {
           taxAmount,
           discountAmount,
           totalAmount,
-          paymentMethod: parsed.data.paymentMethod.trim(),
+          changeDue: paymentValidation.summary.changeDue,
+          paymentMethod: paymentMethodSummary,
           notes: normalizeText(parsed.data.notes),
           cashierName: session.user.name || session.user.email || 'Cashier',
           items: {
@@ -161,6 +185,13 @@ export async function POST(request: Request) {
                 lineTotal: roundCurrency(unitPrice * item.qty)
               };
             })
+          },
+          payments: {
+            create: paymentValidation.payments.map((payment) => ({
+              method: payment.method,
+              amount: payment.amount,
+              referenceNumber: normalizeText(payment.referenceNumber)
+            }))
           }
         },
         include: { items: true }
@@ -200,8 +231,11 @@ export async function POST(request: Request) {
         description: `Completed sale ${saleRecord.saleNumber}.`,
         metadata: {
           itemCount: items.reduce((sum, item) => sum + item.qty, 0),
-          paymentMethod: parsed.data.paymentMethod.trim(),
-          totalAmount
+          paymentMethod: paymentMethodSummary,
+          paymentCount: paymentValidation.payments.length,
+          totalAmount,
+          totalPaid: paymentValidation.summary.totalPaid,
+          changeDue: paymentValidation.summary.changeDue
         }
       });
 
