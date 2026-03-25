@@ -91,7 +91,7 @@ export const supplierSchema = z.object({
 export const saleSchema = z.object({
   customerName: z.string().trim().max(120).optional().nullable(),
   customerPhone: z.string().trim().max(40).optional().nullable(),
-  paymentMethod: z.string().trim().min(2).max(40),
+  paymentMethod: z.enum(['Cash', 'Card', 'E-Wallet', 'Bank Transfer']),
   discountAmount: z.coerce.number().min(0).default(0),
   notes: z.string().trim().max(300).optional().nullable(),
   items: z.array(z.object({
@@ -102,7 +102,7 @@ export const saleSchema = z.object({
 
 export const purchaseSchema = z.object({
   supplierId: z.string().trim().min(1),
-  status: z.enum(['DRAFT', 'RECEIVED', 'CANCELLED']).default('RECEIVED'),
+  status: z.enum(['DRAFT', 'RECEIVED', 'CANCELLED']).default('DRAFT'),
   notes: z.string().trim().max(300).optional().nullable(),
   items: z.array(z.object({
     productId: z.string().trim().min(1),
@@ -124,9 +124,9 @@ export const settingSchema = z.object({
   receiptFooter: z.string().trim().max(255).optional().nullable(),
   lowStockEnabled: z.coerce.boolean(),
   lowStockThreshold: z.coerce.number().int().min(0).max(9999),
-  salePrefix: z.string().trim().min(2).max(10),
-  receiptPrefix: z.string().trim().min(2).max(10),
-  purchasePrefix: z.string().trim().min(2).max(10)
+  salePrefix: z.string().trim().min(2).max(10).regex(/^[A-Za-z0-9]+$/, 'Use letters or numbers only for the sale prefix'),
+  receiptPrefix: z.string().trim().min(2).max(10).regex(/^[A-Za-z0-9]+$/, 'Use letters or numbers only for the receipt prefix'),
+  purchasePrefix: z.string().trim().min(2).max(10).regex(/^[A-Za-z0-9]+$/, 'Use letters or numbers only for the purchase prefix')
 });
 
 export const staffSchema = z.object({

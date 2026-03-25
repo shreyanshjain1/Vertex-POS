@@ -57,7 +57,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async authorized({ auth, request }) {
       const pathname = request.nextUrl.pathname;
-      const isPublicRoute = pathname === '/' || pathname === '/login' || pathname === '/signup' || pathname === '/onboard' || pathname.startsWith('/api/auth');
+      const isPublicRoute =
+        pathname === '/' ||
+        pathname === '/login' ||
+        pathname === '/signup' ||
+        pathname.startsWith('/api/auth');
       return isPublicRoute ? true : !!auth;
     },
     async jwt({ token, user, trigger, session }) {
