@@ -7,11 +7,14 @@ import Card from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
 import { money } from '@/lib/format';
 import { getStockLevel, stockLevelLabel } from '@/lib/inventory';
+import { summarizeConversions } from '@/lib/uom';
 
 type Category = { id: string; name: string; parentId: string | null };
+type UnitOfMeasure = { id: string; code: string; name: string; isBase: boolean };
 type Product = {
   id: string;
   categoryId: string | null;
+  baseUnitOfMeasureId: string | null;
   sku: string | null;
   barcode: string | null;
   name: string;
@@ -23,6 +26,13 @@ type Product = {
   trackBatches: boolean;
   trackExpiry: boolean;
   isActive: boolean;
+  baseUnitOfMeasure?: UnitOfMeasure | null;
+  uomConversions: Array<{
+    id: string;
+    unitOfMeasureId: string;
+    ratioToBase: number;
+    unitOfMeasure: UnitOfMeasure;
+  }>;
   batches: Array<{
     id: string;
     lotNumber: string;
@@ -42,12 +52,14 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 export default function ProductManager({
   initialProducts,
   categories,
+  units,
   currencySymbol,
   lowStockThreshold,
   inventoryDefaults
 }: {
   initialProducts: Product[];
   categories: Category[];
+  units: UnitOfMeasure[];
   currencySymbol: string;
   lowStockThreshold: number;
   inventoryDefaults: {
@@ -62,6 +74,7 @@ export default function ProductManager({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({
     categoryId: '',
+    baseUnitOfMeasureId: units.find((unit) => unit.code === 'PIECE')?.id ?? units[0]?.id ?? '',
     sku: '',
     barcode: '',
     name: '',
@@ -72,6 +85,7 @@ export default function ProductManager({
     reorderPoint: '5',
     trackBatches: inventoryDefaults.batchTrackingEnabled,
     trackExpiry: inventoryDefaults.expiryTrackingEnabled,
+    uomConversions: [] as Array<{ unitOfMeasureId: string; ratioToBase: string }>,
     isActive: true
   });
   const [error, setError] = useState('');
@@ -104,6 +118,7 @@ export default function ProductManager({
     setEditingId(null);
     setForm({
       categoryId: '',
+      baseUnitOfMeasureId: units.find((unit) => unit.code === 'PIECE')?.id ?? units[0]?.id ?? '',
       sku: '',
       barcode: '',
       name: '',
@@ -114,6 +129,7 @@ export default function ProductManager({
       reorderPoint: '5',
       trackBatches: inventoryDefaults.batchTrackingEnabled,
       trackExpiry: inventoryDefaults.expiryTrackingEnabled,
+      uomConversions: [],
       isActive: true
     });
   }
@@ -124,6 +140,7 @@ export default function ProductManager({
     setSuccess('');
     setForm({
       categoryId: product.categoryId ?? '',
+      baseUnitOfMeasureId: product.baseUnitOfMeasureId ?? units.find((unit) => unit.code === 'PIECE')?.id ?? '',
       sku: product.sku ?? '',
       barcode: product.barcode ?? '',
       name: product.name,
@@ -134,6 +151,10 @@ export default function ProductManager({
       reorderPoint: String(product.reorderPoint),
       trackBatches: product.trackBatches,
       trackExpiry: product.trackExpiry,
+      uomConversions: product.uomConversions.map((conversion) => ({
+        unitOfMeasureId: conversion.unitOfMeasureId,
+        ratioToBase: String(conversion.ratioToBase)
+      })),
       isActive: product.isActive
     });
   }
@@ -163,6 +184,23 @@ export default function ProductManager({
       return;
     }
 
+    if (!form.baseUnitOfMeasureId) {
+      setError('Select a base unit.');
+      return;
+    }
+
+    for (const conversion of form.uomConversions) {
+      if (!conversion.unitOfMeasureId || !conversion.ratioToBase) {
+        setError('Complete or remove any blank pack conversion rows.');
+        return;
+      }
+
+      if (Number(conversion.ratioToBase) <= 0) {
+        setError('Pack conversion ratios must be greater than zero.');
+        return;
+      }
+    }
+
     setLoading(true);
 
     const payload = {
@@ -174,6 +212,10 @@ export default function ProductManager({
       cost: Number(form.cost),
       price: Number(form.price),
       reorderPoint: Number(form.reorderPoint),
+      uomConversions: form.uomConversions.map((conversion) => ({
+        unitOfMeasureId: conversion.unitOfMeasureId,
+        ratioToBase: Number(conversion.ratioToBase)
+      })),
       ...(editingId ? {} : { stockQty: Number(form.stockQty) })
     };
 
@@ -195,6 +237,8 @@ export default function ProductManager({
       ...data.product,
       cost: String(data.product.cost),
       price: String(data.product.price),
+      baseUnitOfMeasure: data.product.baseUnitOfMeasure,
+      uomConversions: data.product.uomConversions ?? [],
       batches: editingId
         ? products.find((item) => item.id === editingId)?.batches ?? []
         : []
@@ -296,6 +340,29 @@ export default function ProductManager({
                   {categories.map((category) => (
                     <option key={category.id} value={category.id}>
                       {category.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <FieldLabel>Base selling unit</FieldLabel>
+                <select
+                  className={selectClassName}
+                  value={form.baseUnitOfMeasureId}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      baseUnitOfMeasureId: event.target.value,
+                      uomConversions: current.uomConversions.filter(
+                        (conversion) => conversion.unitOfMeasureId !== event.target.value
+                      )
+                    }))
+                  }
+                >
+                  {units.map((unit) => (
+                    <option key={unit.id} value={unit.id}>
+                      {unit.name}
                     </option>
                   ))}
                 </select>
@@ -420,6 +487,64 @@ export default function ProductManager({
               Alerts within {inventoryDefaults.expiryAlertDays} day(s)
             </div>
 
+            <div className="mt-4 rounded-[20px] border border-stone-200 bg-white p-4">
+              <div className="mb-3 text-sm font-semibold text-stone-900">Pack conversions</div>
+              <div className="space-y-3">
+                {units
+                  .filter((unit) => unit.id !== form.baseUnitOfMeasureId)
+                  .map((unit) => {
+                    const conversion = form.uomConversions.find((entry) => entry.unitOfMeasureId === unit.id);
+
+                    return (
+                      <div key={unit.id} className="grid gap-3 sm:grid-cols-[1fr_180px] sm:items-center">
+                        <div className="text-sm text-stone-600">
+                          1 <span className="font-semibold text-stone-900">{unit.name.toLowerCase()}</span>
+                          {' = '}
+                          <span className="font-semibold text-stone-900">
+                            {conversion?.ratioToBase || '...'}
+                          </span>
+                          {' '}
+                          {units.find((entry) => entry.id === form.baseUnitOfMeasureId)?.name.toLowerCase() ?? 'base unit'}{conversion?.ratioToBase === '1' ? '' : 's'}
+                        </div>
+                        <Input
+                          type="number"
+                          min="1"
+                          placeholder={`Qty in ${units.find((entry) => entry.id === form.baseUnitOfMeasureId)?.name.toLowerCase() ?? 'base unit'}s`}
+                          value={conversion?.ratioToBase ?? ''}
+                          onChange={(event) =>
+                            setForm((current) => {
+                              const nextValue = event.target.value;
+                              const remaining = current.uomConversions.filter((entry) => entry.unitOfMeasureId !== unit.id);
+
+                              if (!nextValue) {
+                                return {
+                                  ...current,
+                                  uomConversions: remaining
+                                };
+                              }
+
+                              return {
+                                ...current,
+                                uomConversions: [
+                                  ...remaining,
+                                  {
+                                    unitOfMeasureId: unit.id,
+                                    ratioToBase: nextValue
+                                  }
+                                ]
+                              };
+                            })
+                          }
+                        />
+                      </div>
+                    );
+                  })}
+              </div>
+              <div className="mt-3 text-xs text-stone-500">
+                Use direct-to-base ratios such as 1 box = 12 pieces or 1 carton = 288 pieces.
+              </div>
+            </div>
+
             <label className="mt-4 inline-flex items-center gap-3 text-sm font-medium text-stone-700">
               <input
                 type="checkbox"
@@ -493,7 +618,7 @@ export default function ProductManager({
                   <th className="px-4 py-3.5">Name</th>
                   <th className="px-4 py-3.5">Category</th>
                   <th className="px-4 py-3.5">SKU / Barcode</th>
-                  <th className="px-4 py-3.5">Tracking</th>
+                  <th className="px-4 py-3.5">UOM / Tracking</th>
                   <th className="px-4 py-3.5">Cost</th>
                   <th className="px-4 py-3.5">Price</th>
                   <th className="px-4 py-3.5">Stock</th>
@@ -517,11 +642,21 @@ export default function ProductManager({
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex flex-wrap gap-2">
+                          {product.baseUnitOfMeasure ? <Badge tone="stone">Base: {product.baseUnitOfMeasure.name}</Badge> : null}
                           {product.trackBatches ? <Badge tone="blue">Batch</Badge> : null}
                           {product.trackExpiry ? <Badge tone="amber">Expiry</Badge> : null}
-                          {!product.trackBatches && !product.trackExpiry ? <Badge tone="stone">Standard</Badge> : null}
+                          {!product.trackBatches && !product.trackExpiry && !product.baseUnitOfMeasure ? <Badge tone="stone">Standard</Badge> : null}
                         </div>
                         <div className="mt-2 text-xs text-stone-500">
+                          {summarizeConversions(
+                            product.uomConversions.map((conversion) => ({
+                              unitName: conversion.unitOfMeasure.name,
+                              ratioToBase: conversion.ratioToBase
+                            })),
+                            product.baseUnitOfMeasure?.name
+                          )}
+                        </div>
+                        <div className="mt-1 text-xs text-stone-500">
                           {nextExpiryBatch?.expiryDate
                             ? `Next expiry ${new Date(nextExpiryBatch.expiryDate).toLocaleDateString('en-PH')}`
                             : product.batches.length

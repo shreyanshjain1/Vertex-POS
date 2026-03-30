@@ -5,6 +5,7 @@ import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
 import { normalizeText } from '@/lib/inventory';
 import { prisma } from '@/lib/prisma';
+import { ensureUnitsOfMeasure } from '@/lib/uom';
 
 export async function PATCH(
   request: Request,
@@ -12,6 +13,7 @@ export async function PATCH(
 ) {
   try {
     const { shopId, userId } = await requireRole('MANAGER');
+    const units = await ensureUnitsOfMeasure(shopId);
     const { id } = await params;
     const body = await request.json();
     const parsed = productUpdateSchema.safeParse({ ...body, id });
@@ -31,7 +33,9 @@ export async function PATCH(
             id: true,
             name: true
           }
-        }
+        },
+        baseUnitOfMeasure: true,
+        uomConversions: true
       }
     });
 
@@ -40,6 +44,7 @@ export async function PATCH(
     }
 
     const nextName = parsed.data.name?.trim() ?? existing.name;
+    const nextBaseUnitId = parsed.data.baseUnitOfMeasureId ?? existing.baseUnitOfMeasureId;
     const nextCategoryId =
       parsed.data.categoryId === undefined
         ? existing.categoryId
@@ -48,6 +53,18 @@ export async function PATCH(
       parsed.data.sku === undefined ? existing.sku : normalizeText(parsed.data.sku);
     const nextBarcode =
       parsed.data.barcode === undefined ? existing.barcode : normalizeText(parsed.data.barcode);
+    const unitMap = new Map(units.map((unit) => [unit.id, unit]));
+    const normalizedConversions =
+      parsed.data.uomConversions === undefined
+        ? existing.uomConversions.map((conversion) => ({
+            unitOfMeasureId: conversion.unitOfMeasureId,
+            ratioToBase: conversion.ratioToBase
+          }))
+        : parsed.data.uomConversions
+            .filter((conversion) => conversion.unitOfMeasureId !== nextBaseUnitId)
+            .filter((conversion, index, array) =>
+              array.findIndex((entry) => entry.unitOfMeasureId === conversion.unitOfMeasureId) === index
+            );
 
     if (parsed.data.stockQty !== undefined && parsed.data.stockQty !== existing.stockQty) {
       return NextResponse.json(
@@ -92,6 +109,16 @@ export async function PATCH(
       return NextResponse.json({ error: 'Selected category was not found.' }, { status: 404 });
     }
 
+    if (!nextBaseUnitId || !unitMap.has(nextBaseUnitId)) {
+      return NextResponse.json({ error: 'Selected base unit was not found.' }, { status: 404 });
+    }
+
+    for (const conversion of normalizedConversions) {
+      if (!unitMap.has(conversion.unitOfMeasureId)) {
+        return NextResponse.json({ error: 'One or more selected units were not found.' }, { status: 404 });
+      }
+    }
+
     if (duplicateByName) {
       return NextResponse.json(
         { error: 'A product with this name already exists in this shop.' },
@@ -115,6 +142,7 @@ export async function PATCH(
         where: { id },
         data: {
           categoryId: nextCategoryId,
+          baseUnitOfMeasureId: nextBaseUnitId,
           sku: nextSku,
           barcode: nextBarcode,
           name: nextName,
@@ -127,6 +155,13 @@ export async function PATCH(
           reorderPoint: parsed.data.reorderPoint ?? existing.reorderPoint,
           trackBatches: parsed.data.trackBatches ?? existing.trackBatches,
           trackExpiry: parsed.data.trackExpiry ?? existing.trackExpiry,
+          uomConversions: {
+            deleteMany: {},
+            create: normalizedConversions.map((conversion) => ({
+              unitOfMeasureId: conversion.unitOfMeasureId,
+              ratioToBase: conversion.ratioToBase
+            }))
+          },
           isActive: parsed.data.isActive ?? existing.isActive
         },
         include: {
@@ -134,6 +169,15 @@ export async function PATCH(
             select: {
               id: true,
               name: true
+            }
+          },
+          baseUnitOfMeasure: true,
+          uomConversions: {
+            include: {
+              unitOfMeasure: true
+            },
+            orderBy: {
+              ratioToBase: 'asc'
             }
           }
         }
@@ -158,6 +202,7 @@ export async function PATCH(
         metadata: {
           previousName: existing.name,
           isActive: product.isActive,
+          baseUnit: product.baseUnitOfMeasure?.code ?? null,
           trackBatches: product.trackBatches,
           trackExpiry: product.trackExpiry
         }

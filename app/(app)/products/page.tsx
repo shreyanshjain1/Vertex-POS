@@ -2,14 +2,25 @@ import AppHeader from '@/components/layout/AppHeader';
 import ProductManager from '@/components/products/ProductManager';
 import { requirePageRole } from '@/lib/authz';
 import { prisma } from '@/lib/prisma';
+import { ensureUnitsOfMeasure } from '@/lib/uom';
 
 export default async function ProductsPage() {
   const { shopId } = await requirePageRole('MANAGER');
+  const units = await ensureUnitsOfMeasure(shopId);
   const [products, categories, settings] = await Promise.all([
     prisma.product.findMany({
       where: { shopId },
       include: {
         category: true,
+        baseUnitOfMeasure: true,
+        uomConversions: {
+          include: {
+            unitOfMeasure: true
+          },
+          orderBy: {
+            ratioToBase: 'asc'
+          }
+        },
         batches: {
           orderBy: [{ expiryDate: 'asc' }, { receivedAt: 'desc' }]
         }
@@ -34,6 +45,13 @@ export default async function ProductsPage() {
           ...product,
           cost: product.cost.toString(),
           price: product.price.toString(),
+          baseUnitOfMeasure: product.baseUnitOfMeasure,
+          uomConversions: product.uomConversions.map((conversion) => ({
+            id: conversion.id,
+            unitOfMeasureId: conversion.unitOfMeasureId,
+            ratioToBase: conversion.ratioToBase,
+            unitOfMeasure: conversion.unitOfMeasure
+          })),
           batches: product.batches.map((batch) => ({
             id: batch.id,
             lotNumber: batch.lotNumber,
@@ -42,6 +60,7 @@ export default async function ProductsPage() {
           }))
         }))}
         categories={categories}
+        units={units}
         currencySymbol={settings?.currencySymbol ?? '₱'}
         lowStockThreshold={settings?.lowStockThreshold ?? 5}
         inventoryDefaults={{

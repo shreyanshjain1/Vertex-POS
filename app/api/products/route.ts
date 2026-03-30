@@ -5,6 +5,7 @@ import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
 import { normalizeText } from '@/lib/inventory';
 import { prisma } from '@/lib/prisma';
+import { ensureUnitsOfMeasure } from '@/lib/uom';
 
 export async function GET() {
   try {
@@ -24,6 +25,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const { shopId, userId } = await requireRole('MANAGER');
+    const units = await ensureUnitsOfMeasure(shopId);
     const body = await request.json();
     const parsed = productSchema.safeParse(body);
 
@@ -42,6 +44,25 @@ export async function POST(request: Request) {
       barcode: normalizeText(parsed.data.barcode),
       categoryId: normalizeText(parsed.data.categoryId)
     };
+
+    const unitMap = new Map(units.map((unit) => [unit.id, unit]));
+    const baseUnit = unitMap.get(payload.baseUnitOfMeasureId);
+
+    if (!baseUnit) {
+      return NextResponse.json({ error: 'Selected base unit was not found.' }, { status: 404 });
+    }
+
+    const normalizedConversions = payload.uomConversions
+      .filter((conversion) => conversion.unitOfMeasureId !== payload.baseUnitOfMeasureId)
+      .filter((conversion, index, array) =>
+        array.findIndex((entry) => entry.unitOfMeasureId === conversion.unitOfMeasureId) === index
+      );
+
+    for (const conversion of normalizedConversions) {
+      if (!unitMap.has(conversion.unitOfMeasureId)) {
+        return NextResponse.json({ error: 'One or more selected units were not found.' }, { status: 404 });
+      }
+    }
 
     const [category, duplicateByName, duplicateBySku, duplicateByBarcode] = await Promise.all([
       payload.categoryId
@@ -101,6 +122,7 @@ export async function POST(request: Request) {
         data: {
           shopId,
           categoryId: payload.categoryId,
+          baseUnitOfMeasureId: payload.baseUnitOfMeasureId,
           sku: payload.sku,
           barcode: payload.barcode,
           name: payload.name,
@@ -111,6 +133,12 @@ export async function POST(request: Request) {
           reorderPoint: payload.reorderPoint,
           trackBatches: payload.trackBatches,
           trackExpiry: payload.trackExpiry,
+          uomConversions: {
+            create: normalizedConversions.map((conversion) => ({
+              unitOfMeasureId: conversion.unitOfMeasureId,
+              ratioToBase: conversion.ratioToBase
+            }))
+          },
           isActive: payload.isActive
         },
         include: {
@@ -118,6 +146,15 @@ export async function POST(request: Request) {
             select: {
               id: true,
               name: true
+            }
+          },
+          baseUnitOfMeasure: true,
+          uomConversions: {
+            include: {
+              unitOfMeasure: true
+            },
+            orderBy: {
+              ratioToBase: 'asc'
             }
           }
         }
@@ -147,6 +184,7 @@ export async function POST(request: Request) {
         metadata: {
           isActive: createdProduct.isActive,
           stockQty: createdProduct.stockQty,
+          baseUnit: createdProduct.baseUnitOfMeasure?.code ?? null,
           trackBatches: createdProduct.trackBatches,
           trackExpiry: createdProduct.trackExpiry
         }
