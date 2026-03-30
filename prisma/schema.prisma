@@ -28,6 +28,7 @@ enum InventoryMovementType {
   SALE_VOIDED
   RETURN_RESTOCKED
   EXCHANGE_ISSUED
+  STOCK_COUNT_POSTED
   MANUAL_ADJUSTMENT
   OPENING_STOCK
 }
@@ -66,6 +67,16 @@ enum DocumentSequenceType {
   RECEIPT
   PURCHASE
   RETURN
+  STOCK_COUNT
+}
+
+enum StockCountStatus {
+  DRAFT
+  IN_PROGRESS
+  SUBMITTED
+  APPROVED
+  POSTED
+  CANCELLED
 }
 
 enum SaleAdjustmentType {
@@ -110,6 +121,8 @@ model User {
   cashierSales             Sale[]               @relation("CashierUser")
   createdSaleAdjustments   SaleAdjustment[]     @relation("SaleAdjustmentCreatedBy")
   approvedSaleAdjustments  SaleAdjustment[]     @relation("SaleAdjustmentApprovedBy")
+  createdStockCounts       StockCount[]         @relation("StockCountCreatedBy")
+  approvedStockCounts      StockCount[]         @relation("StockCountApprovedBy")
   cashSessions             CashSession[]
   parkedSales              ParkedSale[]
   activities               ActivityLog[]
@@ -140,6 +153,7 @@ model Shop {
   products         Product[]
   sales            Sale[]
   saleAdjustments SaleAdjustment[]
+  stockCounts      StockCount[]
   parkedSales      ParkedSale[]
   suppliers        Supplier[]
   purchases        PurchaseOrder[]
@@ -216,6 +230,7 @@ model Product {
   shop            Shop                 @relation(fields: [shopId], references: [id], onDelete: Cascade)
   saleItems       SaleItem[]
   adjustmentItems SaleAdjustmentItem[]
+  stockCountItems  StockCountItem[]
   purchaseItems   PurchaseItem[]
   inventoryMoves  InventoryMovement[]
   createdAt       DateTime             @default(now())
@@ -368,6 +383,52 @@ model RefundPayment {
 
   @@index([saleAdjustmentId, createdAt])
   @@index([method, createdAt])
+}
+
+model StockCount {
+  id               String           @id @default(cuid())
+  shopId           String
+  createdByUserId  String
+  approvedByUserId String?
+  referenceNumber  String
+  title            String?
+  status           StockCountStatus @default(DRAFT)
+  isBlind          Boolean          @default(false)
+  startedAt        DateTime?
+  submittedAt      DateTime?
+  approvedAt       DateTime?
+  postedAt         DateTime?
+  notes            String?
+  shop             Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  createdByUser    User             @relation("StockCountCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  approvedByUser   User?            @relation("StockCountApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  items            StockCountItem[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@unique([shopId, referenceNumber])
+  @@index([shopId, createdAt])
+  @@index([shopId, status, createdAt])
+}
+
+model StockCountItem {
+  id                  String     @id @default(cuid())
+  stockCountId        String
+  productId           String
+  productNameSnapshot String
+  skuSnapshot         String?
+  expectedQty         Int
+  actualQty           Int?
+  varianceQty         Int        @default(0)
+  note                String?
+  stockCount          StockCount @relation(fields: [stockCountId], references: [id], onDelete: Cascade)
+  product             Product    @relation(fields: [productId], references: [id], onDelete: Restrict)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  @@unique([stockCountId, productId])
+  @@index([stockCountId, createdAt])
+  @@index([productId])
 }
 
 model ParkedSale {
