@@ -7,6 +7,7 @@ import { logActivity } from '@/lib/activity';
 import { getNextDocumentNumber } from '@/lib/document-sequence';
 import { collapsePurchaseItems, normalizeText, roundCurrency } from '@/lib/inventory';
 import { prisma } from '@/lib/prisma';
+import { ensureUnitsOfMeasure } from '@/lib/uom';
 
 function serializePurchase<
   T extends {
@@ -28,6 +29,7 @@ function serializePurchase<
 export async function GET() {
   try {
     const { shopId } = await requireRole('MANAGER');
+    await ensureUnitsOfMeasure(shopId);
     const purchases = await prisma.purchaseOrder.findMany({
       where: { shopId },
       include: { supplier: true, items: true },
@@ -52,6 +54,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const { shopId, userId } = await requireRole('MANAGER');
+    await ensureUnitsOfMeasure(shopId);
     const body = await request.json();
     const parsed = purchaseSchema.safeParse(body);
 
@@ -63,7 +66,7 @@ export async function POST(request: Request) {
     }
 
     const items = collapsePurchaseItems(parsed.data.items);
-    const [settings, supplier, products] = await Promise.all([
+    const [settings, supplier, products, units] = await Promise.all([
       prisma.shopSetting.findUnique({ where: { shopId } }),
       prisma.supplier.findFirst({
         where: {
@@ -76,6 +79,21 @@ export async function POST(request: Request) {
         where: {
           shopId,
           id: { in: items.map((item) => item.productId) }
+        },
+        include: {
+          baseUnitOfMeasure: true,
+          uomConversions: {
+            include: {
+              unitOfMeasure: true
+            }
+          }
+        }
+      }),
+      prisma.unitOfMeasure.findMany({
+        where: {
+          shopId,
+          id: { in: items.map((item) => item.unitOfMeasureId) },
+          isActive: true
         }
       })
     ]);
@@ -88,6 +106,7 @@ export async function POST(request: Request) {
     }
 
     const productMap = new Map(products.map((product) => [product.id, product]));
+    const unitMap = new Map(units.map((unit) => [unit.id, unit]));
 
     for (const item of items) {
       const product = productMap.get(item.productId);
@@ -95,6 +114,26 @@ export async function POST(request: Request) {
         return NextResponse.json(
           { error: 'One or more selected products were not found.' },
           { status: 404 }
+        );
+      }
+
+      const unit = unitMap.get(item.unitOfMeasureId);
+      if (!unit) {
+        return NextResponse.json(
+          { error: 'One or more selected purchase units were not found.' },
+          { status: 404 }
+        );
+      }
+
+      const ratioToBase =
+        product.baseUnitOfMeasureId === item.unitOfMeasureId
+          ? 1
+          : product.uomConversions.find((conversion) => conversion.unitOfMeasureId === item.unitOfMeasureId)?.ratioToBase;
+
+      if (!ratioToBase || ratioToBase <= 0) {
+        return NextResponse.json(
+          { error: `No valid conversion exists for ${product.name} and the selected unit.` },
+          { status: 400 }
         );
       }
     }
@@ -122,8 +161,20 @@ export async function POST(request: Request) {
           items: {
             create: items.map((item) => ({
               productId: item.productId,
+              unitOfMeasureId: item.unitOfMeasureId,
+              unitCode: unitMap.get(item.unitOfMeasureId)!.code,
+              unitName: unitMap.get(item.unitOfMeasureId)!.name,
               productName: productMap.get(item.productId)!.name,
               qty: item.qty,
+              ratioToBase:
+                productMap.get(item.productId)!.baseUnitOfMeasureId === item.unitOfMeasureId
+                  ? 1
+                  : productMap.get(item.productId)!.uomConversions.find((conversion) => conversion.unitOfMeasureId === item.unitOfMeasureId)!.ratioToBase,
+              receivedBaseQty:
+                item.qty *
+                (productMap.get(item.productId)!.baseUnitOfMeasureId === item.unitOfMeasureId
+                  ? 1
+                  : productMap.get(item.productId)!.uomConversions.find((conversion) => conversion.unitOfMeasureId === item.unitOfMeasureId)!.ratioToBase),
               unitCost: item.unitCost,
               lineTotal: roundCurrency(item.qty * item.unitCost)
             }))
@@ -135,13 +186,18 @@ export async function POST(request: Request) {
       if (purchaseRecord.status === 'RECEIVED') {
         for (const item of items) {
           const product = productMap.get(item.productId)!;
+          const ratioToBase =
+            product.baseUnitOfMeasureId === item.unitOfMeasureId
+              ? 1
+              : product.uomConversions.find((conversion) => conversion.unitOfMeasureId === item.unitOfMeasureId)!.ratioToBase;
+          const nextBaseCost = roundCurrency(item.unitCost / ratioToBase);
           await tx.product.update({
             where: { id: product.id },
             data: {
               stockQty: {
-                increment: item.qty
+                increment: item.qty * ratioToBase
               },
-              cost: item.unitCost
+              cost: nextBaseCost
             }
           });
 
@@ -150,10 +206,10 @@ export async function POST(request: Request) {
               shopId,
               productId: product.id,
               type: 'PURCHASE_RECEIVED',
-              qtyChange: item.qty,
+              qtyChange: item.qty * ratioToBase,
               referenceId: purchaseRecord.id,
               userId,
-              notes: `Purchase ${purchaseRecord.purchaseNumber}`
+              notes: `Purchase ${purchaseRecord.purchaseNumber} (${item.qty} ${unitMap.get(item.unitOfMeasureId)!.name.toLowerCase()}${item.qty === 1 ? '' : 's'})`
             }
           });
         }
@@ -173,7 +229,8 @@ export async function POST(request: Request) {
         metadata: {
           totalAmount,
           lineCount: items.length,
-          supplierName: supplier.name
+          supplierName: supplier.name,
+          receivedBaseQty: purchaseRecord.items.reduce((sum, item) => sum + item.receivedBaseQty, 0)
         }
       });
 

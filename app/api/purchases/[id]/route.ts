@@ -3,7 +3,7 @@ import { PurchaseStatus } from '@prisma/client';
 import { requireRole } from '@/lib/authz';
 import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
-import { normalizeText } from '@/lib/inventory';
+import { normalizeText, roundCurrency } from '@/lib/inventory';
 import { prisma } from '@/lib/prisma';
 
 export async function PATCH(
@@ -50,13 +50,16 @@ export async function PATCH(
     const updatedPurchase = await prisma.$transaction(async (tx) => {
       if (purchase.status === 'DRAFT' && nextStatus === 'RECEIVED') {
         for (const item of purchase.items) {
+          const nextBaseCost = item.ratioToBase > 0
+            ? roundCurrency(Number(item.unitCost.toString()) / item.ratioToBase)
+            : Number(item.unitCost.toString());
           await tx.product.update({
             where: { id: item.productId },
             data: {
               stockQty: {
-                increment: item.qty
+                increment: item.receivedBaseQty
               },
-              cost: item.unitCost
+              cost: nextBaseCost
             }
           });
 
@@ -65,10 +68,10 @@ export async function PATCH(
               shopId,
               productId: item.productId,
               type: 'PURCHASE_RECEIVED',
-              qtyChange: item.qty,
+              qtyChange: item.receivedBaseQty,
               referenceId: purchase.id,
               userId,
-              notes: `Purchase ${purchase.purchaseNumber}`
+              notes: `Purchase ${purchase.purchaseNumber} (${item.qty} ${item.unitName.toLowerCase()}${item.qty === 1 ? '' : 's'})`
             }
           });
         }

@@ -6,12 +6,30 @@ import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
 import { dateTime, money } from '@/lib/format';
+import { summarizeConversions } from '@/lib/uom';
 
 type Supplier = { id: string; name: string };
-type Product = { id: string; name: string; cost: string; stockQty: number };
+type UnitOfMeasure = { id: string; code: string; name: string; isBase: boolean };
+type Product = {
+  id: string;
+  name: string;
+  cost: string;
+  stockQty: number;
+  baseUnitOfMeasureId: string | null;
+  baseUnitOfMeasure?: UnitOfMeasure | null;
+  uomConversions: Array<{
+    id: string;
+    unitOfMeasureId: string;
+    ratioToBase: number;
+    unitOfMeasure: UnitOfMeasure;
+  }>;
+};
 type PurchaseItem = {
   id: string;
   productId: string;
+  unitName: string;
+  ratioToBase: number;
+  receivedBaseQty: number;
   productName: string;
   qty: number;
   unitCost: string;
@@ -29,7 +47,16 @@ type Purchase = {
   supplier: { name: string };
   items: PurchaseItem[];
 };
-type Line = { productId: string; productName: string; qty: number; unitCost: number };
+type Line = {
+  productId: string;
+  productName: string;
+  unitOfMeasureId: string;
+  unitName: string;
+  ratioToBase: number;
+  receivedBaseQty: number;
+  qty: number;
+  unitCost: number;
+};
 
 function purchaseTone(status: string) {
   switch (status) {
@@ -45,11 +72,13 @@ function purchaseTone(status: string) {
 export default function PurchaseManager({
   suppliers,
   products,
+  units,
   purchases,
   currencySymbol
 }: {
   suppliers: Supplier[];
   products: Product[];
+  units: UnitOfMeasure[];
   purchases: Purchase[];
   currencySymbol: string;
 }) {
@@ -57,6 +86,9 @@ export default function PurchaseManager({
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? '');
   const [status, setStatus] = useState<'DRAFT' | 'RECEIVED'>('DRAFT');
   const [selectedProductId, setSelectedProductId] = useState(products[0]?.id ?? '');
+  const [selectedUnitId, setSelectedUnitId] = useState(
+    products[0]?.uomConversions[0]?.unitOfMeasureId ?? products[0]?.baseUnitOfMeasureId ?? units[0]?.id ?? ''
+  );
   const [qty, setQty] = useState('1');
   const [unitCost, setUnitCost] = useState(products[0]?.cost ?? '0');
   const [notes, setNotes] = useState('');
@@ -69,6 +101,31 @@ export default function PurchaseManager({
     () => products.find((product) => product.id === selectedProductId),
     [products, selectedProductId]
   );
+  const availableUnits = useMemo(() => {
+    if (!selectedProduct) {
+      return [];
+    }
+
+    const options = [];
+    if (selectedProduct.baseUnitOfMeasure) {
+      options.push({
+        unitOfMeasureId: selectedProduct.baseUnitOfMeasure.id,
+        unitName: selectedProduct.baseUnitOfMeasure.name,
+        ratioToBase: 1
+      });
+    }
+
+    for (const conversion of selectedProduct.uomConversions) {
+      options.push({
+        unitOfMeasureId: conversion.unitOfMeasureId,
+        unitName: conversion.unitOfMeasure.name,
+        ratioToBase: conversion.ratioToBase
+      });
+    }
+
+    return options;
+  }, [selectedProduct]);
+  const selectedUnit = availableUnits.find((unit) => unit.unitOfMeasureId === selectedUnitId) ?? availableUnits[0] ?? null;
   const lineTotal = lines.reduce((sum, line) => sum + line.qty * line.unitCost, 0);
 
   function addLine() {
@@ -77,6 +134,11 @@ export default function PurchaseManager({
 
     if (!selectedProduct) {
       setError('Please select a product.');
+      return;
+    }
+
+    if (!selectedUnit) {
+      setError('Select a purchase unit.');
       return;
     }
 
@@ -94,11 +156,18 @@ export default function PurchaseManager({
     }
 
     setLines((currentLines) => {
-      const existing = currentLines.find((line) => line.productId === selectedProduct.id);
+      const existing = currentLines.find(
+        (line) => line.productId === selectedProduct.id && line.unitOfMeasureId === selectedUnit.unitOfMeasureId
+      );
       if (existing) {
         return currentLines.map((line) =>
-          line.productId === selectedProduct.id
-            ? { ...line, qty: line.qty + parsedQty, unitCost: parsedCost }
+          line.productId === selectedProduct.id && line.unitOfMeasureId === selectedUnit.unitOfMeasureId
+            ? {
+                ...line,
+                qty: line.qty + parsedQty,
+                receivedBaseQty: (line.qty + parsedQty) * line.ratioToBase,
+                unitCost: parsedCost
+              }
             : line
         );
       }
@@ -108,6 +177,10 @@ export default function PurchaseManager({
         {
           productId: selectedProduct.id,
           productName: selectedProduct.name,
+          unitOfMeasureId: selectedUnit.unitOfMeasureId,
+          unitName: selectedUnit.unitName,
+          ratioToBase: selectedUnit.ratioToBase,
+          receivedBaseQty: parsedQty * selectedUnit.ratioToBase,
           qty: parsedQty,
           unitCost: parsedCost
         }
@@ -116,8 +189,10 @@ export default function PurchaseManager({
     setQty('1');
   }
 
-  function removeLine(productId: string) {
-    setLines((currentLines) => currentLines.filter((line) => line.productId !== productId));
+  function removeLine(productId: string, unitOfMeasureId: string) {
+    setLines((currentLines) =>
+      currentLines.filter((line) => !(line.productId === productId && line.unitOfMeasureId === unitOfMeasureId))
+    );
   }
 
   async function createPurchase() {
@@ -145,6 +220,7 @@ export default function PurchaseManager({
         notes: notes || null,
         items: lines.map((line) => ({
           productId: line.productId,
+          unitOfMeasureId: line.unitOfMeasureId,
           qty: line.qty,
           unitCost: line.unitCost
         }))
@@ -202,7 +278,7 @@ export default function PurchaseManager({
             <option value="RECEIVED">Receive now</option>
           </select>
 
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-4">
             <select
               className="rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm"
               value={selectedProductId}
@@ -211,6 +287,7 @@ export default function PurchaseManager({
                 const hit = products.find((product) => product.id === event.target.value);
                 if (hit) {
                   setUnitCost(hit.cost);
+                  setSelectedUnitId(hit.uomConversions[0]?.unitOfMeasureId ?? hit.baseUnitOfMeasureId ?? '');
                 }
               }}
             >
@@ -220,13 +297,38 @@ export default function PurchaseManager({
                 </option>
               ))}
             </select>
+            <select
+              className="rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm"
+              value={selectedUnitId}
+              onChange={(event) => setSelectedUnitId(event.target.value)}
+            >
+              {availableUnits.map((unit) => (
+                <option key={unit.unitOfMeasureId} value={unit.unitOfMeasureId}>
+                  {unit.unitName}
+                </option>
+              ))}
+            </select>
             <Input type="number" min={1} value={qty} onChange={(event) => setQty(event.target.value)} />
             <Input type="number" step="0.01" value={unitCost} onChange={(event) => setUnitCost(event.target.value)} />
           </div>
 
           {selectedProduct ? (
             <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
-              Current stock for <span className="font-semibold text-stone-900">{selectedProduct.name}</span>: {selectedProduct.stockQty}
+              Current stock for <span className="font-semibold text-stone-900">{selectedProduct.name}</span>: {selectedProduct.stockQty} {selectedProduct.baseUnitOfMeasure?.name.toLowerCase() ?? 'base units'}
+              <div className="mt-1 text-xs text-stone-500">
+                {summarizeConversions(
+                  selectedProduct.uomConversions.map((conversion) => ({
+                    unitName: conversion.unitOfMeasure.name,
+                    ratioToBase: conversion.ratioToBase
+                  })),
+                  selectedProduct.baseUnitOfMeasure?.name
+                )}
+              </div>
+              {selectedUnit ? (
+                <div className="mt-1 text-xs text-stone-500">
+                  Receiving preview: {qty || '0'} {selectedUnit.unitName.toLowerCase()}{Number(qty) === 1 ? '' : 's'} = {(Number(qty) || 0) * selectedUnit.ratioToBase} {selectedProduct.baseUnitOfMeasure?.name.toLowerCase() ?? 'base units'}
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -236,11 +338,16 @@ export default function PurchaseManager({
           <div className="space-y-2 rounded-2xl bg-stone-50 p-4">
             {lines.length ? (
               lines.map((line) => (
-                <div key={line.productId} className="flex items-center justify-between gap-3 text-sm text-stone-700">
-                  <span>{line.productName} | {line.qty} x {money(line.unitCost, currencySymbol)}</span>
+                <div key={`${line.productId}-${line.unitOfMeasureId}`} className="flex items-center justify-between gap-3 text-sm text-stone-700">
+                  <span>
+                    {line.productName} | {line.qty} {line.unitName.toLowerCase()}{line.qty === 1 ? '' : 's'} x {money(line.unitCost, currencySymbol)}
+                    <span className="ml-2 text-xs text-stone-500">
+                      ({line.receivedBaseQty ?? line.qty * line.ratioToBase} base units)
+                    </span>
+                  </span>
                   <div className="flex items-center gap-3">
                     <span>{money(line.qty * line.unitCost, currencySymbol)}</span>
-                    <Button type="button" variant="ghost" onClick={() => removeLine(line.productId)}>
+                    <Button type="button" variant="ghost" onClick={() => removeLine(line.productId, line.unitOfMeasureId)}>
                       Remove
                     </Button>
                   </div>
@@ -288,7 +395,10 @@ export default function PurchaseManager({
                 <div className="mt-3 space-y-2 text-sm text-stone-600">
                   {purchase.items.map((item) => (
                     <div key={item.id} className="flex justify-between">
-                      <span>{item.productName} x {item.qty}</span>
+                      <span>
+                        {item.productName} x {item.qty} {item.unitName.toLowerCase()}{item.qty === 1 ? '' : 's'}
+                        <span className="ml-2 text-xs text-stone-500">({item.receivedBaseQty} base units)</span>
+                      </span>
                       <span>{money(item.lineTotal, currencySymbol)}</span>
                     </div>
                   ))}

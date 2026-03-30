@@ -2,9 +2,11 @@ import AppHeader from '@/components/layout/AppHeader';
 import PurchaseManager from '@/components/purchases/PurchaseManager';
 import { requirePageRole } from '@/lib/authz';
 import { prisma } from '@/lib/prisma';
+import { ensureUnitsOfMeasure } from '@/lib/uom';
 
 export default async function PurchasesPage() {
   const { shopId } = await requirePageRole('MANAGER');
+  const units = await ensureUnitsOfMeasure(shopId);
   const [suppliers, products, purchases, settings] = await Promise.all([
     prisma.supplier.findMany({
       where: { shopId, isActive: true },
@@ -12,6 +14,17 @@ export default async function PurchasesPage() {
     }),
     prisma.product.findMany({
       where: { shopId, isActive: true },
+      include: {
+        baseUnitOfMeasure: true,
+        uomConversions: {
+          include: {
+            unitOfMeasure: true
+          },
+          orderBy: {
+            ratioToBase: 'asc'
+          }
+        }
+      },
       orderBy: { name: 'asc' }
     }),
     prisma.purchaseOrder.findMany({
@@ -35,6 +48,7 @@ export default async function PurchasesPage() {
           ...product,
           cost: product.cost.toString()
         }))}
+        units={units}
         purchases={purchases.map((purchase) => ({
           ...purchase,
           totalAmount: purchase.totalAmount.toString(),
