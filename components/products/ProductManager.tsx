@@ -20,7 +20,15 @@ type Product = {
   price: string;
   stockQty: number;
   reorderPoint: number;
+  trackBatches: boolean;
+  trackExpiry: boolean;
   isActive: boolean;
+  batches: Array<{
+    id: string;
+    lotNumber: string;
+    expiryDate: string | null;
+    quantity: number;
+  }>;
   category?: { id: string; name: string } | null;
 };
 
@@ -35,12 +43,18 @@ export default function ProductManager({
   initialProducts,
   categories,
   currencySymbol,
-  lowStockThreshold
+  lowStockThreshold,
+  inventoryDefaults
 }: {
   initialProducts: Product[];
   categories: Category[];
   currencySymbol: string;
   lowStockThreshold: number;
+  inventoryDefaults: {
+    batchTrackingEnabled: boolean;
+    expiryTrackingEnabled: boolean;
+    expiryAlertDays: number;
+  };
 }) {
   const [products, setProducts] = useState(initialProducts);
   const [query, setQuery] = useState('');
@@ -56,6 +70,8 @@ export default function ProductManager({
     price: '0.00',
     stockQty: '0',
     reorderPoint: '5',
+    trackBatches: inventoryDefaults.batchTrackingEnabled,
+    trackExpiry: inventoryDefaults.expiryTrackingEnabled,
     isActive: true
   });
   const [error, setError] = useState('');
@@ -96,6 +112,8 @@ export default function ProductManager({
       price: '0.00',
       stockQty: '0',
       reorderPoint: '5',
+      trackBatches: inventoryDefaults.batchTrackingEnabled,
+      trackExpiry: inventoryDefaults.expiryTrackingEnabled,
       isActive: true
     });
   }
@@ -114,6 +132,8 @@ export default function ProductManager({
       price: product.price,
       stockQty: String(product.stockQty),
       reorderPoint: String(product.reorderPoint),
+      trackBatches: product.trackBatches,
+      trackExpiry: product.trackExpiry,
       isActive: product.isActive
     });
   }
@@ -174,7 +194,10 @@ export default function ProductManager({
     const product = {
       ...data.product,
       cost: String(data.product.cost),
-      price: String(data.product.price)
+      price: String(data.product.price),
+      batches: editingId
+        ? products.find((item) => item.id === editingId)?.batches ?? []
+        : []
     };
 
     setProducts((currentProducts) =>
@@ -358,6 +381,45 @@ export default function ProductManager({
               />
             </div>
 
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="inline-flex items-center gap-3 text-sm font-medium text-stone-700">
+                <input
+                  type="checkbox"
+                  checked={form.trackBatches}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      trackBatches: event.target.checked,
+                      trackExpiry: event.target.checked ? current.trackExpiry : false
+                    }))
+                  }
+                />
+                Track lot / batch records
+              </label>
+              <label className="inline-flex items-center gap-3 text-sm font-medium text-stone-700">
+                <input
+                  type="checkbox"
+                  checked={form.trackExpiry}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      trackExpiry: event.target.checked,
+                      trackBatches: event.target.checked ? true : current.trackBatches
+                    }))
+                  }
+                />
+                Track expiry dates
+              </label>
+            </div>
+
+            <div className="mt-4 rounded-[20px] border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+              Shop defaults: {inventoryDefaults.batchTrackingEnabled ? 'batch tracking on' : 'batch tracking optional'}
+              {' / '}
+              {inventoryDefaults.expiryTrackingEnabled ? 'expiry tracking on' : 'expiry tracking optional'}
+              {' / '}
+              Alerts within {inventoryDefaults.expiryAlertDays} day(s)
+            </div>
+
             <label className="mt-4 inline-flex items-center gap-3 text-sm font-medium text-stone-700">
               <input
                 type="checkbox"
@@ -431,6 +493,7 @@ export default function ProductManager({
                   <th className="px-4 py-3.5">Name</th>
                   <th className="px-4 py-3.5">Category</th>
                   <th className="px-4 py-3.5">SKU / Barcode</th>
+                  <th className="px-4 py-3.5">Tracking</th>
                   <th className="px-4 py-3.5">Cost</th>
                   <th className="px-4 py-3.5">Price</th>
                   <th className="px-4 py-3.5">Stock</th>
@@ -441,6 +504,7 @@ export default function ProductManager({
               <tbody>
                 {filtered.map((product) => {
                   const level = getStockLevel(product.stockQty, product.reorderPoint, lowStockThreshold);
+                  const nextExpiryBatch = product.batches.find((batch) => batch.expiryDate && batch.quantity > 0) ?? null;
                   return (
                     <tr key={product.id} className="border-t border-stone-200 bg-white transition hover:bg-stone-50/70">
                       <td className="px-4 py-4">
@@ -450,6 +514,20 @@ export default function ProductManager({
                       <td className="px-4 py-4">{product.category?.name ?? 'Uncategorized'}</td>
                       <td className="px-4 py-4 text-stone-600">
                         {(product.sku || 'N/A')} / {(product.barcode || 'N/A')}
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex flex-wrap gap-2">
+                          {product.trackBatches ? <Badge tone="blue">Batch</Badge> : null}
+                          {product.trackExpiry ? <Badge tone="amber">Expiry</Badge> : null}
+                          {!product.trackBatches && !product.trackExpiry ? <Badge tone="stone">Standard</Badge> : null}
+                        </div>
+                        <div className="mt-2 text-xs text-stone-500">
+                          {nextExpiryBatch?.expiryDate
+                            ? `Next expiry ${new Date(nextExpiryBatch.expiryDate).toLocaleDateString('en-PH')}`
+                            : product.batches.length
+                              ? `${product.batches.length} batch record(s)`
+                              : 'No batch records yet'}
+                        </div>
                       </td>
                       <td className="px-4 py-4">{money(product.cost, currencySymbol)}</td>
                       <td className="px-4 py-4 font-semibold text-stone-900">{money(product.price, currencySymbol)}</td>

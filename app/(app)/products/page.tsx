@@ -8,7 +8,12 @@ export default async function ProductsPage() {
   const [products, categories, settings] = await Promise.all([
     prisma.product.findMany({
       where: { shopId },
-      include: { category: true },
+      include: {
+        category: true,
+        batches: {
+          orderBy: [{ expiryDate: 'asc' }, { receivedAt: 'desc' }]
+        }
+      },
       orderBy: [{ isActive: 'desc' }, { createdAt: 'desc' }]
     }),
     prisma.category.findMany({
@@ -28,11 +33,22 @@ export default async function ProductsPage() {
         initialProducts={products.map((product) => ({
           ...product,
           cost: product.cost.toString(),
-          price: product.price.toString()
+          price: product.price.toString(),
+          batches: product.batches.map((batch) => ({
+            id: batch.id,
+            lotNumber: batch.lotNumber,
+            expiryDate: batch.expiryDate?.toISOString() ?? null,
+            quantity: batch.quantity
+          }))
         }))}
         categories={categories}
         currencySymbol={settings?.currencySymbol ?? '₱'}
         lowStockThreshold={settings?.lowStockThreshold ?? 5}
+        inventoryDefaults={{
+          batchTrackingEnabled: settings?.batchTrackingEnabled ?? false,
+          expiryTrackingEnabled: settings?.expiryTrackingEnabled ?? false,
+          expiryAlertDays: settings?.expiryAlertDays ?? 30
+        }}
       />
     </div>
   );

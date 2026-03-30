@@ -125,6 +125,8 @@ export async function PATCH(
           cost: parsed.data.cost ?? existing.cost,
           price: parsed.data.price ?? existing.price,
           reorderPoint: parsed.data.reorderPoint ?? existing.reorderPoint,
+          trackBatches: parsed.data.trackBatches ?? existing.trackBatches,
+          trackExpiry: parsed.data.trackExpiry ?? existing.trackExpiry,
           isActive: parsed.data.isActive ?? existing.isActive
         },
         include: {
@@ -155,7 +157,9 @@ export async function PATCH(
             : `Updated product ${product.name}.`,
         metadata: {
           previousName: existing.name,
-          isActive: product.isActive
+          isActive: product.isActive,
+          trackBatches: product.trackBatches,
+          trackExpiry: product.trackExpiry
         }
       });
 

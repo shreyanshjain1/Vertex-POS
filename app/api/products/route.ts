@@ -109,6 +109,8 @@ export async function POST(request: Request) {
           price: payload.price,
           stockQty: payload.stockQty,
           reorderPoint: payload.reorderPoint,
+          trackBatches: payload.trackBatches,
+          trackExpiry: payload.trackExpiry,
           isActive: payload.isActive
         },
         include: {
@@ -144,7 +146,9 @@ export async function POST(request: Request) {
         description: `Created product ${createdProduct.name}.`,
         metadata: {
           isActive: createdProduct.isActive,
-          stockQty: createdProduct.stockQty
+          stockQty: createdProduct.stockQty,
+          trackBatches: createdProduct.trackBatches,
+          trackExpiry: createdProduct.trackExpiry
         }
       });
 
