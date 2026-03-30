@@ -20,6 +20,13 @@ enum ShopType {
   FOOD
   BUILDING_MATERIALS
   SERVICES
+  GENERAL_RETAIL
+  GROCERY_CONVENIENCE
+  PHARMACY
+  FOOD_BEVERAGE
+  COSMETICS_BEAUTY
+  MEDICAL_SUPPLIES
+  HARDWARE
 }
 
 enum InventoryMovementType {
@@ -151,6 +158,8 @@ model Shop {
   memberships      UserShop[]
   categories       Category[]
   products         Product[]
+  productBatches   ProductBatch[]
+  inventoryReasons InventoryReason[]
   sales            Sale[]
   saleAdjustments SaleAdjustment[]
   stockCounts      StockCount[]
@@ -225,12 +234,15 @@ model Product {
   price           Decimal              @db.Decimal(12, 2)
   stockQty        Int                  @default(0)
   reorderPoint    Int                  @default(5)
+  trackBatches    Boolean              @default(false)
+  trackExpiry     Boolean              @default(false)
   isActive        Boolean              @default(true)
   category        Category?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   shop            Shop                 @relation(fields: [shopId], references: [id], onDelete: Cascade)
   saleItems       SaleItem[]
   adjustmentItems SaleAdjustmentItem[]
   stockCountItems  StockCountItem[]
+  batches         ProductBatch[]
   purchaseItems   PurchaseItem[]
   inventoryMoves  InventoryMovement[]
   createdAt       DateTime             @default(now())
@@ -476,17 +488,54 @@ model InventoryMovement {
   id          String                @id @default(cuid())
   shopId      String
   productId   String
+  reasonId    String?
   type        InventoryMovementType
   qtyChange   Int
   referenceId String?
   notes       String?
   userId      String?
   product     Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  reason      InventoryReason?      @relation(fields: [reasonId], references: [id], onDelete: SetNull)
   shop        Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
   createdAt   DateTime              @default(now())
 
   @@index([shopId, createdAt])
   @@index([productId, createdAt])
+  @@index([reasonId])
+}
+
+model InventoryReason {
+  id         String              @id @default(cuid())
+  shopId     String
+  code       String
+  label      String
+  isActive   Boolean             @default(true)
+  shop       Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  movements  InventoryMovement[]
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  @@unique([shopId, code])
+  @@index([shopId, isActive])
+}
+
+model ProductBatch {
+  id         String    @id @default(cuid())
+  shopId     String
+  productId  String
+  lotNumber  String
+  expiryDate DateTime?
+  quantity   Int       @default(0)
+  receivedAt DateTime  @default(now())
+  notes      String?
+  shop       Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  product    Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([productId, lotNumber])
+  @@index([shopId, expiryDate])
+  @@index([productId, expiryDate])
 }
 
 model Supplier {
@@ -619,6 +668,10 @@ model ShopSetting {
   receiptWidth       String   @default("80mm")
   lowStockEnabled    Boolean  @default(true)
   lowStockThreshold  Int      @default(5)
+  batchTrackingEnabled  Boolean  @default(false)
+  expiryTrackingEnabled Boolean  @default(false)
+  fefoEnabled        Boolean  @default(false)
+  expiryAlertDays    Int      @default(30)
   salePrefix         String   @default("SAL")
   receiptPrefix      String   @default("RCP")
   purchasePrefix     String   @default("PO")
