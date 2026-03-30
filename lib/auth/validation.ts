@@ -92,7 +92,7 @@ export const supplierSchema = z.object({
   isActive: z.coerce.boolean().optional().default(true)
 });
 
-const salePaymentSchema = z.object({
+export const salePaymentSchema = z.object({
   method: z.enum(PAYMENT_METHODS),
   amount: z.coerce.number().positive('Payment amount must be greater than zero.').max(999999.99),
   referenceNumber: z.string().trim().max(80).optional().nullable()
@@ -108,6 +108,38 @@ export const saleSchema = z.object({
     productId: z.string().trim().min(1),
     qty: z.coerce.number().int().positive()
   })).min(1)
+});
+
+const approvalSchema = z.object({
+  approverEmail: z.string().trim().email('Enter a valid approver email.').transform((value) => value.toLowerCase()),
+  approverPassword: z.string().min(1, 'Approver password is required.').max(72)
+});
+
+const saleAdjustmentReturnItemSchema = z.object({
+  saleItemId: z.string().trim().min(1),
+  qty: z.coerce.number().int().positive(),
+  disposition: z.enum(['RESTOCK', 'DAMAGED'])
+});
+
+const saleAdjustmentReplacementItemSchema = z.object({
+  productId: z.string().trim().min(1),
+  qty: z.coerce.number().int().positive()
+});
+
+export const saleVoidSchema = approvalSchema.extend({
+  reason: z.string().trim().min(3, 'Refund reason is required.').max(300),
+  notes: z.string().trim().max(300).optional().nullable(),
+  refundPayments: z.array(salePaymentSchema).min(1, 'Add at least one refund payment line.')
+});
+
+export const saleRefundSchema = approvalSchema.extend({
+  type: z.enum(['REFUND', 'EXCHANGE']).default('REFUND'),
+  reason: z.string().trim().min(3, 'Refund reason is required.').max(300),
+  notes: z.string().trim().max(300).optional().nullable(),
+  items: z.array(saleAdjustmentReturnItemSchema).min(1, 'Select at least one returned item.'),
+  replacementItems: z.array(saleAdjustmentReplacementItemSchema).optional().default([]),
+  refundPayments: z.array(salePaymentSchema).optional().default([]),
+  exchangePayments: z.array(salePaymentSchema).optional().default([])
 });
 
 export const parkedSaleCreateSchema = z.object({

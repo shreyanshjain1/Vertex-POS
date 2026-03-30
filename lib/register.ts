@@ -55,7 +55,7 @@ export async function computeClosingExpectedCash(
     }
   };
 
-  const [cashPayments, cashSalesWithChange, legacyCashSales] = await Promise.all([
+  const [cashPayments, cashSalesWithChange, legacyCashSales, cashRefunds] = await Promise.all([
     db.salePayment.aggregate({
       where: {
         method: CASH_PAYMENT_METHOD,
@@ -89,6 +89,22 @@ export async function computeClosingExpectedCash(
       _sum: {
         totalAmount: true
       }
+    }),
+    db.refundPayment.aggregate({
+      where: {
+        method: CASH_PAYMENT_METHOD,
+        saleAdjustment: {
+          shopId: session.shopId,
+          createdByUserId: session.userId,
+          createdAt: {
+            gte: session.openedAt,
+            lte: closingAt
+          }
+        }
+      },
+      _sum: {
+        amount: true
+      }
     })
   ]);
 
@@ -96,9 +112,10 @@ export async function computeClosingExpectedCash(
   const cashReceivedTotal = Number(cashPayments._sum.amount ?? 0);
   const changeDueTotal = Number(cashSalesWithChange._sum.changeDue ?? 0);
   const legacyCashSalesTotal = Number(legacyCashSales._sum.totalAmount ?? 0);
+  const cashRefundTotal = Number(cashRefunds._sum.amount ?? 0);
 
   return roundCurrency(
-    openingFloat + cashReceivedTotal - changeDueTotal + legacyCashSalesTotal
+    openingFloat + cashReceivedTotal - changeDueTotal + legacyCashSalesTotal - cashRefundTotal
   );
 }
 
