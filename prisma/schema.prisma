@@ -159,6 +159,7 @@ model Shop {
   categories       Category[]
   products         Product[]
   productBatches   ProductBatch[]
+  unitOfMeasures   UnitOfMeasure[]
   inventoryReasons InventoryReason[]
   sales            Sale[]
   saleAdjustments SaleAdjustment[]
@@ -226,6 +227,7 @@ model Product {
   id              String               @id @default(cuid())
   shopId          String
   categoryId      String?
+  baseUnitOfMeasureId String
   sku             String?
   barcode         String?
   name            String
@@ -238,7 +240,9 @@ model Product {
   trackExpiry     Boolean              @default(false)
   isActive        Boolean              @default(true)
   category        Category?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  baseUnitOfMeasure UnitOfMeasure      @relation("ProductBaseUnit", fields: [baseUnitOfMeasureId], references: [id], onDelete: Restrict)
   shop            Shop                 @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  uomConversions  ProductUomConversion[]
   saleItems       SaleItem[]
   adjustmentItems SaleAdjustmentItem[]
   stockCountItems  StockCountItem[]
@@ -252,6 +256,7 @@ model Product {
   @@unique([shopId, barcode])
   @@index([shopId])
   @@index([categoryId])
+  @@index([baseUnitOfMeasureId])
 }
 
 model Sale {
@@ -538,6 +543,39 @@ model ProductBatch {
   @@index([productId, expiryDate])
 }
 
+model UnitOfMeasure {
+  id                 String                 @id @default(cuid())
+  shopId             String
+  code               String
+  name               String
+  isBase             Boolean                @default(false)
+  isActive           Boolean                @default(true)
+  shop               Shop                   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  baseProducts       Product[]              @relation("ProductBaseUnit")
+  productConversions ProductUomConversion[]
+  purchaseItems      PurchaseItem[]         @relation("PurchaseItemUnit")
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  @@unique([shopId, code])
+  @@index([shopId, isActive])
+}
+
+model ProductUomConversion {
+  id              String        @id @default(cuid())
+  productId       String
+  unitOfMeasureId String
+  ratioToBase     Int
+  product         Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  unitOfMeasure   UnitOfMeasure @relation(fields: [unitOfMeasureId], references: [id], onDelete: Restrict)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([productId, unitOfMeasureId])
+  @@index([productId])
+  @@index([unitOfMeasureId])
+}
+
 model Supplier {
   id          String          @id @default(cuid())
   shopId      String
@@ -577,18 +615,25 @@ model PurchaseOrder {
 }
 
 model PurchaseItem {
-  id          String        @id @default(cuid())
-  purchaseId  String
-  productId   String
-  productName String
-  qty         Int
-  unitCost    Decimal       @db.Decimal(12, 2)
-  lineTotal   Decimal       @db.Decimal(12, 2)
-  purchase    PurchaseOrder @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
-  product     Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  id              String        @id @default(cuid())
+  purchaseId      String
+  productId       String
+  unitOfMeasureId String
+  unitCode        String
+  unitName        String
+  productName     String
+  qty             Int
+  ratioToBase     Int
+  receivedBaseQty Int
+  unitCost        Decimal       @db.Decimal(12, 2)
+  lineTotal       Decimal       @db.Decimal(12, 2)
+  purchase        PurchaseOrder @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product         Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  unitOfMeasure   UnitOfMeasure @relation("PurchaseItemUnit", fields: [unitOfMeasureId], references: [id], onDelete: Restrict)
 
   @@index([purchaseId])
   @@index([productId])
+  @@index([unitOfMeasureId])
 }
 
 model Notification {
