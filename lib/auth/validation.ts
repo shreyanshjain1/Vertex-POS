@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import { PAYMENT_METHODS } from '@/lib/payments';
+import { SHOP_TYPE_OPTIONS } from '@/lib/shop-config';
 
 const shopRoleSchema = z.enum(['ADMIN', 'MANAGER', 'CASHIER']);
 const optionalText = () => z.string().trim().optional().nullable();
+const shopTypeSchema = z.enum(SHOP_TYPE_OPTIONS.map((option) => option.value) as [string, ...string[]]);
 
 export const loginSchema = z.object({
   email: z.string().trim().email('Enter a valid email').transform((value) => value.toLowerCase()),
@@ -21,7 +23,7 @@ export const registerSchema = z.object({
 
 export const onboardSchema = z.object({
   shopName: z.string().trim().min(2).max(120),
-  posType: z.enum(['RETAIL', 'COFFEE', 'FOOD', 'BUILDING_MATERIALS', 'SERVICES']),
+  posType: shopTypeSchema,
   phone: optionalText(),
   email: z.string().trim().email().optional().nullable().or(z.literal('')),
   address: optionalText(),
@@ -46,7 +48,9 @@ export const onboardSchema = z.object({
     cost: z.coerce.number().min(0),
     price: z.coerce.number().min(0),
     stockQty: z.coerce.number().int().min(0),
-    reorderPoint: z.coerce.number().int().min(0)
+    reorderPoint: z.coerce.number().int().min(0),
+    trackBatches: z.coerce.boolean().optional().default(false),
+    trackExpiry: z.coerce.boolean().optional().default(false)
   })).default([])
 });
 
@@ -69,6 +73,8 @@ export const productSchema = z.object({
   price: z.coerce.number().min(0),
   stockQty: z.coerce.number().int().min(0),
   reorderPoint: z.coerce.number().int().min(0),
+  trackBatches: z.coerce.boolean().default(false),
+  trackExpiry: z.coerce.boolean().default(false),
   isActive: z.coerce.boolean().default(true)
 });
 
@@ -78,8 +84,16 @@ export const productUpdateSchema = productSchema.partial().extend({
 
 export const inventoryAdjustmentSchema = z.object({
   productId: z.string().trim().min(1),
+  reasonId: z.string().trim().min(1, 'Select an adjustment reason.'),
   qtyChange: z.coerce.number().int().refine((value) => value !== 0, 'Quantity change must not be zero'),
   notes: optionalText()
+});
+
+export const productBatchSchema = z.object({
+  lotNumber: z.string().trim().min(2, 'Lot number is required.').max(80),
+  expiryDate: z.string().trim().optional().nullable().or(z.literal('')),
+  quantity: z.coerce.number().int().min(0),
+  notes: z.string().trim().max(300).optional().nullable()
 });
 
 export const stockCountCreateSchema = z.object({

@@ -5,6 +5,7 @@ import { onboardSchema } from '@/lib/auth/validation';
 import { logActivity } from '@/lib/activity';
 import { normalizeText } from '@/lib/inventory';
 import { prisma } from '@/lib/prisma';
+import { getShopTypeDefaults, INVENTORY_REASON_PRESETS } from '@/lib/shop-config';
 import { slugify } from '@/lib/slug';
 
 async function uniqueSlug(name: string) {
@@ -63,20 +64,27 @@ export async function POST(request: Request) {
     }
 
     const slug = await uniqueSlug(parsed.data.shopName);
+    const shopTypeDefaults = getShopTypeDefaults(parsed.data.posType);
     const categories = uniqueByName(
-      parsed.data.categories.map((category) => ({ name: category.name.trim() }))
+      (parsed.data.categories.length
+        ? parsed.data.categories.map((category) => ({ name: category.name.trim() }))
+        : shopTypeDefaults.starterCategories.map((name) => ({ name })))
     );
     const suppliers = uniqueByName(
-      parsed.data.suppliers.map((supplier) => ({
-        ...supplier,
-        name: supplier.name.trim()
-      }))
+      (parsed.data.suppliers.length
+        ? parsed.data.suppliers
+        : shopTypeDefaults.starterSuppliers).map((supplier) => ({
+          ...supplier,
+          name: supplier.name.trim()
+        }))
     );
     const products = uniqueByName(
-      parsed.data.products.map((product) => ({
-        ...product,
-        name: product.name.trim()
-      }))
+      (parsed.data.products.length
+        ? parsed.data.products
+        : shopTypeDefaults.starterProducts).map((product) => ({
+          ...product,
+          name: product.name.trim()
+        }))
     );
 
     const result = await prisma.$transaction(async (tx) => {
@@ -117,8 +125,21 @@ export async function POST(request: Request) {
           receiptHeader: normalizeText(parsed.data.receiptHeader),
           receiptFooter: normalizeText(parsed.data.receiptFooter),
           lowStockThreshold: parsed.data.lowStockThreshold,
+          batchTrackingEnabled: shopTypeDefaults.batchTrackingEnabled,
+          expiryTrackingEnabled: shopTypeDefaults.expiryTrackingEnabled,
+          fefoEnabled: shopTypeDefaults.fefoEnabled,
+          expiryAlertDays: shopTypeDefaults.expiryAlertDays,
           lowStockEnabled: true
         }
+      });
+
+      await tx.inventoryReason.createMany({
+        data: INVENTORY_REASON_PRESETS.map((reason) => ({
+          shopId: shop.id,
+          code: reason.code,
+          label: reason.label,
+          isActive: true
+        }))
       });
 
       const categoryMap = new Map<string, string>();
@@ -180,7 +201,9 @@ export async function POST(request: Request) {
             cost: product.cost,
             price: product.price,
             stockQty: product.stockQty,
-            reorderPoint: product.reorderPoint
+            reorderPoint: product.reorderPoint,
+            trackBatches: product.trackBatches ?? shopTypeDefaults.batchTrackingEnabled,
+            trackExpiry: product.trackExpiry ?? shopTypeDefaults.expiryTrackingEnabled
           }
         });
 
