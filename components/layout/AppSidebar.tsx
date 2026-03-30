@@ -19,6 +19,7 @@ type IconName =
   | 'register'
   | 'sales'
   | 'returns'
+  | 'stock-counts'
   | 'products'
   | 'categories'
   | 'inventory'
@@ -66,6 +67,13 @@ const sections: Array<{ title: string; links: NavLink[] }> = [
         label: 'Returns',
         description: 'Track voids, refunds, exchanges, and approvals.',
         icon: 'returns',
+        minRole: 'CASHIER'
+      },
+      {
+        href: '/stock-counts',
+        label: 'Stock counts',
+        description: 'Run formal stock takes and post approved variances.',
+        icon: 'stock-counts',
         minRole: 'CASHIER'
       }
     ]
@@ -232,6 +240,15 @@ function SidebarIcon({ name, active = false }: { name: IconName; active?: boolea
           <path d="M5 11a7 7 0 1 0 2-4.9" />
           <path d="M15 9h3" />
           <path d="M15 13h2" />
+        </svg>
+      );
+    case 'stock-counts':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={`${common} ${color}`}>
+          <path d="M7 4h10" />
+          <path d="M6 6.5A2.5 2.5 0 0 1 8.5 4h7A2.5 2.5 0 0 1 18 6.5v11A2.5 2.5 0 0 1 15.5 20h-7A2.5 2.5 0 0 1 6 17.5z" />
+          <path d="m9 11 1.8 1.8L15 8.5" />
+          <path d="M9 16h6" />
         </svg>
       );
     case 'products':

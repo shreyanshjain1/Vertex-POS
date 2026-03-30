@@ -26,6 +26,10 @@ function toneForType(type: string) {
     return 'emerald';
   }
 
+  if (normalized.includes('COUNT')) {
+    return 'blue';
+  }
+
   return 'stone';
 }
 
