@@ -82,6 +82,22 @@ export const inventoryAdjustmentSchema = z.object({
   notes: optionalText()
 });
 
+export const stockCountCreateSchema = z.object({
+  title: z.string().trim().max(120).optional().nullable(),
+  notes: z.string().trim().max(500).optional().nullable(),
+  isBlind: z.coerce.boolean().default(false)
+});
+
+export const stockCountUpdateSchema = z.object({
+  action: z.enum(['SAVE', 'SUBMIT', 'APPROVE', 'POST', 'CANCEL']),
+  notes: z.string().trim().max(500).optional().nullable(),
+  items: z.array(z.object({
+    id: z.string().trim().min(1),
+    actualQty: z.coerce.number().int().min(0).nullable(),
+    note: z.string().trim().max(300).optional().nullable()
+  })).optional().default([])
+});
+
 export const supplierSchema = z.object({
   name: z.string().trim().min(2).max(120),
   contactName: z.string().trim().max(120).optional().nullable(),
