@@ -6,11 +6,15 @@ import { prisma } from '@/lib/prisma';
 export async function GET() {
   try {
     const { shopId } = await requireRole('MANAGER');
-    const [salesAggregate, purchaseAggregate, settings] = await Promise.all([
+    const [salesAggregate, refundAggregate, purchaseAggregate, settings] = await Promise.all([
       prisma.sale.aggregate({
         where: { shopId, status: 'COMPLETED' },
         _sum: { totalAmount: true },
         _count: true
+      }),
+      prisma.saleAdjustment.aggregate({
+        where: { shopId },
+        _sum: { totalAmount: true }
       }),
       prisma.purchaseOrder.aggregate({
         where: { shopId, status: 'RECEIVED' },
@@ -31,7 +35,7 @@ export async function GET() {
     });
 
     return NextResponse.json({
-      revenue: Number(salesAggregate._sum.totalAmount ?? 0),
+      revenue: Number(salesAggregate._sum.totalAmount ?? 0) - Number(refundAggregate._sum.totalAmount ?? 0),
       salesCount: salesAggregate._count,
       purchaseSpend: Number(purchaseAggregate._sum.totalAmount ?? 0),
       purchaseCount: purchaseAggregate._count,

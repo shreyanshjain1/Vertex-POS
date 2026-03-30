@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/authz';
 import { apiErrorResponse } from '@/lib/api';
 import { prisma } from '@/lib/prisma';
+import { saleDetailInclude, serializeSaleDetail } from '@/lib/sale-adjustments';
 
 export async function GET(
   _: Request,
@@ -13,7 +14,7 @@ export async function GET(
 
     const sale = await prisma.sale.findFirst({
       where: { id, shopId },
-      include: { items: true }
+      include: saleDetailInclude
     });
 
     if (!sale) {
@@ -21,20 +22,7 @@ export async function GET(
     }
 
     return NextResponse.json({
-      sale: {
-        ...sale,
-        subtotal: sale.subtotal.toString(),
-        taxAmount: sale.taxAmount.toString(),
-        discountAmount: sale.discountAmount.toString(),
-        totalAmount: sale.totalAmount.toString(),
-        createdAt: sale.createdAt.toISOString(),
-        updatedAt: sale.updatedAt.toISOString(),
-        items: sale.items.map((item) => ({
-          ...item,
-          unitPrice: item.unitPrice.toString(),
-          lineTotal: item.lineTotal.toString()
-        }))
-      }
+      sale: serializeSaleDetail(sale)
     });
   } catch (error) {
     return apiErrorResponse(error, 'Unable to load sale.');
