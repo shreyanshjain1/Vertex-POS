@@ -18,6 +18,7 @@ type IconName =
   | 'checkout'
   | 'register'
   | 'sales'
+  | 'returns'
   | 'products'
   | 'categories'
   | 'inventory'
@@ -58,6 +59,13 @@ const sections: Array<{ title: string; links: NavLink[] }> = [
         label: 'Sales',
         description: 'Review completed transactions and receipts.',
         icon: 'sales',
+        minRole: 'CASHIER'
+      },
+      {
+        href: '/returns',
+        label: 'Returns',
+        description: 'Track voids, refunds, exchanges, and approvals.',
+        icon: 'returns',
         minRole: 'CASHIER'
       }
     ]
@@ -215,6 +223,15 @@ function SidebarIcon({ name, active = false }: { name: IconName; active?: boolea
           <path d="M10 8h4" />
           <path d="M10 12h4" />
           <path d="M10 16h2" />
+        </svg>
+      );
+    case 'returns':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={`${common} ${color}`}>
+          <path d="M9 7H5v4" />
+          <path d="M5 11a7 7 0 1 0 2-4.9" />
+          <path d="M15 9h3" />
+          <path d="M15 13h2" />
         </svg>
       );
     case 'products':

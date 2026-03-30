@@ -13,21 +13,33 @@ export default async function ReportsPage() {
   const weekStart = new Date(todayStart);
   weekStart.setDate(todayStart.getDate() - 6);
 
-  const [daily, weekly, monthly, topProducts, lowStock, purchaseSummary] = await Promise.all([
+  const [daily, dailyRefunds, weekly, weeklyRefunds, monthly, monthlyRefunds, topProducts, lowStock, purchaseSummary] = await Promise.all([
     prisma.sale.aggregate({
       where: { shopId, status: 'COMPLETED', createdAt: { gte: todayStart } },
       _sum: { totalAmount: true },
       _count: true
+    }),
+    prisma.saleAdjustment.aggregate({
+      where: { shopId, createdAt: { gte: todayStart } },
+      _sum: { totalAmount: true }
     }),
     prisma.sale.aggregate({
       where: { shopId, status: 'COMPLETED', createdAt: { gte: weekStart } },
       _sum: { totalAmount: true },
       _count: true
     }),
+    prisma.saleAdjustment.aggregate({
+      where: { shopId, createdAt: { gte: weekStart } },
+      _sum: { totalAmount: true }
+    }),
     prisma.sale.aggregate({
       where: { shopId, status: 'COMPLETED', createdAt: { gte: monthStart } },
       _sum: { totalAmount: true },
       _count: true
+    }),
+    prisma.saleAdjustment.aggregate({
+      where: { shopId, createdAt: { gte: monthStart } },
+      _sum: { totalAmount: true }
     }),
     prisma.saleItem.groupBy({
       by: ['productId', 'productName'],
@@ -52,20 +64,23 @@ export default async function ReportsPage() {
     })
   ]);
 
-  const currency = settings?.currencySymbol ?? '₱';
+  const currency = settings?.currencySymbol ?? 'â‚±';
+  const dailyNet = Number(daily._sum.totalAmount ?? 0) - Number(dailyRefunds._sum.totalAmount ?? 0);
+  const weeklyNet = Number(weekly._sum.totalAmount ?? 0) - Number(weeklyRefunds._sum.totalAmount ?? 0);
+  const monthlyNet = Number(monthly._sum.totalAmount ?? 0) - Number(monthlyRefunds._sum.totalAmount ?? 0);
 
   return (
     <div className="space-y-6">
       <AppHeader
         title="Reports"
-        subtitle="Track revenue, purchasing, top sellers, and low-stock pressure using completed operational data only."
+        subtitle="Track net revenue after refunds and voids, plus purchasing, top sellers, and low-stock pressure."
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {[
-          ['Today', money(daily._sum.totalAmount?.toString() ?? '0', currency), `${daily._count} completed sale(s)`],
-          ['Last 7 days', money(weekly._sum.totalAmount?.toString() ?? '0', currency), `${weekly._count} completed sale(s)`],
-          ['This month', money(monthly._sum.totalAmount?.toString() ?? '0', currency), `${monthly._count} completed sale(s)`],
+          ['Today', money(dailyNet, currency), `${daily._count} completed sale(s)`],
+          ['Last 7 days', money(weeklyNet, currency), `${weekly._count} completed sale(s)`],
+          ['This month', money(monthlyNet, currency), `${monthly._count} completed sale(s)`],
           ['Purchases received', money(purchaseSummary._sum.totalAmount?.toString() ?? '0', currency), `${purchaseSummary._count} received purchase(s)`]
         ].map(([title, value, meta]) => (
           <Card key={title}>

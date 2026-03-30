@@ -32,8 +32,10 @@ export default async function DashboardPage() {
     lowStockProducts,
     recentSales,
     todaySales,
+    todayRefunds,
     todaySaleCount,
     weeklySales,
+    weeklyRefunds,
     pendingPurchases,
     recentMovements
   ] = await Promise.all([
@@ -65,11 +67,19 @@ export default async function DashboardPage() {
       where: { shopId, status: 'COMPLETED', createdAt: { gte: todayStart } },
       _sum: { totalAmount: true }
     }),
+    prisma.saleAdjustment.aggregate({
+      where: { shopId, createdAt: { gte: todayStart } },
+      _sum: { totalAmount: true }
+    }),
     prisma.sale.count({
       where: { shopId, status: 'COMPLETED', createdAt: { gte: todayStart } }
     }),
     prisma.sale.aggregate({
       where: { shopId, status: 'COMPLETED', createdAt: { gte: weekStart } },
+      _sum: { totalAmount: true }
+    }),
+    prisma.saleAdjustment.aggregate({
+      where: { shopId, createdAt: { gte: weekStart } },
       _sum: { totalAmount: true }
     }),
     prisma.purchaseOrder.count({
@@ -91,8 +101,8 @@ export default async function DashboardPage() {
   ]);
 
   const currency = settings?.currencySymbol ?? '₱';
-  const todaySalesValue = Number(todaySales._sum.totalAmount ?? 0);
-  const weeklySalesValue = Number(weeklySales._sum.totalAmount ?? 0);
+  const todaySalesValue = Number(todaySales._sum.totalAmount ?? 0) - Number(todayRefunds._sum.totalAmount ?? 0);
+  const weeklySalesValue = Number(weeklySales._sum.totalAmount ?? 0) - Number(weeklyRefunds._sum.totalAmount ?? 0);
   const averageTicket = todaySaleCount > 0 ? todaySalesValue / todaySaleCount : 0;
   const stockCoverage =
     totalProducts > 0 ? Math.max(0, Math.round(((totalProducts - lowStockCount) / totalProducts) * 100)) : 100;

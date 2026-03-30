@@ -41,6 +41,7 @@ export default function SalesTable({
             <thead className="bg-stone-50 text-stone-500">
               <tr>
                 <th className="px-4 py-3.5">Sale</th>
+                <th className="px-4 py-3.5">Status</th>
                 <th className="px-4 py-3.5">Customer</th>
                 <th className="px-4 py-3.5">Payment</th>
                 <th className="px-4 py-3.5">Cashier</th>
@@ -59,6 +60,9 @@ export default function SalesTable({
                     </Link>
                     <div className="mt-1 text-xs text-stone-500">{sale.receiptNumber}</div>
                   </td>
+                  <td className="px-4 py-4">
+                    <Badge tone={sale.status === 'VOIDED' ? 'red' : 'emerald'}>{sale.status}</Badge>
+                  </td>
                   <td className="px-4 py-4">{sale.customerName ?? 'Walk-in customer'}</td>
                   <td className="px-4 py-4">
                     <Badge tone="blue">{sale.paymentMethod}</Badge>
@@ -73,6 +77,12 @@ export default function SalesTable({
                       </Link>
                       <Link href={`/sales/${sale.id}/receipt`} className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-600 hover:text-stone-900">
                         Receipt
+                      </Link>
+                      <Link href={`/sales/${sale.id}/refund`} className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-600 hover:text-stone-900">
+                        Refund
+                      </Link>
+                      <Link href={`/sales/${sale.id}/void`} className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-600 hover:text-stone-900">
+                        Void
                       </Link>
                     </div>
                   </td>
