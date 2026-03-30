@@ -9,6 +9,7 @@ import {
 } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { INVENTORY_REASON_PRESETS } from '../lib/shop-config';
+import { DEFAULT_UNITS_OF_MEASURE } from '../lib/uom';
 
 const prisma = new PrismaClient();
 
@@ -79,6 +80,24 @@ async function main() {
       isActive: true
     }))
   });
+
+  await prisma.unitOfMeasure.createMany({
+    data: DEFAULT_UNITS_OF_MEASURE.map((unit) => ({
+      shopId: shop.id,
+      code: unit.code,
+      name: unit.name,
+      isBase: unit.isBase,
+      isActive: true
+    }))
+  });
+
+  const units = await prisma.unitOfMeasure.findMany({
+    where: { shopId: shop.id }
+  });
+  const pieceUnit = units.find((unit) => unit.code === 'PIECE')!;
+  const boxUnit = units.find((unit) => unit.code === 'BOX')!;
+  const cartonUnit = units.find((unit) => unit.code === 'CARTON')!;
+  const packUnit = units.find((unit) => unit.code === 'PACK')!;
 
   for (const [userId, role] of [
     [owner.id, ShopRole.ADMIN],
@@ -172,6 +191,7 @@ async function main() {
       data: {
         shopId: shop.id,
         categoryId: item.categoryId,
+        baseUnitOfMeasureId: pieceUnit.id,
         sku: item.sku,
         barcode: item.barcode,
         name: item.name,
@@ -186,6 +206,16 @@ async function main() {
     });
     products.push(product);
   }
+
+  await prisma.productUomConversion.createMany({
+    data: [
+      { productId: products[7].id, unitOfMeasureId: boxUnit.id, ratioToBase: 6 },
+      { productId: products[8].id, unitOfMeasureId: boxUnit.id, ratioToBase: 6 },
+      { productId: products[17].id, unitOfMeasureId: boxUnit.id, ratioToBase: 12 },
+      { productId: products[17].id, unitOfMeasureId: cartonUnit.id, ratioToBase: 144 },
+      { productId: products[18].id, unitOfMeasureId: packUnit.id, ratioToBase: 8 }
+    ]
+  });
 
   const seededBatches = [
     {
@@ -241,40 +271,40 @@ async function main() {
       supplierId: coffeeSupplier.id,
       purchaseNumber: 'PO-20260325-0001',
       status: PurchaseStatus.RECEIVED,
-      totalAmount: 1510,
+      totalAmount: 4160,
       receivedAt: new Date(),
       notes: 'Initial coffee and pastry stock load',
       items: {
         create: [
-          { productId: products[0].id, productName: products[0].name, qty: 20, unitCost: 28, lineTotal: 560 },
-          { productId: products[2].id, productName: products[2].name, qty: 10, unitCost: 42, lineTotal: 420 },
-          { productId: products[7].id, productName: products[7].name, qty: 10, unitCost: 28, lineTotal: 280 },
-          { productId: products[8].id, productName: products[8].name, qty: 10, unitCost: 25, lineTotal: 250 }
+          { productId: products[0].id, unitOfMeasureId: pieceUnit.id, unitCode: pieceUnit.code, unitName: pieceUnit.name, productName: products[0].name, qty: 20, ratioToBase: 1, receivedBaseQty: 20, unitCost: 28, lineTotal: 560 },
+          { productId: products[2].id, unitOfMeasureId: pieceUnit.id, unitCode: pieceUnit.code, unitName: pieceUnit.name, productName: products[2].name, qty: 10, ratioToBase: 1, receivedBaseQty: 10, unitCost: 42, lineTotal: 420 },
+          { productId: products[7].id, unitOfMeasureId: boxUnit.id, unitCode: boxUnit.code, unitName: boxUnit.name, productName: products[7].name, qty: 10, ratioToBase: 6, receivedBaseQty: 60, unitCost: 168, lineTotal: 1680 },
+          { productId: products[8].id, unitOfMeasureId: boxUnit.id, unitCode: boxUnit.code, unitName: boxUnit.name, productName: products[8].name, qty: 10, ratioToBase: 6, receivedBaseQty: 60, unitCost: 150, lineTotal: 1500 }
         ]
       }
     }
   });
 
-  for (const [index, qty, cost] of [
+  for (const [index, qty, costPerBase] of [
     [0, 20, 28],
     [2, 10, 42],
-    [7, 10, 28],
-    [8, 10, 25]
+    [7, 60, 28],
+    [8, 60, 25]
   ] as const) {
     await prisma.product.update({
       where: { id: products[index].id },
       data: {
         stockQty: { increment: qty },
-        cost
+        cost: costPerBase
       }
     });
 
     await prisma.inventoryMovement.create({
       data: {
-        shopId: shop.id,
-        productId: products[index].id,
-        type: 'PURCHASE_RECEIVED',
-        qtyChange: qty,
+          shopId: shop.id,
+          productId: products[index].id,
+          type: 'PURCHASE_RECEIVED',
+          qtyChange: qty,
         referenceId: purchase.id,
         userId: manager.id,
         notes: 'Seed purchase'

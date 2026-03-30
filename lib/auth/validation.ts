@@ -65,6 +65,7 @@ export const categoryUpdateSchema = categoryCreateSchema.extend({
 
 export const productSchema = z.object({
   categoryId: optionalText(),
+  baseUnitOfMeasureId: z.string().trim().min(1, 'Select a base unit.'),
   sku: z.string().trim().max(50).optional().nullable(),
   barcode: z.string().trim().max(60).optional().nullable(),
   name: z.string().trim().min(2).max(120),
@@ -75,6 +76,10 @@ export const productSchema = z.object({
   reorderPoint: z.coerce.number().int().min(0),
   trackBatches: z.coerce.boolean().default(false),
   trackExpiry: z.coerce.boolean().default(false),
+  uomConversions: z.array(z.object({
+    unitOfMeasureId: z.string().trim().min(1),
+    ratioToBase: z.coerce.number().int().positive('Pack conversion must be greater than zero.')
+  })).default([]),
   isActive: z.coerce.boolean().default(true)
 });
 
@@ -189,6 +194,7 @@ export const purchaseSchema = z.object({
   notes: z.string().trim().max(300).optional().nullable(),
   items: z.array(z.object({
     productId: z.string().trim().min(1),
+    unitOfMeasureId: z.string().trim().min(1, 'Select a purchase unit.'),
     qty: z.coerce.number().int().positive(),
     unitCost: z.coerce.number().min(0)
   })).min(1)

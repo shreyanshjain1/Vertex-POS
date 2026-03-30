@@ -7,6 +7,9 @@ Vertex POS 2.0 is a production-minded point-of-sale, inventory, procurement, and
 - shop onboarding with business details, tax, currency, starter categories, suppliers, and products
 - cashier checkout with oversell protection, tax and discount summary, and printable receipts
 - product, category, supplier, purchase, and inventory management with audit logging
+- stock counts, refunds/returns, and manager-approved operational adjustments
+- inventory reason codes, batch / expiry tracking, and FEFO-style visibility
+- units of measure and pack-size support for buying larger packs and stocking smaller base units
 - dashboard cards for sales, low stock, pending purchases, and recent stock movements
 - activity log page for sales, stock adjustments, purchases, settings, and worker jobs
 - inventory CSV export
@@ -23,7 +26,7 @@ Vertex POS 2.0 is a production-minded point-of-sale, inventory, procurement, and
 ```bash
 npm install
 npx prisma generate
-npx prisma migrate dev --name hardening_ops
+npx prisma migrate dev --name uom_pack_sizes
 npm run seed
 ```
 
@@ -58,6 +61,35 @@ npm run worker
 - `/reports`
 - `/activity`
 - `/settings`
+
+## Units of measure and pack sizes
+
+Vertex POS can now keep a product in a base selling unit while receiving purchases in larger units.
+
+Examples:
+
+- buy `1 box` and convert it into `12 pieces`
+- buy `1 carton` and convert it into `288 pieces`
+- keep checkout on the base unit while purchases and stock receiving use pack units
+
+How it works:
+
+- each product has a base unit, usually `piece`
+- products can define pack conversions such as `box`, `carton`, or `pack`
+- purchase lines store the selected unit and conversion snapshot
+- received stock is converted into the base stock quantity automatically
+- inventory and product screens show the conversion summary so stock math stays traceable
+
+Database additions:
+
+- `UnitOfMeasure`
+- `ProductUomConversion`
+
+Setup notes:
+
+- run the latest Prisma migration before using purchase UOMs
+- existing products are backfilled to the default `piece` base unit during migration
+- existing purchase items are backfilled with `piece` unit snapshots so draft/received history remains valid
 
 ## Useful commands
 

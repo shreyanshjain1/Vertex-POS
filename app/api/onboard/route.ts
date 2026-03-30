@@ -7,6 +7,7 @@ import { normalizeText } from '@/lib/inventory';
 import { prisma } from '@/lib/prisma';
 import { getShopTypeDefaults, INVENTORY_REASON_PRESETS } from '@/lib/shop-config';
 import { slugify } from '@/lib/slug';
+import { DEFAULT_UNITS_OF_MEASURE } from '@/lib/uom';
 
 async function uniqueSlug(name: string) {
   const base = slugify(name) || 'shop';
@@ -133,6 +134,23 @@ export async function POST(request: Request) {
         }
       });
 
+      await tx.unitOfMeasure.createMany({
+        data: DEFAULT_UNITS_OF_MEASURE.map((unit) => ({
+          shopId: shop.id,
+          code: unit.code,
+          name: unit.name,
+          isBase: unit.isBase,
+          isActive: true
+        }))
+      });
+
+      const pieceUnit = await tx.unitOfMeasure.findFirstOrThrow({
+        where: {
+          shopId: shop.id,
+          code: 'PIECE'
+        }
+      });
+
       await tx.inventoryReason.createMany({
         data: INVENTORY_REASON_PRESETS.map((reason) => ({
           shopId: shop.id,
@@ -195,6 +213,7 @@ export async function POST(request: Request) {
           data: {
             shopId: shop.id,
             categoryId,
+            baseUnitOfMeasureId: pieceUnit.id,
             name: product.name,
             sku: normalizeText(product.sku),
             barcode: normalizeText(product.barcode),
