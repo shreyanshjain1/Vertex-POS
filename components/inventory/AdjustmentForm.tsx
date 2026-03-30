@@ -1,9 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { type FormEvent, useMemo, useState } from 'react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { summarizeConversions } from '@/lib/uom';
+import { buildVariantLabel } from '@/lib/product-merchandising';
 
 type Product = {
   id: string;
@@ -11,6 +12,15 @@ type Product = {
   stockQty: number;
   reorderPoint: number;
   baseUnitOfMeasure?: { id: string; code: string; name: string; isBase: boolean } | null;
+  variants: Array<{
+    id: string;
+    color: string | null;
+    size: string | null;
+    flavor: string | null;
+    model: string | null;
+    sku: string | null;
+    barcode: string | null;
+  }>;
   uomConversions: Array<{
     id: string;
     unitOfMeasureId: string;
@@ -48,7 +58,7 @@ export default function AdjustmentForm({
     [activeProducts, productId]
   );
 
-  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
     setSuccess('');
@@ -179,6 +189,11 @@ export default function AdjustmentForm({
               selectedProduct.baseUnitOfMeasure?.name
             )}
           </div>
+          {selectedProduct.variants.length ? (
+            <div className="mt-1 text-xs text-stone-500">
+              Variants: {selectedProduct.variants.map((variant) => buildVariantLabel(variant) || variant.sku || variant.barcode || 'Variant').join(' • ')}
+            </div>
+          ) : null}
         </div>
       ) : null}
 

@@ -1,5 +1,6 @@
 export type SaleInputItem = {
   productId: string;
+  variantId?: string | null;
   qty: number;
 };
 
@@ -19,13 +20,20 @@ export function normalizeText(value: string | null | undefined) {
 }
 
 export function collapseSaleItems(items: SaleInputItem[]) {
-  const grouped = new Map<string, number>();
+  const grouped = new Map<string, { qty: number; variantId: string | null }>();
 
   for (const item of items) {
-    grouped.set(item.productId, (grouped.get(item.productId) ?? 0) + item.qty);
+    const variantId = item.variantId ?? null;
+    const key = `${item.productId}:${variantId ?? 'base'}`;
+    const current = grouped.get(key) ?? { qty: 0, variantId };
+    current.qty += item.qty;
+    grouped.set(key, current);
   }
 
-  return [...grouped.entries()].map(([productId, qty]) => ({ productId, qty }));
+  return [...grouped.entries()].map(([key, value]) => {
+    const [productId] = key.split(':');
+    return { productId, variantId: value.variantId, qty: value.qty };
+  });
 }
 
 export function collapsePurchaseItems(items: PurchaseInputItem[]) {

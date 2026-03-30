@@ -18,6 +18,10 @@ export default async function InventoryPage() {
       where: { shopId },
       include: {
         baseUnitOfMeasure: true,
+        variants: {
+          where: { isActive: true },
+          orderBy: { createdAt: 'asc' }
+        },
         uomConversions: {
           include: {
             unitOfMeasure: true
@@ -82,6 +86,15 @@ export default async function InventoryPage() {
           stockQty: product.stockQty,
           reorderPoint: product.reorderPoint,
           baseUnitOfMeasure: product.baseUnitOfMeasure,
+          variants: product.variants.map((variant) => ({
+            id: variant.id,
+            color: variant.color,
+            size: variant.size,
+            flavor: variant.flavor,
+            model: variant.model,
+            sku: variant.sku,
+            barcode: variant.barcode
+          })),
           uomConversions: product.uomConversions.map((conversion) => ({
             id: conversion.id,
             unitOfMeasureId: conversion.unitOfMeasureId,

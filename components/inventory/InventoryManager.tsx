@@ -13,6 +13,15 @@ type Product = {
   stockQty: number;
   reorderPoint: number;
   baseUnitOfMeasure?: { id: string; code: string; name: string; isBase: boolean } | null;
+  variants: Array<{
+    id: string;
+    color: string | null;
+    size: string | null;
+    flavor: string | null;
+    model: string | null;
+    sku: string | null;
+    barcode: string | null;
+  }>;
   uomConversions: Array<{
     id: string;
     unitOfMeasureId: string;
