@@ -25,6 +25,9 @@ enum ShopType {
 enum InventoryMovementType {
   PURCHASE_RECEIVED
   SALE_COMPLETED
+  SALE_VOIDED
+  RETURN_RESTOCKED
+  EXCHANGE_ISSUED
   MANUAL_ADJUSTMENT
   OPENING_STOCK
 }
@@ -62,6 +65,24 @@ enum DocumentSequenceType {
   SALE
   RECEIPT
   PURCHASE
+  RETURN
+}
+
+enum SaleAdjustmentType {
+  VOID
+  REFUND
+  EXCHANGE
+}
+
+enum SaleAdjustmentItemType {
+  RETURN
+  REPLACEMENT
+}
+
+enum SaleAdjustmentDisposition {
+  RESTOCK
+  DAMAGED
+  EXCHANGE
 }
 
 enum CashSessionStatus {
@@ -87,6 +108,8 @@ model User {
   ownedShops               Shop[]               @relation("ShopOwner")
   memberships              UserShop[]
   cashierSales             Sale[]               @relation("CashierUser")
+  createdSaleAdjustments   SaleAdjustment[]     @relation("SaleAdjustmentCreatedBy")
+  approvedSaleAdjustments  SaleAdjustment[]     @relation("SaleAdjustmentApprovedBy")
   cashSessions             CashSession[]
   parkedSales              ParkedSale[]
   activities               ActivityLog[]
@@ -101,27 +124,28 @@ model User {
 }
 
 model Shop {
-  id             String              @id @default(cuid())
-  name           String
-  slug           String              @unique
-  posType        ShopType            @default(RETAIL)
-  phone          String?
-  email          String?
-  address        String?
-  taxId          String?
-  ownerId        String
-  owner          User                @relation("ShopOwner", fields: [ownerId], references: [id], onDelete: Restrict)
-  defaultUsers   User[]              @relation("DefaultShop")
-  memberships    UserShop[]
-  categories     Category[]
-  products       Product[]
-  sales          Sale[]
-  parkedSales    ParkedSale[]
-  suppliers      Supplier[]
-  purchases      PurchaseOrder[]
-  cashSessions   CashSession[]
-  settings       ShopSetting?
-  notifications  Notification[]
+  id               String              @id @default(cuid())
+  name             String
+  slug             String              @unique
+  posType          ShopType            @default(RETAIL)
+  phone            String?
+  email            String?
+  address          String?
+  taxId            String?
+  ownerId          String
+  owner            User                @relation("ShopOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  defaultUsers     User[]              @relation("DefaultShop")
+  memberships      UserShop[]
+  categories       Category[]
+  products         Product[]
+  sales            Sale[]
+  saleAdjustments SaleAdjustment[]
+  parkedSales      ParkedSale[]
+  suppliers        Supplier[]
+  purchases        PurchaseOrder[]
+  cashSessions     CashSession[]
+  settings         ShopSetting?
+  notifications    Notification[]
   activities          ActivityLog[]
   authAuditLogs       AuthAuditLog[]
   passwordResetTokens PasswordResetToken[]
@@ -176,25 +200,26 @@ model Category {
 }
 
 model Product {
-  id             String              @id @default(cuid())
-  shopId         String
-  categoryId     String?
-  sku            String?
-  barcode        String?
-  name           String
-  description    String?
-  cost           Decimal             @db.Decimal(12, 2)
-  price          Decimal             @db.Decimal(12, 2)
-  stockQty       Int                 @default(0)
-  reorderPoint   Int                 @default(5)
-  isActive       Boolean             @default(true)
-  category       Category?           @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  shop           Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  saleItems      SaleItem[]
-  purchaseItems  PurchaseItem[]
-  inventoryMoves InventoryMovement[]
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  id              String               @id @default(cuid())
+  shopId          String
+  categoryId      String?
+  sku             String?
+  barcode         String?
+  name            String
+  description     String?
+  cost            Decimal              @db.Decimal(12, 2)
+  price           Decimal              @db.Decimal(12, 2)
+  stockQty        Int                  @default(0)
+  reorderPoint    Int                  @default(5)
+  isActive        Boolean              @default(true)
+  category        Category?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  shop            Shop                 @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  saleItems       SaleItem[]
+  adjustmentItems SaleAdjustmentItem[]
+  purchaseItems   PurchaseItem[]
+  inventoryMoves  InventoryMovement[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
 
   @@unique([shopId, sku])
   @@unique([shopId, barcode])
@@ -222,8 +247,10 @@ model Sale {
   voidReason     String?
   shop           Shop        @relation(fields: [shopId], references: [id], onDelete: Cascade)
   cashierUser    User?       @relation("CashierUser", fields: [cashierUserId], references: [id], onDelete: SetNull)
-  items          SaleItem[]
-  payments       SalePayment[]
+  items                  SaleItem[]
+  payments               SalePayment[]
+  adjustments            SaleAdjustment[] @relation("SourceSaleAdjustments")
+  exchangeFromAdjustments SaleAdjustment[] @relation("ExchangeSaleAdjustments")
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
@@ -253,15 +280,16 @@ model CashSession {
 }
 
 model SaleItem {
-  id          String    @id @default(cuid())
-  saleId      String
-  productId   String
-  productName String
-  qty         Int
-  unitPrice   Decimal   @db.Decimal(12, 2)
-  lineTotal   Decimal   @db.Decimal(12, 2)
-  sale        Sale      @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  product     Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+  id              String               @id @default(cuid())
+  saleId          String
+  productId       String
+  productName     String
+  qty             Int
+  unitPrice       Decimal              @db.Decimal(12, 2)
+  lineTotal       Decimal              @db.Decimal(12, 2)
+  sale            Sale                 @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product         Product              @relation(fields: [productId], references: [id], onDelete: Restrict)
+  adjustmentItems SaleAdjustmentItem[]
 
   @@index([saleId])
   @@index([productId])
@@ -277,6 +305,68 @@ model SalePayment {
   sale            Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
   @@index([saleId, createdAt])
+  @@index([method, createdAt])
+}
+
+model SaleAdjustment {
+  id               String               @id @default(cuid())
+  shopId           String
+  saleId           String
+  exchangeSaleId   String?
+  adjustmentNumber String
+  type             SaleAdjustmentType
+  reason           String
+  notes            String?
+  subtotal         Decimal              @db.Decimal(12, 2)
+  totalAmount      Decimal              @db.Decimal(12, 2)
+  approvedByUserId String
+  createdByUserId  String
+  shop             Shop                 @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  sale             Sale                 @relation("SourceSaleAdjustments", fields: [saleId], references: [id], onDelete: Cascade)
+  exchangeSale     Sale?                @relation("ExchangeSaleAdjustments", fields: [exchangeSaleId], references: [id], onDelete: SetNull)
+  approvedByUser   User                 @relation("SaleAdjustmentApprovedBy", fields: [approvedByUserId], references: [id], onDelete: Restrict)
+  createdByUser    User                 @relation("SaleAdjustmentCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  items            SaleAdjustmentItem[]
+  refundPayments   RefundPayment[]
+  createdAt        DateTime             @default(now())
+
+  @@unique([shopId, adjustmentNumber])
+  @@index([shopId, createdAt])
+  @@index([saleId, createdAt])
+  @@index([exchangeSaleId])
+}
+
+model SaleAdjustmentItem {
+  id               String                    @id @default(cuid())
+  saleAdjustmentId String
+  saleItemId       String?
+  productId        String?
+  itemType         SaleAdjustmentItemType
+  productName      String
+  qty              Int
+  unitPrice        Decimal                   @db.Decimal(12, 2)
+  lineTotal        Decimal                   @db.Decimal(12, 2)
+  disposition      SaleAdjustmentDisposition
+  createdAt        DateTime                  @default(now())
+  saleAdjustment   SaleAdjustment            @relation(fields: [saleAdjustmentId], references: [id], onDelete: Cascade)
+  saleItem         SaleItem?                 @relation(fields: [saleItemId], references: [id], onDelete: SetNull)
+  product          Product?                  @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([saleAdjustmentId, createdAt])
+  @@index([saleItemId])
+  @@index([productId])
+}
+
+model RefundPayment {
+  id               String         @id @default(cuid())
+  saleAdjustmentId String
+  method           String
+  amount           Decimal        @db.Decimal(12, 2)
+  referenceNumber  String?
+  createdAt        DateTime       @default(now())
+  saleAdjustment   SaleAdjustment @relation(fields: [saleAdjustmentId], references: [id], onDelete: Cascade)
+
+  @@index([saleAdjustmentId, createdAt])
   @@index([method, createdAt])
 }
 
