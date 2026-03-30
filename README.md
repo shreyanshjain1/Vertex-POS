@@ -10,6 +10,9 @@ Vertex POS 2.0 is a production-minded point-of-sale, inventory, procurement, and
 - stock counts, refunds/returns, and manager-approved operational adjustments
 - inventory reason codes, batch / expiry tracking, and FEFO-style visibility
 - units of measure and pack-size support for buying larger packs and stocking smaller base units
+- structured product variants with per-variant SKU/barcode and optional price or cost overrides
+- product price history and cost history with effective dates and change tracking
+- product images plus barcode preview and printable barcode labels in multiple sizes
 - dashboard cards for sales, low stock, pending purchases, and recent stock movements
 - activity log page for sales, stock adjustments, purchases, settings, and worker jobs
 - inventory CSV export
@@ -26,7 +29,7 @@ Vertex POS 2.0 is a production-minded point-of-sale, inventory, procurement, and
 ```bash
 npm install
 npx prisma generate
-npx prisma migrate dev --name uom_pack_sizes
+npx prisma migrate dev
 npm run seed
 ```
 
@@ -90,6 +93,22 @@ Setup notes:
 - run the latest Prisma migration before using purchase UOMs
 - existing products are backfilled to the default `piece` base unit during migration
 - existing purchase items are backfilled with `piece` unit snapshots so draft/received history remains valid
+
+## Product maturity features
+
+Vertex POS also supports richer merchandising and product lifecycle workflows:
+
+- variants can be attached to a base product for color, size, flavor, or model differences
+- each variant can keep its own SKU and barcode so checkout and search can distinguish them cleanly
+- price and cost changes create history records with the effective date and the user who changed them
+- products can store images for merchandising in the catalog
+- barcode labels can be previewed and printed in `small`, `medium`, or `large` formats for products or variants
+
+Examples:
+
+- sell a `Latte` with `12oz` and `16oz` variants using separate barcodes
+- track when a product price moved from `₱145` to `₱150`
+- print labels for a base item or a specific flavor/model variant
 
 ## Useful commands
 

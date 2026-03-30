@@ -5,6 +5,36 @@ import { SHOP_TYPE_OPTIONS } from '@/lib/shop-config';
 const shopRoleSchema = z.enum(['ADMIN', 'MANAGER', 'CASHIER']);
 const optionalText = () => z.string().trim().optional().nullable();
 const shopTypeSchema = z.enum(SHOP_TYPE_OPTIONS.map((option) => option.value) as [string, ...string[]]);
+const imageUrlSchema = z
+  .string()
+  .trim()
+  .min(1, 'Image is required.')
+  .max(600000, 'Image payload is too large.')
+  .refine(
+    (value) => value.startsWith('data:image/') || /^https?:\/\//i.test(value),
+    'Use an uploaded image or a valid image URL.'
+  );
+
+const productVariantSchema = z.object({
+  color: optionalText(),
+  size: optionalText(),
+  flavor: optionalText(),
+  model: optionalText(),
+  sku: z.string().trim().max(50).optional().nullable(),
+  barcode: z.string().trim().max(60).optional().nullable(),
+  priceOverride: z.coerce.number().min(0).optional().nullable(),
+  costOverride: z.coerce.number().min(0).optional().nullable(),
+  isActive: z.coerce.boolean().default(true)
+}).refine(
+  (input) => Boolean(input.color || input.size || input.flavor || input.model || input.sku || input.barcode),
+  'Add at least one variant identifier.'
+);
+
+const productImageSchema = z.object({
+  imageUrl: imageUrlSchema,
+  altText: z.string().trim().max(120).optional().nullable(),
+  sortOrder: z.coerce.number().int().min(0).max(999).default(0)
+});
 
 export const loginSchema = z.object({
   email: z.string().trim().email('Enter a valid email').transform((value) => value.toLowerCase()),
@@ -76,10 +106,13 @@ export const productSchema = z.object({
   reorderPoint: z.coerce.number().int().min(0),
   trackBatches: z.coerce.boolean().default(false),
   trackExpiry: z.coerce.boolean().default(false),
+  changeNote: z.string().trim().max(300).optional().nullable(),
   uomConversions: z.array(z.object({
     unitOfMeasureId: z.string().trim().min(1),
     ratioToBase: z.coerce.number().int().positive('Pack conversion must be greater than zero.')
   })).default([]),
+  variants: z.array(productVariantSchema).default([]),
+  images: z.array(productImageSchema).max(6).default([]),
   isActive: z.coerce.boolean().default(true)
 });
 
@@ -141,6 +174,7 @@ export const saleSchema = z.object({
   payments: z.array(salePaymentSchema).min(1, 'Add at least one payment line.'),
   items: z.array(z.object({
     productId: z.string().trim().min(1),
+    variantId: z.string().trim().min(1).optional().nullable(),
     qty: z.coerce.number().int().positive()
   })).min(1)
 });
@@ -184,6 +218,7 @@ export const parkedSaleCreateSchema = z.object({
   notes: z.string().trim().max(300).optional().nullable(),
   items: z.array(z.object({
     productId: z.string().trim().min(1),
+    variantId: z.string().trim().min(1).optional().nullable(),
     qty: z.coerce.number().int().positive()
   })).min(1, 'Add at least one item before holding the cart.')
 });
