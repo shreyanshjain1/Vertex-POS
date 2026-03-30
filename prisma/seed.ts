@@ -13,6 +13,11 @@ import { DEFAULT_UNITS_OF_MEASURE } from '../lib/uom';
 
 const prisma = new PrismaClient();
 
+function createSeedImageDataUrl(label: string, accent: string) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 640 640"><rect width="640" height="640" fill="#f5f5f4"/><rect x="48" y="48" width="544" height="544" rx="42" fill="${accent}"/><text x="320" y="290" text-anchor="middle" font-family="Arial, sans-serif" font-size="44" font-weight="700" fill="#ffffff">${label}</text><text x="320" y="360" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" fill="#fff7ed">Vertex POS Demo</text></svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
 async function main() {
   const passwordHash = await bcrypt.hash('password123', 12);
 
@@ -206,6 +211,92 @@ async function main() {
     });
     products.push(product);
   }
+
+  await prisma.productVariant.createMany({
+    data: [
+      {
+        productId: products[2].id,
+        size: '12oz',
+        sku: 'COF-003-12OZ',
+        barcode: '480100200301',
+        priceOverride: 150,
+        costOverride: 42
+      },
+      {
+        productId: products[2].id,
+        size: '16oz',
+        sku: 'COF-003-16OZ',
+        barcode: '480100200302',
+        priceOverride: 175,
+        costOverride: 48
+      },
+      {
+        productId: products[17].id,
+        flavor: 'Oatmeal',
+        sku: 'PET-001-OAT',
+        barcode: '480100300181',
+        priceOverride: 220,
+        costOverride: 120
+      },
+      {
+        productId: products[17].id,
+        flavor: 'Lavender',
+        sku: 'PET-001-LAV',
+        barcode: '480100300182',
+        priceOverride: 235,
+        costOverride: 126
+      }
+    ]
+  });
+
+  await prisma.productImage.createMany({
+    data: [
+      {
+        productId: products[2].id,
+        imageUrl: createSeedImageDataUrl('Latte', '#0f766e'),
+        altText: 'Latte hero image',
+        sortOrder: 0
+      },
+      {
+        productId: products[7].id,
+        imageUrl: createSeedImageDataUrl('Croissant', '#b45309'),
+        altText: 'Croissant product image',
+        sortOrder: 0
+      },
+      {
+        productId: products[17].id,
+        imageUrl: createSeedImageDataUrl('Pet Shampoo', '#1d4ed8'),
+        altText: 'Pet shampoo product image',
+        sortOrder: 0
+      }
+    ]
+  });
+
+  await prisma.productPriceHistory.createMany({
+    data: [
+      {
+        productId: products[2].id,
+        previousPrice: 145,
+        newPrice: 150,
+        effectiveDate: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10),
+        changedByUserId: manager.id,
+        note: 'Adjusted after updated milk cost.'
+      }
+    ]
+  });
+
+  await prisma.productCostHistory.createMany({
+    data: [
+      {
+        productId: products[2].id,
+        previousCost: 40,
+        newCost: 42,
+        effectiveDate: new Date(Date.now() - 1000 * 60 * 60 * 24 * 12),
+        changedByUserId: manager.id,
+        note: 'Supplier increase on dairy inputs.'
+      }
+    ]
+  });
 
   await prisma.productUomConversion.createMany({
     data: [

@@ -20,7 +20,9 @@ export async function PATCH(
 
     const purchase = await prisma.purchaseOrder.findFirst({
       where: { id, shopId },
-      include: { items: true }
+      include: {
+        items: true
+      }
     });
 
     if (!purchase) {
@@ -49,10 +51,36 @@ export async function PATCH(
 
     const updatedPurchase = await prisma.$transaction(async (tx) => {
       if (purchase.status === 'DRAFT' && nextStatus === 'RECEIVED') {
+        const products = await tx.product.findMany({
+          where: {
+            id: { in: purchase.items.map((item) => item.productId) }
+          },
+          select: {
+            id: true,
+            cost: true
+          }
+        });
+        const productMap = new Map(products.map((product) => [product.id, product]));
+
         for (const item of purchase.items) {
           const nextBaseCost = item.ratioToBase > 0
             ? roundCurrency(Number(item.unitCost.toString()) / item.ratioToBase)
             : Number(item.unitCost.toString());
+
+          const product = productMap.get(item.productId);
+          if (product && Number(product.cost) !== nextBaseCost) {
+            await tx.productCostHistory.create({
+              data: {
+                productId: item.productId,
+                previousCost: product.cost,
+                newCost: nextBaseCost,
+                effectiveDate: new Date(),
+                changedByUserId: userId,
+                note: `Purchase ${purchase.purchaseNumber}`
+              }
+            });
+          }
+
           await tx.product.update({
             where: { id: item.productId },
             data: {

@@ -191,6 +191,20 @@ export async function POST(request: Request) {
               ? 1
               : product.uomConversions.find((conversion) => conversion.unitOfMeasureId === item.unitOfMeasureId)!.ratioToBase;
           const nextBaseCost = roundCurrency(item.unitCost / ratioToBase);
+
+          if (Number(product.cost) !== nextBaseCost) {
+            await tx.productCostHistory.create({
+              data: {
+                productId: product.id,
+                previousCost: product.cost,
+                newCost: nextBaseCost,
+                effectiveDate: new Date(),
+                changedByUserId: userId,
+                note: `Purchase ${purchaseRecord.purchaseNumber}`
+              }
+            });
+          }
+
           await tx.product.update({
             where: { id: product.id },
             data: {
