@@ -1,16 +1,62 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { type FormEvent, type ReactNode, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
-import { money } from '@/lib/format';
+import BarcodeLabelPreview, { type BarcodeLabelSize } from '@/components/products/BarcodeLabelPreview';
+import { money, shortDate } from '@/lib/format';
 import { getStockLevel, stockLevelLabel } from '@/lib/inventory';
+import {
+  buildVariantLabel,
+  getMarginSummary
+} from '@/lib/product-merchandising';
 import { summarizeConversions } from '@/lib/uom';
 
 type Category = { id: string; name: string; parentId: string | null };
 type UnitOfMeasure = { id: string; code: string; name: string; isBase: boolean };
+type Variant = {
+  id: string;
+  color: string | null;
+  size: string | null;
+  flavor: string | null;
+  model: string | null;
+  sku: string | null;
+  barcode: string | null;
+  priceOverride: string | null;
+  costOverride: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+type ProductImage = {
+  id: string;
+  imageUrl: string;
+  altText: string | null;
+  sortOrder: number;
+  createdAt: string;
+};
+type HistoryUser = { id: string; name: string | null; email: string };
+type PriceHistory = {
+  id: string;
+  previousPrice: string;
+  newPrice: string;
+  effectiveDate: string;
+  createdAt: string;
+  note: string | null;
+  changedByUser: HistoryUser;
+};
+type CostHistory = {
+  id: string;
+  previousCost: string;
+  newCost: string;
+  effectiveDate: string;
+  createdAt: string;
+  note: string | null;
+  changedByUser: HistoryUser;
+};
 type Product = {
   id: string;
   categoryId: string | null;
@@ -33,6 +79,10 @@ type Product = {
     ratioToBase: number;
     unitOfMeasure: UnitOfMeasure;
   }>;
+  variants: Variant[];
+  images: ProductImage[];
+  priceHistory: PriceHistory[];
+  costHistory: CostHistory[];
   batches: Array<{
     id: string;
     lotNumber: string;
@@ -41,12 +91,68 @@ type Product = {
   }>;
   category?: { id: string; name: string } | null;
 };
+type VariantDraft = {
+  color: string;
+  size: string;
+  flavor: string;
+  model: string;
+  sku: string;
+  barcode: string;
+  priceOverride: string;
+  costOverride: string;
+  isActive: boolean;
+};
+type ImageDraft = {
+  imageUrl: string;
+  altText: string;
+  sortOrder: string;
+};
 
 const selectClassName =
   'h-11 w-full rounded-2xl border border-stone-200 bg-white/88 px-4 text-sm text-stone-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] outline-none transition hover:border-stone-300 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10';
 
-function FieldLabel({ children }: { children: React.ReactNode }) {
+function FieldLabel({ children }: { children: ReactNode }) {
   return <label className="mb-2 block text-sm font-semibold text-stone-700">{children}</label>;
+}
+
+function emptyVariant(): VariantDraft {
+  return {
+    color: '',
+    size: '',
+    flavor: '',
+    model: '',
+    sku: '',
+    barcode: '',
+    priceOverride: '',
+    costOverride: '',
+    isActive: true
+  };
+}
+
+function emptyImage(sortOrder = 0): ImageDraft {
+  return {
+    imageUrl: '',
+    altText: '',
+    sortOrder: String(sortOrder)
+  };
+}
+
+function toVariantLabel(variant: VariantDraft | Variant) {
+  return buildVariantLabel({
+    color: variant.color,
+    size: variant.size,
+    flavor: variant.flavor,
+    model: variant.model
+  });
+}
+
+async function toDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => reject(new Error('Unable to read image.'));
+    reader.readAsDataURL(file);
+  });
 }
 
 export default function ProductManager({
@@ -72,6 +178,8 @@ export default function ProductManager({
   const [query, setQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [labelSize, setLabelSize] = useState<BarcodeLabelSize>('medium');
+  const uploadInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({
     categoryId: '',
     baseUnitOfMeasureId: units.find((unit) => unit.code === 'PIECE')?.id ?? units[0]?.id ?? '',
@@ -85,7 +193,10 @@ export default function ProductManager({
     reorderPoint: '5',
     trackBatches: inventoryDefaults.batchTrackingEnabled,
     trackExpiry: inventoryDefaults.expiryTrackingEnabled,
+    changeNote: '',
     uomConversions: [] as Array<{ unitOfMeasureId: string; ratioToBase: string }>,
+    variants: [] as VariantDraft[],
+    images: [] as ImageDraft[],
     isActive: true
   });
   const [error, setError] = useState('');
@@ -96,9 +207,12 @@ export default function ProductManager({
     const term = query.toLowerCase().trim();
 
     return products.filter((product) => {
+      const variantSearch = product.variants
+        .map((variant) => [variant.sku ?? '', variant.barcode ?? '', toVariantLabel(variant)].join(' '))
+        .join(' ');
       const matchesTerm =
         !term ||
-        [product.name, product.sku ?? '', product.barcode ?? '', product.category?.name ?? '']
+        [product.name, product.sku ?? '', product.barcode ?? '', product.category?.name ?? '', variantSearch]
           .join(' ')
           .toLowerCase()
           .includes(term);
@@ -113,6 +227,8 @@ export default function ProductManager({
   const lowStockCount = products.filter(
     (product) => getStockLevel(product.stockQty, product.reorderPoint, lowStockThreshold) !== 'IN_STOCK'
   ).length;
+  const selectedBaseUnit = units.find((unit) => unit.id === form.baseUnitOfMeasureId) ?? null;
+  const currentMargin = getMarginSummary(Number(form.price || 0), Number(form.cost || 0));
 
   function resetForm() {
     setEditingId(null);
@@ -129,9 +245,15 @@ export default function ProductManager({
       reorderPoint: '5',
       trackBatches: inventoryDefaults.batchTrackingEnabled,
       trackExpiry: inventoryDefaults.expiryTrackingEnabled,
+      changeNote: '',
       uomConversions: [],
+      variants: [],
+      images: [],
       isActive: true
     });
+    if (uploadInputRef.current) {
+      uploadInputRef.current.value = '';
+    }
   }
 
   function beginEdit(product: Product) {
@@ -151,15 +273,59 @@ export default function ProductManager({
       reorderPoint: String(product.reorderPoint),
       trackBatches: product.trackBatches,
       trackExpiry: product.trackExpiry,
+      changeNote: '',
       uomConversions: product.uomConversions.map((conversion) => ({
         unitOfMeasureId: conversion.unitOfMeasureId,
         ratioToBase: String(conversion.ratioToBase)
+      })),
+      variants: product.variants.map((variant) => ({
+        color: variant.color ?? '',
+        size: variant.size ?? '',
+        flavor: variant.flavor ?? '',
+        model: variant.model ?? '',
+        sku: variant.sku ?? '',
+        barcode: variant.barcode ?? '',
+        priceOverride: variant.priceOverride ?? '',
+        costOverride: variant.costOverride ?? '',
+        isActive: variant.isActive
+      })),
+      images: product.images.map((image) => ({
+        imageUrl: image.imageUrl,
+        altText: image.altText ?? '',
+        sortOrder: String(image.sortOrder)
       })),
       isActive: product.isActive
     });
   }
 
-  async function saveProduct(event: React.FormEvent<HTMLFormElement>) {
+  async function addUploadedImages(files: FileList | null) {
+    if (!files?.length) {
+      return;
+    }
+
+    const selectedFiles = Array.from(files).slice(0, Math.max(0, 6 - form.images.length));
+    try {
+      const encoded = await Promise.all(selectedFiles.map(toDataUrl));
+      setForm((current) => ({
+        ...current,
+        images: [
+          ...current.images,
+          ...encoded.map((imageUrl, index) => emptyImage(current.images.length + index)).map((image, index) => ({
+            ...image,
+            imageUrl: encoded[index]
+          }))
+        ]
+      }));
+    } catch {
+      setError('Unable to read one or more images.');
+    } finally {
+      if (uploadInputRef.current) {
+        uploadInputRef.current.value = '';
+      }
+    }
+  }
+
+  async function saveProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
     setSuccess('');
@@ -201,6 +367,30 @@ export default function ProductManager({
       }
     }
 
+    for (const variant of form.variants) {
+      if (![variant.color, variant.size, variant.flavor, variant.model, variant.sku, variant.barcode].some(Boolean)) {
+        setError('Each variant needs at least one descriptor, SKU, or barcode.');
+        return;
+      }
+
+      if (variant.priceOverride && Number(variant.priceOverride) < 0) {
+        setError('Variant price overrides must not be negative.');
+        return;
+      }
+
+      if (variant.costOverride && Number(variant.costOverride) < 0) {
+        setError('Variant cost overrides must not be negative.');
+        return;
+      }
+    }
+
+    for (const image of form.images) {
+      if (!image.imageUrl.trim()) {
+        setError('Remove blank image rows or upload an image.');
+        return;
+      }
+    }
+
     setLoading(true);
 
     const payload = {
@@ -209,12 +399,29 @@ export default function ProductManager({
       sku: form.sku || null,
       barcode: form.barcode || null,
       description: form.description || null,
+      changeNote: form.changeNote || null,
       cost: Number(form.cost),
       price: Number(form.price),
       reorderPoint: Number(form.reorderPoint),
       uomConversions: form.uomConversions.map((conversion) => ({
         unitOfMeasureId: conversion.unitOfMeasureId,
         ratioToBase: Number(conversion.ratioToBase)
+      })),
+      variants: form.variants.map((variant) => ({
+        color: variant.color || null,
+        size: variant.size || null,
+        flavor: variant.flavor || null,
+        model: variant.model || null,
+        sku: variant.sku || null,
+        barcode: variant.barcode || null,
+        priceOverride: variant.priceOverride ? Number(variant.priceOverride) : null,
+        costOverride: variant.costOverride ? Number(variant.costOverride) : null,
+        isActive: variant.isActive
+      })),
+      images: form.images.map((image, index) => ({
+        imageUrl: image.imageUrl.trim(),
+        altText: image.altText || null,
+        sortOrder: Number(image.sortOrder || index)
       })),
       ...(editingId ? {} : { stockQty: Number(form.stockQty) })
     };
@@ -239,6 +446,10 @@ export default function ProductManager({
       price: String(data.product.price),
       baseUnitOfMeasure: data.product.baseUnitOfMeasure,
       uomConversions: data.product.uomConversions ?? [],
+      variants: data.product.variants ?? [],
+      images: data.product.images ?? [],
+      priceHistory: data.product.priceHistory ?? [],
+      costHistory: data.product.costHistory ?? [],
       batches: editingId
         ? products.find((item) => item.id === editingId)?.batches ?? []
         : []
@@ -255,9 +466,7 @@ export default function ProductManager({
   }
 
   async function toggleArchive(product: Product) {
-    const confirmed = window.confirm(
-      `${product.isActive ? 'Archive' : 'Restore'} ${product.name}?`
-    );
+    const confirmed = window.confirm(`${product.isActive ? 'Archive' : 'Restore'} ${product.name}?`);
     if (!confirmed) {
       return;
     }
@@ -295,7 +504,7 @@ export default function ProductManager({
               {editingId ? 'Edit product' : 'Add product'}
             </div>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">
-              Set pricing, tax-ready sell values, archive status, and opening stock. Ongoing stock changes should happen through purchases or inventory adjustments.
+              Set product pricing, structured variants, media, and barcode-ready merchandising details while keeping stock changes on their audited flows.
             </p>
           </div>
 
@@ -321,21 +530,11 @@ export default function ProductManager({
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <div>
                 <FieldLabel>Product name</FieldLabel>
-                <Input
-                  placeholder="e.g. Iced Latte"
-                  value={form.name}
-                  onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                  required
-                />
+                <Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} required />
               </div>
-
               <div>
                 <FieldLabel>Category</FieldLabel>
-                <select
-                  className={selectClassName}
-                  value={form.categoryId}
-                  onChange={(event) => setForm((current) => ({ ...current, categoryId: event.target.value }))}
-                >
+                <select className={selectClassName} value={form.categoryId} onChange={(event) => setForm((current) => ({ ...current, categoryId: event.target.value }))}>
                   <option value="">Uncategorized</option>
                   {categories.map((category) => (
                     <option key={category.id} value={category.id}>
@@ -344,7 +543,6 @@ export default function ProductManager({
                   ))}
                 </select>
               </div>
-
               <div>
                 <FieldLabel>Base selling unit</FieldLabel>
                 <select
@@ -354,9 +552,7 @@ export default function ProductManager({
                     setForm((current) => ({
                       ...current,
                       baseUnitOfMeasureId: event.target.value,
-                      uomConversions: current.uomConversions.filter(
-                        (conversion) => conversion.unitOfMeasureId !== event.target.value
-                      )
+                      uomConversions: current.uomConversions.filter((conversion) => conversion.unitOfMeasureId !== event.target.value)
                     }))
                   }
                 >
@@ -367,88 +563,55 @@ export default function ProductManager({
                   ))}
                 </select>
               </div>
-
               <div>
                 <FieldLabel>SKU</FieldLabel>
-                <Input
-                  placeholder="e.g. COF-ICE-001"
-                  value={form.sku}
-                  onChange={(event) => setForm((current) => ({ ...current, sku: event.target.value }))}
-                />
+                <Input value={form.sku} onChange={(event) => setForm((current) => ({ ...current, sku: event.target.value }))} />
               </div>
-
               <div>
                 <FieldLabel>Barcode</FieldLabel>
-                <Input
-                  placeholder="Scan or type barcode"
-                  value={form.barcode}
-                  onChange={(event) => setForm((current) => ({ ...current, barcode: event.target.value }))}
-                />
+                <Input value={form.barcode} onChange={(event) => setForm((current) => ({ ...current, barcode: event.target.value }))} />
               </div>
-
               <div>
                 <FieldLabel>Cost price</FieldLabel>
-                <Input
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={form.cost}
-                  onChange={(event) => setForm((current) => ({ ...current, cost: event.target.value }))}
-                />
+                <Input type="number" step="0.01" value={form.cost} onChange={(event) => setForm((current) => ({ ...current, cost: event.target.value }))} />
               </div>
-
               <div>
                 <FieldLabel>Selling price</FieldLabel>
-                <Input
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={form.price}
-                  onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))}
-                />
+                <Input type="number" step="0.01" value={form.price} onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))} />
               </div>
-
               <div>
                 <FieldLabel>{editingId ? 'Current stock' : 'Opening stock quantity'}</FieldLabel>
-                <Input
-                  type="number"
-                  placeholder="0"
-                  value={form.stockQty}
-                  onChange={(event) => setForm((current) => ({ ...current, stockQty: event.target.value }))}
-                  disabled={Boolean(editingId)}
-                />
+                <Input type="number" value={form.stockQty} onChange={(event) => setForm((current) => ({ ...current, stockQty: event.target.value }))} disabled={Boolean(editingId)} />
               </div>
-
               <div>
                 <FieldLabel>Low-stock reorder level</FieldLabel>
-                <Input
-                  type="number"
-                  placeholder="5"
-                  value={form.reorderPoint}
-                  onChange={(event) => setForm((current) => ({ ...current, reorderPoint: event.target.value }))}
-                />
+                <Input type="number" value={form.reorderPoint} onChange={(event) => setForm((current) => ({ ...current, reorderPoint: event.target.value }))} />
+              </div>
+              <div className="md:col-span-2 xl:col-span-3">
+                <FieldLabel>Description</FieldLabel>
+                <Input value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} />
+              </div>
+              <div>
+                <FieldLabel>Change note</FieldLabel>
+                <Input value={form.changeNote} onChange={(event) => setForm((current) => ({ ...current, changeNote: event.target.value }))} placeholder="Optional reason for pricing or cost updates" />
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_0.9fr]">
+              <div className={`rounded-[20px] border px-4 py-3 text-sm ${currentMargin.tone === 'red' ? 'border-red-200 bg-red-50 text-red-700' : currentMargin.tone === 'amber' ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                Margin check: {currentMargin.message} Current margin {currentMargin.percentage.toFixed(1)}%.
+              </div>
+              <div className="rounded-[20px] border border-stone-200 bg-white px-4 py-3 text-sm text-stone-600">
+                Base unit: <span className="font-semibold text-stone-900">{selectedBaseUnit?.name ?? 'Not selected'}</span>
+                {' / '}
+                Shop alerts within {inventoryDefaults.expiryAlertDays} day(s)
               </div>
             </div>
           </div>
 
-          {editingId ? (
-            <div className="rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
-              Stock is adjusted from the Inventory or Purchases pages so every change keeps an audit trail.
-            </div>
-          ) : null}
-
           <div className="rounded-[26px] border border-stone-200 bg-white/70 p-4 sm:p-5">
-            <div className="mb-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Selling details</div>
-            <div>
-              <FieldLabel>Description</FieldLabel>
-              <Input
-                placeholder="Optional product description"
-                value={form.description}
-                onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
-              />
-            </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="mb-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Operations</div>
+            <div className="grid gap-3 sm:grid-cols-2">
               <label className="inline-flex items-center gap-3 text-sm font-medium text-stone-700">
                 <input
                   type="checkbox"
@@ -480,11 +643,9 @@ export default function ProductManager({
             </div>
 
             <div className="mt-4 rounded-[20px] border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
-              Shop defaults: {inventoryDefaults.batchTrackingEnabled ? 'batch tracking on' : 'batch tracking optional'}
-              {' / '}
-              {inventoryDefaults.expiryTrackingEnabled ? 'expiry tracking on' : 'expiry tracking optional'}
-              {' / '}
-              Alerts within {inventoryDefaults.expiryAlertDays} day(s)
+              {inventoryDefaults.batchTrackingEnabled ? 'Batch tracking is enabled by default for this shop.' : 'Batch tracking is optional in this shop.'}
+              {' '}
+              {inventoryDefaults.expiryTrackingEnabled ? 'Expiry tracking is enabled by default.' : 'Expiry tracking is optional.'}
             </div>
 
             <div className="mt-4 rounded-[20px] border border-stone-200 bg-white p-4">
@@ -500,16 +661,13 @@ export default function ProductManager({
                         <div className="text-sm text-stone-600">
                           1 <span className="font-semibold text-stone-900">{unit.name.toLowerCase()}</span>
                           {' = '}
-                          <span className="font-semibold text-stone-900">
-                            {conversion?.ratioToBase || '...'}
-                          </span>
+                          <span className="font-semibold text-stone-900">{conversion?.ratioToBase || '...'}</span>
                           {' '}
-                          {units.find((entry) => entry.id === form.baseUnitOfMeasureId)?.name.toLowerCase() ?? 'base unit'}{conversion?.ratioToBase === '1' ? '' : 's'}
+                          {selectedBaseUnit?.name.toLowerCase() ?? 'base unit'}{conversion?.ratioToBase === '1' ? '' : 's'}
                         </div>
                         <Input
                           type="number"
                           min="1"
-                          placeholder={`Qty in ${units.find((entry) => entry.id === form.baseUnitOfMeasureId)?.name.toLowerCase() ?? 'base unit'}s`}
                           value={conversion?.ratioToBase ?? ''}
                           onChange={(event) =>
                             setForm((current) => {
@@ -517,21 +675,12 @@ export default function ProductManager({
                               const remaining = current.uomConversions.filter((entry) => entry.unitOfMeasureId !== unit.id);
 
                               if (!nextValue) {
-                                return {
-                                  ...current,
-                                  uomConversions: remaining
-                                };
+                                return { ...current, uomConversions: remaining };
                               }
 
                               return {
                                 ...current,
-                                uomConversions: [
-                                  ...remaining,
-                                  {
-                                    unitOfMeasureId: unit.id,
-                                    ratioToBase: nextValue
-                                  }
-                                ]
+                                uomConversions: [...remaining, { unitOfMeasureId: unit.id, ratioToBase: nextValue }]
                               };
                             })
                           }
@@ -540,38 +689,220 @@ export default function ProductManager({
                     );
                   })}
               </div>
-              <div className="mt-3 text-xs text-stone-500">
-                Use direct-to-base ratios such as 1 box = 12 pieces or 1 carton = 288 pieces.
+            </div>
+          </div>
+
+          <div className="rounded-[26px] border border-stone-200 bg-white/70 p-4 sm:p-5">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Variants</div>
+                <div className="mt-1 text-lg font-black text-stone-900">Structured variant options</div>
+              </div>
+              <Button type="button" variant="secondary" onClick={() => setForm((current) => ({ ...current, variants: [...current.variants, emptyVariant()] }))}>
+                Add variant
+              </Button>
+            </div>
+
+            <div className="space-y-4">
+              {form.variants.length ? form.variants.map((variant, index) => (
+                <div key={`variant-${index}`} className="rounded-[22px] border border-stone-200 bg-stone-50/80 p-4">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <Input placeholder="Color" value={variant.color} onChange={(event) => setForm((current) => ({ ...current, variants: current.variants.map((entry, entryIndex) => entryIndex === index ? { ...entry, color: event.target.value } : entry) }))} />
+                    <Input placeholder="Size" value={variant.size} onChange={(event) => setForm((current) => ({ ...current, variants: current.variants.map((entry, entryIndex) => entryIndex === index ? { ...entry, size: event.target.value } : entry) }))} />
+                    <Input placeholder="Flavor" value={variant.flavor} onChange={(event) => setForm((current) => ({ ...current, variants: current.variants.map((entry, entryIndex) => entryIndex === index ? { ...entry, flavor: event.target.value } : entry) }))} />
+                    <Input placeholder="Model" value={variant.model} onChange={(event) => setForm((current) => ({ ...current, variants: current.variants.map((entry, entryIndex) => entryIndex === index ? { ...entry, model: event.target.value } : entry) }))} />
+                    <Input placeholder="Variant SKU" value={variant.sku} onChange={(event) => setForm((current) => ({ ...current, variants: current.variants.map((entry, entryIndex) => entryIndex === index ? { ...entry, sku: event.target.value } : entry) }))} />
+                    <Input placeholder="Variant barcode" value={variant.barcode} onChange={(event) => setForm((current) => ({ ...current, variants: current.variants.map((entry, entryIndex) => entryIndex === index ? { ...entry, barcode: event.target.value } : entry) }))} />
+                    <Input type="number" step="0.01" placeholder="Price override" value={variant.priceOverride} onChange={(event) => setForm((current) => ({ ...current, variants: current.variants.map((entry, entryIndex) => entryIndex === index ? { ...entry, priceOverride: event.target.value } : entry) }))} />
+                    <Input type="number" step="0.01" placeholder="Cost override" value={variant.costOverride} onChange={(event) => setForm((current) => ({ ...current, variants: current.variants.map((entry, entryIndex) => entryIndex === index ? { ...entry, costOverride: event.target.value } : entry) }))} />
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                    <label className="inline-flex items-center gap-2 text-sm text-stone-600">
+                      <input
+                        type="checkbox"
+                        checked={variant.isActive}
+                        onChange={(event) => setForm((current) => ({ ...current, variants: current.variants.map((entry, entryIndex) => entryIndex === index ? { ...entry, isActive: event.target.checked } : entry) }))}
+                      />
+                      Variant is active
+                    </label>
+                    <div className="text-xs text-stone-500">{toVariantLabel(variant) || 'Variant label will build from the fields above.'}</div>
+                    <Button type="button" variant="ghost" onClick={() => setForm((current) => ({ ...current, variants: current.variants.filter((_, entryIndex) => entryIndex !== index) }))}>
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+              )) : (
+                <div className="rounded-[22px] border border-dashed border-stone-300 bg-stone-50 px-4 py-5 text-sm text-stone-500">
+                  No variants yet. Add colors, sizes, flavors, or models only when the product needs them.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+            <div className="rounded-[26px] border border-stone-200 bg-white/70 p-4 sm:p-5">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Images</div>
+                  <div className="mt-1 text-lg font-black text-stone-900">Product media</div>
+                </div>
+                <input
+                  ref={uploadInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(event) => void addUploadedImages(event.target.files)}
+                />
+                <div className="flex gap-2">
+                  <Button type="button" variant="secondary" onClick={() => uploadInputRef.current?.click()}>
+                    Upload image
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={() => setForm((current) => ({ ...current, images: [...current.images, emptyImage(current.images.length)] }))}>
+                    Add URL
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {form.images.length ? form.images.map((image, index) => (
+                  <div key={`image-${index}`} className="rounded-[22px] border border-stone-200 bg-stone-50/80 p-4">
+                    <div className="grid gap-3 md:grid-cols-[120px_1fr]">
+                      <div className="overflow-hidden rounded-[18px] border border-stone-200 bg-white">
+                        {image.imageUrl ? (
+                          <img src={image.imageUrl} alt={image.altText || form.name || 'Product image'} className="h-28 w-full object-cover" />
+                        ) : (
+                          <div className="flex h-28 items-center justify-center text-xs text-stone-400">No image</div>
+                        )}
+                      </div>
+                      <div className="space-y-3">
+                        <Input placeholder="Image URL or uploaded data URL" value={image.imageUrl} onChange={(event) => setForm((current) => ({ ...current, images: current.images.map((entry, entryIndex) => entryIndex === index ? { ...entry, imageUrl: event.target.value } : entry) }))} />
+                        <div className="grid gap-3 md:grid-cols-[1fr_120px_auto]">
+                          <Input placeholder="Alt text" value={image.altText} onChange={(event) => setForm((current) => ({ ...current, images: current.images.map((entry, entryIndex) => entryIndex === index ? { ...entry, altText: event.target.value } : entry) }))} />
+                          <Input type="number" placeholder="Sort" value={image.sortOrder} onChange={(event) => setForm((current) => ({ ...current, images: current.images.map((entry, entryIndex) => entryIndex === index ? { ...entry, sortOrder: event.target.value } : entry) }))} />
+                          <Button type="button" variant="ghost" onClick={() => setForm((current) => ({ ...current, images: current.images.filter((_, entryIndex) => entryIndex !== index) }))}>
+                            Remove
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="rounded-[22px] border border-dashed border-stone-300 bg-stone-50 px-4 py-5 text-sm text-stone-500">
+                    No images yet. Upload an image or store a hosted image URL.
+                  </div>
+                )}
               </div>
             </div>
 
-            <label className="mt-4 inline-flex items-center gap-3 text-sm font-medium text-stone-700">
-              <input
-                type="checkbox"
-                checked={form.isActive}
-                onChange={(event) => setForm((current) => ({ ...current, isActive: event.target.checked }))}
-              />
-              Product is active and available for selling
-            </label>
+            <div className="rounded-[26px] border border-stone-200 bg-white/70 p-4 sm:p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Barcode labels</div>
+                  <div className="mt-1 text-lg font-black text-stone-900">Preview and print</div>
+                </div>
+                <select className={selectClassName} value={labelSize} onChange={(event) => setLabelSize(event.target.value as BarcodeLabelSize)}>
+                  <option value="small">Small</option>
+                  <option value="medium">Medium</option>
+                  <option value="large">Large</option>
+                </select>
+              </div>
+
+              <div className="mt-4 space-y-4">
+                <BarcodeLabelPreview code={form.barcode || form.sku} productName={form.name || 'Product'} sku={form.sku || null} size={labelSize} />
+                {form.variants.filter((variant) => variant.barcode || variant.sku).slice(0, 2).map((variant, index) => (
+                  <BarcodeLabelPreview
+                    key={`barcode-preview-${index}`}
+                    code={variant.barcode || variant.sku}
+                    productName={form.name || 'Product'}
+                    variantLabel={toVariantLabel(variant)}
+                    sku={variant.sku || null}
+                    size={labelSize}
+                  />
+                ))}
+              </div>
+
+              {editingId ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Link href={`/print/barcode-labels?productId=${editingId}&size=${labelSize}`} target="_blank">
+                    <Button type="button">Print product labels</Button>
+                  </Link>
+                  {products
+                    .find((product) => product.id === editingId)
+                    ?.variants.filter((variant) => variant.barcode || variant.sku)
+                    .slice(0, 2)
+                    .map((variant) => (
+                      <Link key={variant.id} href={`/print/barcode-labels?productId=${editingId}&variantId=${variant.id}&size=${labelSize}`} target="_blank">
+                        <Button type="button" variant="secondary">
+                          Print {toVariantLabel(variant) || 'variant'}
+                        </Button>
+                      </Link>
+                    ))}
+                </div>
+              ) : null}
+            </div>
           </div>
 
-          {error ? (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
+          {editingId ? (
+            <div className="grid gap-6 xl:grid-cols-2">
+              <div className="rounded-[26px] border border-stone-200 bg-white/70 p-4 sm:p-5">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Price history</div>
+                <div className="mt-1 text-lg font-black text-stone-900">Recent price changes</div>
+                <div className="mt-4 space-y-3">
+                  {(products.find((product) => product.id === editingId)?.priceHistory ?? []).length ? (
+                    products.find((product) => product.id === editingId)!.priceHistory.map((entry) => (
+                      <div key={entry.id} className="rounded-[20px] border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+                        <div className="font-semibold text-stone-900">
+                          {money(entry.previousPrice, currencySymbol)} to {money(entry.newPrice, currencySymbol)}
+                        </div>
+                        <div className="mt-1 text-xs text-stone-500">
+                          {shortDate(entry.effectiveDate)} by {entry.changedByUser.name ?? entry.changedByUser.email}
+                        </div>
+                        {entry.note ? <div className="mt-2 text-xs text-stone-500">{entry.note}</div> : null}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-[20px] border border-dashed border-stone-300 bg-stone-50 px-4 py-5 text-sm text-stone-500">
+                      No price changes recorded yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-[26px] border border-stone-200 bg-white/70 p-4 sm:p-5">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Cost history</div>
+                <div className="mt-1 text-lg font-black text-stone-900">Recent cost changes</div>
+                <div className="mt-4 space-y-3">
+                  {(products.find((product) => product.id === editingId)?.costHistory ?? []).length ? (
+                    products.find((product) => product.id === editingId)!.costHistory.map((entry) => (
+                      <div key={entry.id} className="rounded-[20px] border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+                        <div className="font-semibold text-stone-900">
+                          {money(entry.previousCost, currencySymbol)} to {money(entry.newCost, currencySymbol)}
+                        </div>
+                        <div className="mt-1 text-xs text-stone-500">
+                          {shortDate(entry.effectiveDate)} by {entry.changedByUser.name ?? entry.changedByUser.email}
+                        </div>
+                        {entry.note ? <div className="mt-2 text-xs text-stone-500">{entry.note}</div> : null}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-[20px] border border-dashed border-stone-300 bg-stone-50 px-4 py-5 text-sm text-stone-500">
+                      No cost changes recorded yet.
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           ) : null}
 
-          {success ? (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-              {success}
-            </div>
-          ) : null}
+          {error ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
+          {success ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div> : null}
 
           <div className="flex flex-col gap-3 sm:flex-row">
             <Button type="submit" disabled={loading}>
               {loading ? 'Saving product...' : editingId ? 'Update product' : 'Save product'}
             </Button>
-
             {editingId ? (
               <Button type="button" variant="secondary" onClick={resetForm}>
                 Cancel
@@ -585,21 +916,12 @@ export default function ProductManager({
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-xl font-black text-stone-900">Product catalog</h2>
-            <p className="text-sm text-stone-500">Search, filter, and manage active or archived products.</p>
+            <p className="text-sm text-stone-500">Search, filter, and manage commercial product records with variants and recent changes.</p>
           </div>
 
           <div className="flex flex-col gap-3 md:flex-row">
-            <Input
-              placeholder="Search products..."
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              className="md:w-72"
-            />
-            <select
-              className={`${selectClassName} md:w-56`}
-              value={categoryFilter}
-              onChange={(event) => setCategoryFilter(event.target.value)}
-            >
+            <Input placeholder="Search products or variants..." value={query} onChange={(event) => setQuery(event.target.value)} className="md:w-72" />
+            <select className={`${selectClassName} md:w-56`} value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
               <option value="">All categories</option>
               {categories.map((category) => (
                 <option key={category.id} value={category.id}>
@@ -615,12 +937,11 @@ export default function ProductManager({
             <table className="min-w-full text-left text-sm">
               <thead className="bg-stone-50 text-stone-500">
                 <tr>
-                  <th className="px-4 py-3.5">Name</th>
+                  <th className="px-4 py-3.5">Product</th>
                   <th className="px-4 py-3.5">Category</th>
-                  <th className="px-4 py-3.5">SKU / Barcode</th>
-                  <th className="px-4 py-3.5">UOM / Tracking</th>
-                  <th className="px-4 py-3.5">Cost</th>
-                  <th className="px-4 py-3.5">Price</th>
+                  <th className="px-4 py-3.5">Commercial data</th>
+                  <th className="px-4 py-3.5">Variants</th>
+                  <th className="px-4 py-3.5">Pricing</th>
                   <th className="px-4 py-3.5">Stock</th>
                   <th className="px-4 py-3.5">Status</th>
                   <th className="px-4 py-3.5">Actions</th>
@@ -629,25 +950,31 @@ export default function ProductManager({
               <tbody>
                 {filtered.map((product) => {
                   const level = getStockLevel(product.stockQty, product.reorderPoint, lowStockThreshold);
+                  const margin = getMarginSummary(Number(product.price), Number(product.cost));
                   const nextExpiryBatch = product.batches.find((batch) => batch.expiryDate && batch.quantity > 0) ?? null;
+
                   return (
                     <tr key={product.id} className="border-t border-stone-200 bg-white transition hover:bg-stone-50/70">
                       <td className="px-4 py-4">
-                        <div className="font-semibold text-stone-900">{product.name}</div>
-                        <div className="mt-1 text-xs text-stone-500">{product.description ?? 'No description'}</div>
+                        <div className="flex gap-3">
+                          <div className="h-14 w-14 overflow-hidden rounded-[18px] border border-stone-200 bg-stone-50">
+                            {product.images[0] ? (
+                              <img src={product.images[0].imageUrl} alt={product.images[0].altText ?? product.name} className="h-full w-full object-cover" />
+                            ) : null}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-stone-900">{product.name}</div>
+                            <div className="mt-1 text-xs text-stone-500">{product.description ?? 'No description'}</div>
+                          </div>
+                        </div>
                       </td>
                       <td className="px-4 py-4">{product.category?.name ?? 'Uncategorized'}</td>
                       <td className="px-4 py-4 text-stone-600">
-                        {(product.sku || 'N/A')} / {(product.barcode || 'N/A')}
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="flex flex-wrap gap-2">
-                          {product.baseUnitOfMeasure ? <Badge tone="stone">Base: {product.baseUnitOfMeasure.name}</Badge> : null}
-                          {product.trackBatches ? <Badge tone="blue">Batch</Badge> : null}
-                          {product.trackExpiry ? <Badge tone="amber">Expiry</Badge> : null}
-                          {!product.trackBatches && !product.trackExpiry && !product.baseUnitOfMeasure ? <Badge tone="stone">Standard</Badge> : null}
-                        </div>
+                        <div>{product.sku || 'N/A'} / {product.barcode || 'N/A'}</div>
                         <div className="mt-2 text-xs text-stone-500">
+                          Base: {product.baseUnitOfMeasure?.name ?? 'Unit not set'}
+                        </div>
+                        <div className="mt-1 text-xs text-stone-500">
                           {summarizeConversions(
                             product.uomConversions.map((conversion) => ({
                               unitName: conversion.unitOfMeasure.name,
@@ -656,22 +983,36 @@ export default function ProductManager({
                             product.baseUnitOfMeasure?.name
                           )}
                         </div>
-                        <div className="mt-1 text-xs text-stone-500">
-                          {nextExpiryBatch?.expiryDate
-                            ? `Next expiry ${new Date(nextExpiryBatch.expiryDate).toLocaleDateString('en-PH')}`
-                            : product.batches.length
-                              ? `${product.batches.length} batch record(s)`
-                              : 'No batch records yet'}
-                        </div>
                       </td>
-                      <td className="px-4 py-4">{money(product.cost, currencySymbol)}</td>
-                      <td className="px-4 py-4 font-semibold text-stone-900">{money(product.price, currencySymbol)}</td>
-                      <td className="px-4 py-4 font-semibold text-stone-900">{product.stockQty}</td>
                       <td className="px-4 py-4">
                         <div className="flex flex-wrap gap-2">
-                          <Badge tone={product.isActive ? 'emerald' : 'stone'}>
-                            {product.isActive ? 'Active' : 'Archived'}
-                          </Badge>
+                          <Badge tone="blue">{product.variants.length} variant(s)</Badge>
+                          {product.images.length ? <Badge tone="stone">{product.images.length} image(s)</Badge> : null}
+                        </div>
+                        <div className="mt-2 text-xs text-stone-500">
+                          {product.variants.slice(0, 2).map((variant) => toVariantLabel(variant) || variant.sku || variant.barcode || 'Variant').join(' | ') || 'No variants'}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="font-semibold text-stone-900">{money(product.price, currencySymbol)}</div>
+                        <div className="text-xs text-stone-500">Cost {money(product.cost, currencySymbol)}</div>
+                        <div className={`mt-2 text-xs ${margin.tone === 'red' ? 'text-red-700' : margin.tone === 'amber' ? 'text-amber-700' : 'text-emerald-700'}`}>
+                          {margin.message}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="font-semibold text-stone-900">{product.stockQty}</div>
+                        <div className="mt-1 text-xs text-stone-500">
+                          {nextExpiryBatch?.expiryDate
+                            ? `Next expiry ${shortDate(nextExpiryBatch.expiryDate)}`
+                            : product.batches.length
+                              ? `${product.batches.length} batch record(s)`
+                              : 'No batch records'}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex flex-wrap gap-2">
+                          <Badge tone={product.isActive ? 'emerald' : 'stone'}>{product.isActive ? 'Active' : 'Archived'}</Badge>
                           <Badge tone={level === 'OUT_OF_STOCK' ? 'red' : level === 'LOW_STOCK' ? 'amber' : 'blue'}>
                             {stockLevelLabel(level)}
                           </Badge>
@@ -696,7 +1037,7 @@ export default function ProductManager({
 
           {!filtered.length ? (
             <div className="border-t border-stone-200 bg-stone-50 py-10 text-center text-sm text-stone-500">
-              No products matched that filter. Add a product above or clear the search to see the full catalog.
+              No products matched that filter.
             </div>
           ) : null}
         </div>

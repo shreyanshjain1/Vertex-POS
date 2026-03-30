@@ -21,6 +21,38 @@ export default async function ProductsPage() {
             ratioToBase: 'asc'
           }
         },
+        variants: {
+          orderBy: { createdAt: 'asc' }
+        },
+        images: {
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
+        },
+        priceHistory: {
+          include: {
+            changedByUser: {
+              select: {
+                id: true,
+                name: true,
+                email: true
+              }
+            }
+          },
+          orderBy: { effectiveDate: 'desc' },
+          take: 5
+        },
+        costHistory: {
+          include: {
+            changedByUser: {
+              select: {
+                id: true,
+                name: true,
+                email: true
+              }
+            }
+          },
+          orderBy: { effectiveDate: 'desc' },
+          take: 5
+        },
         batches: {
           orderBy: [{ expiryDate: 'asc' }, { receivedAt: 'desc' }]
         }
@@ -46,6 +78,31 @@ export default async function ProductsPage() {
           cost: product.cost.toString(),
           price: product.price.toString(),
           baseUnitOfMeasure: product.baseUnitOfMeasure,
+          variants: product.variants.map((variant) => ({
+            ...variant,
+            priceOverride: variant.priceOverride?.toString() ?? null,
+            costOverride: variant.costOverride?.toString() ?? null,
+            createdAt: variant.createdAt.toISOString(),
+            updatedAt: variant.updatedAt.toISOString()
+          })),
+          images: product.images.map((image) => ({
+            ...image,
+            createdAt: image.createdAt.toISOString()
+          })),
+          priceHistory: product.priceHistory.map((entry) => ({
+            ...entry,
+            previousPrice: entry.previousPrice.toString(),
+            newPrice: entry.newPrice.toString(),
+            effectiveDate: entry.effectiveDate.toISOString(),
+            createdAt: entry.createdAt.toISOString()
+          })),
+          costHistory: product.costHistory.map((entry) => ({
+            ...entry,
+            previousCost: entry.previousCost.toString(),
+            newCost: entry.newCost.toString(),
+            effectiveDate: entry.effectiveDate.toISOString(),
+            createdAt: entry.createdAt.toISOString()
+          })),
           uomConversions: product.uomConversions.map((conversion) => ({
             id: conversion.id,
             unitOfMeasureId: conversion.unitOfMeasureId,

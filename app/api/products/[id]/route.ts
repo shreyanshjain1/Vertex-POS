@@ -7,6 +7,65 @@ import { normalizeText } from '@/lib/inventory';
 import { prisma } from '@/lib/prisma';
 import { ensureUnitsOfMeasure } from '@/lib/uom';
 
+function serializeProduct(product: {
+  cost: { toString(): string };
+  price: { toString(): string };
+  createdAt: Date;
+  updatedAt: Date;
+  variants: Array<{
+    priceOverride: { toString(): string } | null;
+    costOverride: { toString(): string } | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }>;
+  priceHistory: Array<{
+    previousPrice: { toString(): string };
+    newPrice: { toString(): string };
+    effectiveDate: Date;
+    createdAt: Date;
+  }>;
+  costHistory: Array<{
+    previousCost: { toString(): string };
+    newCost: { toString(): string };
+    effectiveDate: Date;
+    createdAt: Date;
+  }>;
+  images: Array<{ createdAt: Date }>;
+}) {
+  return {
+    ...product,
+    cost: product.cost.toString(),
+    price: product.price.toString(),
+    createdAt: product.createdAt.toISOString(),
+    updatedAt: product.updatedAt.toISOString(),
+    variants: product.variants.map((variant) => ({
+      ...variant,
+      priceOverride: variant.priceOverride?.toString() ?? null,
+      costOverride: variant.costOverride?.toString() ?? null,
+      createdAt: variant.createdAt.toISOString(),
+      updatedAt: variant.updatedAt.toISOString()
+    })),
+    priceHistory: product.priceHistory.map((entry) => ({
+      ...entry,
+      previousPrice: entry.previousPrice.toString(),
+      newPrice: entry.newPrice.toString(),
+      effectiveDate: entry.effectiveDate.toISOString(),
+      createdAt: entry.createdAt.toISOString()
+    })),
+    costHistory: product.costHistory.map((entry) => ({
+      ...entry,
+      previousCost: entry.previousCost.toString(),
+      newCost: entry.newCost.toString(),
+      effectiveDate: entry.effectiveDate.toISOString(),
+      createdAt: entry.createdAt.toISOString()
+    })),
+    images: product.images.map((image) => ({
+      ...image,
+      createdAt: image.createdAt.toISOString()
+    }))
+  };
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -35,7 +94,11 @@ export async function PATCH(
           }
         },
         baseUnitOfMeasure: true,
-        uomConversions: true
+        uomConversions: true,
+        variants: true,
+        images: {
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
+        }
       }
     });
 
@@ -53,6 +116,45 @@ export async function PATCH(
       parsed.data.sku === undefined ? existing.sku : normalizeText(parsed.data.sku);
     const nextBarcode =
       parsed.data.barcode === undefined ? existing.barcode : normalizeText(parsed.data.barcode);
+    const nextChangeNote =
+      parsed.data.changeNote === undefined ? null : normalizeText(parsed.data.changeNote);
+    const nextVariants =
+      parsed.data.variants === undefined
+        ? existing.variants.map((variant) => ({
+            color: variant.color,
+            size: variant.size,
+            flavor: variant.flavor,
+            model: variant.model,
+            sku: variant.sku,
+            barcode: variant.barcode,
+            priceOverride: variant.priceOverride ? Number(variant.priceOverride) : null,
+            costOverride: variant.costOverride ? Number(variant.costOverride) : null,
+            isActive: variant.isActive
+          }))
+        : parsed.data.variants.map((variant) => ({
+            color: normalizeText(variant.color),
+            size: normalizeText(variant.size),
+            flavor: normalizeText(variant.flavor),
+            model: normalizeText(variant.model),
+            sku: normalizeText(variant.sku),
+            barcode: normalizeText(variant.barcode),
+            priceOverride: variant.priceOverride ?? null,
+            costOverride: variant.costOverride ?? null,
+            isActive: variant.isActive
+          }));
+    const nextImages =
+      parsed.data.images === undefined
+        ? existing.images.map((image) => ({
+            imageUrl: image.imageUrl,
+            altText: image.altText,
+            sortOrder: image.sortOrder
+          }))
+        : parsed.data.images.map((image) => ({
+            imageUrl: image.imageUrl.trim(),
+            altText: normalizeText(image.altText),
+            sortOrder: image.sortOrder
+          }));
+
     const unitMap = new Map(units.map((unit) => [unit.id, unit]));
     const normalizedConversions =
       parsed.data.uomConversions === undefined
@@ -73,7 +175,36 @@ export async function PATCH(
       );
     }
 
-    const [category, duplicateByName, duplicateBySku, duplicateByBarcode] = await Promise.all([
+    if (!nextBaseUnitId || !unitMap.has(nextBaseUnitId)) {
+      return NextResponse.json({ error: 'Selected base unit was not found.' }, { status: 404 });
+    }
+
+    for (const conversion of normalizedConversions) {
+      if (!unitMap.has(conversion.unitOfMeasureId)) {
+        return NextResponse.json({ error: 'One or more selected units were not found.' }, { status: 404 });
+      }
+    }
+
+    const variantSkus = nextVariants.map((variant) => variant.sku).filter(Boolean) as string[];
+    const variantBarcodes = nextVariants.map((variant) => variant.barcode).filter(Boolean) as string[];
+
+    if (new Set(variantSkus.map((value) => value.toLowerCase())).size !== variantSkus.length) {
+      return NextResponse.json({ error: 'Variant SKUs must be unique.' }, { status: 409 });
+    }
+
+    if (new Set(variantBarcodes).size !== variantBarcodes.length) {
+      return NextResponse.json({ error: 'Variant barcodes must be unique.' }, { status: 409 });
+    }
+
+    if (nextSku && variantSkus.some((value) => value.toLowerCase() === nextSku.toLowerCase())) {
+      return NextResponse.json({ error: 'Base product SKU conflicts with a variant SKU.' }, { status: 409 });
+    }
+
+    if (nextBarcode && variantBarcodes.includes(nextBarcode)) {
+      return NextResponse.json({ error: 'Base product barcode conflicts with a variant barcode.' }, { status: 409 });
+    }
+
+    const [category, duplicateByName, duplicateBySku, duplicateByBarcode, duplicateVariantSku, duplicateVariantBarcode, productSkuConflictWithVariant, productBarcodeConflictWithVariant] = await Promise.all([
       nextCategoryId
         ? prisma.category.findFirst({
             where: { id: nextCategoryId, shopId, isActive: true },
@@ -102,21 +233,55 @@ export async function PATCH(
             where: { shopId, id: { not: id }, barcode: nextBarcode },
             select: { id: true }
           })
+        : Promise.resolve(null),
+      variantSkus.length
+        ? prisma.productVariant.findFirst({
+            where: {
+              sku: { in: variantSkus },
+              product: {
+                shopId,
+                id: { not: id }
+              }
+            },
+            select: { id: true }
+          })
+        : Promise.resolve(null),
+      variantBarcodes.length
+        ? prisma.productVariant.findFirst({
+            where: {
+              barcode: { in: variantBarcodes },
+              product: {
+                shopId,
+                id: { not: id }
+              }
+            },
+            select: { id: true }
+          })
+        : Promise.resolve(null),
+      variantSkus.length
+        ? prisma.product.findFirst({
+            where: {
+              shopId,
+              id: { not: id },
+              sku: { in: variantSkus }
+            },
+            select: { id: true }
+          })
+        : Promise.resolve(null),
+      variantBarcodes.length
+        ? prisma.product.findFirst({
+            where: {
+              shopId,
+              id: { not: id },
+              barcode: { in: variantBarcodes }
+            },
+            select: { id: true }
+          })
         : Promise.resolve(null)
     ]);
 
     if (nextCategoryId && !category) {
       return NextResponse.json({ error: 'Selected category was not found.' }, { status: 404 });
-    }
-
-    if (!nextBaseUnitId || !unitMap.has(nextBaseUnitId)) {
-      return NextResponse.json({ error: 'Selected base unit was not found.' }, { status: 404 });
-    }
-
-    for (const conversion of normalizedConversions) {
-      if (!unitMap.has(conversion.unitOfMeasureId)) {
-        return NextResponse.json({ error: 'One or more selected units were not found.' }, { status: 404 });
-      }
     }
 
     if (duplicateByName) {
@@ -131,13 +296,49 @@ export async function PATCH(
     }
 
     if (duplicateByBarcode) {
-      return NextResponse.json(
-        { error: 'A product with this barcode already exists.' },
-        { status: 409 }
-      );
+      return NextResponse.json({ error: 'A product with this barcode already exists.' }, { status: 409 });
     }
 
+    if (duplicateVariantSku || productSkuConflictWithVariant) {
+      return NextResponse.json({ error: 'A variant SKU already exists in this shop.' }, { status: 409 });
+    }
+
+    if (duplicateVariantBarcode || productBarcodeConflictWithVariant) {
+      return NextResponse.json({ error: 'A variant barcode already exists in this shop.' }, { status: 409 });
+    }
+
+    const priceChanged =
+      parsed.data.price !== undefined && Number(existing.price) !== parsed.data.price;
+    const costChanged =
+      parsed.data.cost !== undefined && Number(existing.cost) !== parsed.data.cost;
+
     const updatedProduct = await prisma.$transaction(async (tx) => {
+      if (priceChanged) {
+        await tx.productPriceHistory.create({
+          data: {
+            productId: existing.id,
+            previousPrice: existing.price,
+            newPrice: parsed.data.price!,
+            effectiveDate: new Date(),
+            changedByUserId: userId,
+            note: nextChangeNote
+          }
+        });
+      }
+
+      if (costChanged) {
+        await tx.productCostHistory.create({
+          data: {
+            productId: existing.id,
+            previousCost: existing.cost,
+            newCost: parsed.data.cost!,
+            effectiveDate: new Date(),
+            changedByUserId: userId,
+            note: nextChangeNote
+          }
+        });
+      }
+
       const product = await tx.product.update({
         where: { id },
         data: {
@@ -162,6 +363,28 @@ export async function PATCH(
               ratioToBase: conversion.ratioToBase
             }))
           },
+          variants: {
+            deleteMany: {},
+            create: nextVariants.map((variant) => ({
+              color: variant.color,
+              size: variant.size,
+              flavor: variant.flavor,
+              model: variant.model,
+              sku: variant.sku,
+              barcode: variant.barcode,
+              priceOverride: variant.priceOverride,
+              costOverride: variant.costOverride,
+              isActive: variant.isActive
+            }))
+          },
+          images: {
+            deleteMany: {},
+            create: nextImages.map((image) => ({
+              imageUrl: image.imageUrl,
+              altText: image.altText,
+              sortOrder: image.sortOrder
+            }))
+          },
           isActive: parsed.data.isActive ?? existing.isActive
         },
         include: {
@@ -179,6 +402,30 @@ export async function PATCH(
             orderBy: {
               ratioToBase: 'asc'
             }
+          },
+          variants: {
+            orderBy: { createdAt: 'asc' }
+          },
+          images: {
+            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
+          },
+          priceHistory: {
+            include: {
+              changedByUser: {
+                select: { id: true, name: true, email: true }
+              }
+            },
+            orderBy: { effectiveDate: 'desc' },
+            take: 5
+          },
+          costHistory: {
+            include: {
+              changedByUser: {
+                select: { id: true, name: true, email: true }
+              }
+            },
+            orderBy: { effectiveDate: 'desc' },
+            take: 5
           }
         }
       });
@@ -203,6 +450,10 @@ export async function PATCH(
           previousName: existing.name,
           isActive: product.isActive,
           baseUnit: product.baseUnitOfMeasure?.code ?? null,
+          variantCount: product.variants.length,
+          imageCount: product.images.length,
+          priceChanged,
+          costChanged,
           trackBatches: product.trackBatches,
           trackExpiry: product.trackExpiry
         }
@@ -211,7 +462,7 @@ export async function PATCH(
       return product;
     });
 
-    return NextResponse.json({ product: updatedProduct });
+    return NextResponse.json({ product: serializeProduct(updatedProduct) });
   } catch (error) {
     return apiErrorResponse(error, 'Unable to update product.');
   }
