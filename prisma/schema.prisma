@@ -130,6 +130,8 @@ model User {
   approvedSaleAdjustments  SaleAdjustment[]     @relation("SaleAdjustmentApprovedBy")
   createdStockCounts       StockCount[]         @relation("StockCountCreatedBy")
   approvedStockCounts      StockCount[]         @relation("StockCountApprovedBy")
+  productPriceChanges      ProductPriceHistory[]
+  productCostChanges       ProductCostHistory[]
   cashSessions             CashSession[]
   parkedSales              ParkedSale[]
   activities               ActivityLog[]
@@ -243,6 +245,10 @@ model Product {
   baseUnitOfMeasure UnitOfMeasure      @relation("ProductBaseUnit", fields: [baseUnitOfMeasureId], references: [id], onDelete: Restrict)
   shop            Shop                 @relation(fields: [shopId], references: [id], onDelete: Cascade)
   uomConversions  ProductUomConversion[]
+  variants        ProductVariant[]
+  priceHistory    ProductPriceHistory[]
+  costHistory     ProductCostHistory[]
+  images          ProductImage[]
   saleItems       SaleItem[]
   adjustmentItems SaleAdjustmentItem[]
   stockCountItems  StockCountItem[]
@@ -315,16 +321,22 @@ model SaleItem {
   id              String               @id @default(cuid())
   saleId          String
   productId       String
+  productVariantId String?
   productName     String
+  variantLabel    String?
+  variantSkuSnapshot String?
+  variantBarcodeSnapshot String?
   qty             Int
   unitPrice       Decimal              @db.Decimal(12, 2)
   lineTotal       Decimal              @db.Decimal(12, 2)
   sale            Sale                 @relation(fields: [saleId], references: [id], onDelete: Cascade)
   product         Product              @relation(fields: [productId], references: [id], onDelete: Restrict)
+  productVariant  ProductVariant?      @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
   adjustmentItems SaleAdjustmentItem[]
 
   @@index([saleId])
   @@index([productId])
+  @@index([productVariantId])
 }
 
 model SalePayment {
@@ -478,15 +490,19 @@ model ParkedSaleItem {
   id           String     @id @default(cuid())
   parkedSaleId String
   productId    String
+  productVariantId String?
   productName  String
+  variantLabel String?
   qty          Int
   unitPrice    Decimal    @db.Decimal(12, 2)
   lineTotal    Decimal    @db.Decimal(12, 2)
   createdAt    DateTime   @default(now())
   parkedSale   ParkedSale @relation(fields: [parkedSaleId], references: [id], onDelete: Cascade)
+  productVariant ProductVariant? @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
 
   @@index([parkedSaleId, createdAt])
   @@index([productId])
+  @@index([productVariantId])
 }
 
 model InventoryMovement {
@@ -574,6 +590,73 @@ model ProductUomConversion {
   @@unique([productId, unitOfMeasureId])
   @@index([productId])
   @@index([unitOfMeasureId])
+}
+
+model ProductVariant {
+  id              String         @id @default(cuid())
+  productId       String
+  color           String?
+  size            String?
+  flavor          String?
+  model           String?
+  sku             String?
+  barcode         String?
+  priceOverride   Decimal?       @db.Decimal(12, 2)
+  costOverride    Decimal?       @db.Decimal(12, 2)
+  isActive        Boolean        @default(true)
+  product         Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  saleItems       SaleItem[]
+  parkedSaleItems ParkedSaleItem[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@unique([productId, sku])
+  @@unique([productId, barcode])
+  @@index([productId, isActive])
+}
+
+model ProductPriceHistory {
+  id             String   @id @default(cuid())
+  productId       String
+  previousPrice   Decimal  @db.Decimal(12, 2)
+  newPrice        Decimal  @db.Decimal(12, 2)
+  effectiveDate   DateTime @default(now())
+  changedByUserId String
+  note            String?
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  changedByUser   User     @relation(fields: [changedByUserId], references: [id], onDelete: Restrict)
+  createdAt       DateTime @default(now())
+
+  @@index([productId, createdAt])
+  @@index([changedByUserId, createdAt])
+}
+
+model ProductCostHistory {
+  id             String   @id @default(cuid())
+  productId       String
+  previousCost    Decimal  @db.Decimal(12, 2)
+  newCost         Decimal  @db.Decimal(12, 2)
+  effectiveDate   DateTime @default(now())
+  changedByUserId String
+  note            String?
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  changedByUser   User     @relation(fields: [changedByUserId], references: [id], onDelete: Restrict)
+  createdAt       DateTime @default(now())
+
+  @@index([productId, createdAt])
+  @@index([changedByUserId, createdAt])
+}
+
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  imageUrl  String
+  altText   String?
+  sortOrder Int      @default(0)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([productId, sortOrder])
 }
 
 model Supplier {
