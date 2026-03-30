@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
@@ -18,12 +18,16 @@ import {
 type Category = { id: string; name: string };
 type Product = {
   id: string;
+  productId: string;
+  variantId: string | null;
   name: string;
+  variantLabel: string | null;
   barcode: string | null;
   sku: string | null;
   price: string;
   stockQty: number;
   categoryId: string | null;
+  imageUrl: string | null;
   category?: { id: string; name: string } | null;
 };
 type CartItem = Product & { qty: number };
@@ -57,7 +61,9 @@ type ParkedSale = {
   items: Array<{
     id: string;
     productId: string;
+    productVariantId: string | null;
     productName: string;
+    variantLabel: string | null;
     qty: number;
     unitPrice: string;
     lineTotal: string;
@@ -78,6 +84,18 @@ function toNumber(value: string) {
 
 function createPaymentLine(method: PaymentMethod): PaymentLine {
   return { id: crypto.randomUUID(), method, amount: '', referenceNumber: '' };
+}
+
+function getOptionDisplayName(product: Pick<Product, 'name' | 'variantLabel'>) {
+  return product.variantLabel ? `${product.name} - ${product.variantLabel}` : product.name;
+}
+
+function getReservedQtyForProduct(items: CartItem[], productId: string, exceptOptionId?: string) {
+  return items.reduce((sum, item) => {
+    if (item.productId !== productId) return sum;
+    if (exceptOptionId && item.id === exceptOptionId) return sum;
+    return sum + item.qty;
+  }, 0);
 }
 
 export default function CheckoutClient({
@@ -129,7 +147,7 @@ export default function CheckoutClient({
         const matchesCategory = !selectedCategory || product.categoryId === selectedCategory;
         const matchesTerm =
           !term ||
-          [product.name, product.barcode ?? '', product.sku ?? '', product.category?.name ?? '']
+          [product.name, product.variantLabel ?? '', product.barcode ?? '', product.sku ?? '', product.category?.name ?? '']
             .join(' ')
             .toLowerCase()
             .includes(term);
@@ -210,46 +228,58 @@ export default function CheckoutClient({
     setError('');
     setParkedFeedback('');
     const existing = cartRef.current.find((item) => item.id === product.id);
+    const reservedQty = getReservedQtyForProduct(cartRef.current, product.productId);
+
     if (existing) {
-      if (existing.qty + 1 > product.stockQty) {
+      if (reservedQty + 1 > product.stockQty) {
         setError(`Cannot oversell. ${product.name} only has ${product.stockQty} in stock.`);
         return false;
       }
       setCart((current) => current.map((item) => (item.id === product.id ? { ...item, qty: item.qty + 1 } : item)));
       return true;
     }
+
     if (product.stockQty <= 0) {
       setError(`${product.name} is out of stock.`);
       return false;
     }
+
+    if (reservedQty + 1 > product.stockQty) {
+      setError(`Cannot oversell. ${product.name} only has ${product.stockQty} in stock.`);
+      return false;
+    }
+
     setCart((current) => [...current, { ...product, qty: 1 }]);
     return true;
   }
 
-  function updateQty(productId: string, direction: 'increase' | 'decrease') {
-    const product = productMap.get(productId);
+  function updateQty(optionId: string, direction: 'increase' | 'decrease') {
+    const product = productMap.get(optionId);
     if (!product) return;
     setError('');
     setScanFeedback(null);
     setParkedFeedback('');
     setCart((current) => {
-      const existing = current.find((item) => item.id === productId);
+      const existing = current.find((item) => item.id === optionId);
       if (!existing) return current;
       const nextQty = direction === 'increase' ? existing.qty + 1 : existing.qty - 1;
-      if (nextQty <= 0) return current.filter((item) => item.id !== productId);
-      if (nextQty > product.stockQty) {
+      if (nextQty <= 0) return current.filter((item) => item.id !== optionId);
+
+      const reservedOtherQty = getReservedQtyForProduct(current, product.productId, optionId);
+      if (reservedOtherQty + nextQty > product.stockQty) {
         setError(`Cannot oversell. ${product.name} only has ${product.stockQty} in stock.`);
         return current;
       }
-      return current.map((item) => (item.id === productId ? { ...item, qty: nextQty } : item));
+
+      return current.map((item) => (item.id === optionId ? { ...item, qty: nextQty } : item));
     });
   }
 
-  function removeFromCart(productId: string) {
+  function removeFromCart(optionId: string) {
     setError('');
     setScanFeedback(null);
     setParkedFeedback('');
-    setCart((current) => current.filter((item) => item.id !== productId));
+    setCart((current) => current.filter((item) => item.id !== optionId));
   }
 
   function requestClearCart() {
@@ -269,7 +299,7 @@ export default function CheckoutClient({
     );
   }
 
-  function handleScanSubmit(event: React.FormEvent<HTMLFormElement>) {
+  function handleScanSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const value = scanQuery.trim();
     setError('');
@@ -292,7 +322,7 @@ export default function CheckoutClient({
       return;
     }
     setScanQuery('');
-    setScanFeedback({ tone: 'success', message: `${product.name} added to cart.` });
+    setScanFeedback({ tone: 'success', message: `${getOptionDisplayName(product)} added to cart.` });
     focusScanInput();
   }
 
@@ -317,7 +347,9 @@ export default function CheckoutClient({
   }
 
   function getExactAmountForLine(lineId: string) {
-    const paidExcludingLine = roundCurrency(paymentInputs.reduce((sum, payment, index) => (payments[index]?.id === lineId ? sum : sum + payment.amount), 0));
+    const paidExcludingLine = roundCurrency(
+      paymentInputs.reduce((sum, payment, index) => (payments[index]?.id === lineId ? sum : sum + payment.amount), 0)
+    );
     return roundCurrency(Math.max(total - paidExcludingLine, 0));
   }
 
@@ -342,7 +374,7 @@ export default function CheckoutClient({
           customerPhone: customerPhone || null,
           discountAmount: discount,
           notes: notes || null,
-          items: cart.map((item) => ({ productId: item.id, qty: item.qty }))
+          items: cart.map((item) => ({ productId: item.productId, variantId: item.variantId, qty: item.qty }))
         })
       });
       const data = await response.json().catch(() => ({ error: 'Unable to hold the cart.' }));
@@ -364,7 +396,8 @@ export default function CheckoutClient({
   async function resumeParkedSale(parkedSale: ParkedSale) {
     setError('');
     setParkedFeedback('');
-    if (parkedSale.items.some((item) => !productMap.has(item.productId))) {
+    const missingOption = parkedSale.items.find((item) => !productMap.has(item.productVariantId ?? item.productId));
+    if (missingOption) {
       setError('One or more items in this held cart are no longer available in the active catalog.');
       return;
     }
@@ -378,7 +411,12 @@ export default function CheckoutClient({
         setError(data?.error ?? 'Unable to resume the held cart.');
         return;
       }
-      setCart(parkedSale.items.map((item) => ({ ...productMap.get(item.productId)!, qty: item.qty })));
+      setCart(
+        parkedSale.items.map((item) => {
+          const option = productMap.get(item.productVariantId ?? item.productId)!;
+          return { ...option, qty: item.qty };
+        })
+      );
       setCustomerName(parkedSale.customerName ?? '');
       setCustomerPhone(parkedSale.customerPhone ?? '');
       setNotes(parkedSale.notes ?? '');
@@ -438,7 +476,7 @@ export default function CheckoutClient({
             amount: Number(payment.amount),
             referenceNumber: payment.referenceNumber || null
           })),
-          items: cart.map((item) => ({ productId: item.id, qty: item.qty }))
+          items: cart.map((item) => ({ productId: item.productId, variantId: item.variantId, qty: item.qty }))
         })
       });
       const data = await response.json().catch(() => ({ error: 'Failed to create sale.' }));
@@ -493,7 +531,7 @@ export default function CheckoutClient({
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">Product browser</div>
             <h2 className="mt-2 text-2xl font-black text-stone-900">Find products</h2>
-            <p className="mt-1 text-sm text-stone-500">Search by name, SKU, barcode, or category to build a reliable cart quickly.</p>
+            <p className="mt-1 text-sm text-stone-500">Search by name, variant, SKU, barcode, or category to build a reliable cart quickly.</p>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:w-auto">
             <div className="rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-3"><div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Visible</div><div className="mt-1 text-xl font-black text-stone-950">{filtered.length}</div></div>
@@ -507,7 +545,7 @@ export default function CheckoutClient({
               <Input ref={scanInputRef} placeholder="Scan barcode or enter SKU" value={scanQuery} onChange={(event) => setScanQuery(event.target.value)} />
               <Button type="submit" variant="secondary" className="shrink-0">Add</Button>
             </form>
-            <Input placeholder="Search by product name, SKU, barcode..." value={query} onChange={(event) => setQuery(event.target.value)} />
+            <Input placeholder="Search by product, variant, SKU, barcode..." value={query} onChange={(event) => setQuery(event.target.value)} />
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
@@ -523,14 +561,17 @@ export default function CheckoutClient({
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((product) => (
             <button key={product.id} type="button" onClick={() => { setScanFeedback(null); addToCart(product); }} className="rounded-[24px] border border-stone-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,245,244,0.92))] p-4 text-left shadow-[0_18px_36px_-30px_rgba(28,25,23,0.35)] transition hover:-translate-y-1 hover:border-emerald-300">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
+              <div className="flex items-start gap-3">
+                <div className="h-16 w-16 overflow-hidden rounded-[18px] border border-stone-200 bg-stone-50">
+                  {product.imageUrl ? <img src={product.imageUrl} alt={getOptionDisplayName(product)} className="h-full w-full object-cover" /> : null}
+                </div>
+                <div className="min-w-0 flex-1">
                   <div className="truncate font-semibold text-stone-900">{product.name}</div>
-                  <div className="mt-1 text-sm text-stone-500">{product.category?.name ?? 'Uncategorized'}</div>
+                  <div className="mt-1 text-sm text-stone-500">{product.variantLabel ?? product.category?.name ?? 'Standard item'}</div>
+                  <div className="mt-2 text-xs text-stone-500">SKU: {product.sku ?? 'N/A'} / Barcode: {product.barcode ?? 'N/A'}</div>
                 </div>
                 <div className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${product.stockQty <= 0 ? 'border-red-200 bg-red-50 text-red-700' : product.stockQty <= 5 ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{product.stockQty <= 0 ? 'Out' : product.stockQty <= 5 ? 'Low' : 'Ready'}</div>
               </div>
-              <div className="mt-3 rounded-[20px] border border-stone-200/80 bg-white/80 px-3 py-2 text-xs text-stone-500">SKU: {product.sku ?? 'N/A'} / Barcode: {product.barcode ?? 'N/A'}</div>
               <div className="mt-4 flex items-end justify-between gap-3">
                 <div><div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Selling price</div><div className="mt-1 text-2xl font-black text-emerald-700">{money(product.price, currencySymbol)}</div></div>
                 <div className="text-right text-xs font-medium text-stone-500">{product.stockQty} in stock</div>
@@ -556,7 +597,11 @@ export default function CheckoutClient({
           {cart.length ? cart.map((item) => (
             <div key={item.id} className="rounded-[24px] border border-stone-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,245,244,0.9))] p-4">
               <div className="flex items-start justify-between gap-3">
-                <div><div className="font-semibold text-stone-900">{item.name}</div><div className="text-sm text-stone-500">{money(item.price, currencySymbol)} each</div></div>
+                <div>
+                  <div className="font-semibold text-stone-900">{item.name}</div>
+                  <div className="text-sm text-stone-500">{item.variantLabel ?? 'Base item'}</div>
+                  <div className="mt-1 text-xs text-stone-500">{money(item.price, currencySymbol)} each</div>
+                </div>
                 <div className="flex items-center gap-2">
                   <Button type="button" variant="secondary" className="h-10 w-10 px-0" onClick={() => updateQty(item.id, 'decrease')}>-</Button>
                   <span className="inline-flex h-10 min-w-10 items-center justify-center rounded-2xl bg-white px-3 font-semibold text-stone-900">{item.qty}</span>
@@ -652,7 +697,9 @@ export default function CheckoutClient({
                     {parkedSale.notes ? <div className="mt-3 rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-600">{parkedSale.notes}</div> : null}
                   </div>
                   <div className="min-w-[220px] space-y-2">
-                    <div className="rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-500">{parkedSale.items.map((item) => `${item.qty}x ${item.productName}`).join(', ')}</div>
+                    <div className="rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-500">
+                      {parkedSale.items.map((item) => `${item.qty}x ${item.productName}${item.variantLabel ? ` (${item.variantLabel})` : ''}`).join(', ')}
+                    </div>
                     <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
                       <Button type="button" disabled={resumeLoadingId === parkedSale.id || cancelLoadingId === parkedSale.id} onClick={() => void resumeParkedSale(parkedSale)}>{resumeLoadingId === parkedSale.id ? 'Resuming...' : 'Resume'}</Button>
                       <Button type="button" variant="danger" disabled={resumeLoadingId === parkedSale.id || cancelLoadingId === parkedSale.id} onClick={() => void cancelParkedSale(parkedSale)}>{cancelLoadingId === parkedSale.id ? 'Cancelling...' : 'Cancel'}</Button>

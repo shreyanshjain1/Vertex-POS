@@ -10,6 +10,7 @@ import {
   getSalePaymentSummaryLabel,
   validatePaymentsForSale
 } from '@/lib/payments';
+import { buildVariantLabel } from '@/lib/product-merchandising';
 import { prisma } from '@/lib/prisma';
 import { CASH_PAYMENT_METHOD, getActiveCashSession } from '@/lib/register';
 
@@ -89,11 +90,15 @@ export async function POST(request: Request) {
         where: {
           shopId,
           id: { in: items.map((item) => item.productId) }
+        },
+        include: {
+          variants: true
         }
       })
     ]);
 
     const productMap = new Map(products.map((product) => [product.id, product]));
+    const productQtyTotals = new Map<string, number>();
 
     for (const item of items) {
       const product = productMap.get(item.productId);
@@ -112,7 +117,22 @@ export async function POST(request: Request) {
         );
       }
 
-      if (product.stockQty < item.qty) {
+      if (item.variantId) {
+        const variant = product.variants.find((entry) => entry.id === item.variantId);
+        if (!variant || !variant.isActive) {
+          return NextResponse.json(
+            { error: `A selected variant for ${product.name} is no longer available.` },
+            { status: 400 }
+          );
+        }
+      }
+
+      productQtyTotals.set(item.productId, (productQtyTotals.get(item.productId) ?? 0) + item.qty);
+    }
+
+    for (const [productId, qty] of productQtyTotals) {
+      const product = productMap.get(productId)!;
+      if (product.stockQty < qty) {
         return NextResponse.json(
           { error: `${product.name} has only ${product.stockQty} item(s) available.` },
           { status: 400 }
@@ -120,8 +140,22 @@ export async function POST(request: Request) {
       }
     }
 
+    const saleLines = items.map((item) => {
+      const product = productMap.get(item.productId)!;
+      const variant = item.variantId ? product.variants.find((entry) => entry.id === item.variantId) ?? null : null;
+      const unitPrice = Number(variant?.priceOverride ?? product.price);
+
+      return {
+        ...item,
+        product,
+        variant,
+        unitPrice,
+        lineTotal: roundCurrency(unitPrice * item.qty)
+      };
+    });
+
     const subtotal = roundCurrency(
-      items.reduce((sum, item) => sum + Number(productMap.get(item.productId)!.price) * item.qty, 0)
+      saleLines.reduce((sum, line) => sum + line.lineTotal, 0)
     );
     const taxAmount = roundCurrency(subtotal * (Number(settings?.taxRate ?? 0) / 100));
     const discountAmount = roundCurrency(Number(parsed.data.discountAmount ?? 0));
@@ -174,17 +208,17 @@ export async function POST(request: Request) {
           notes: normalizeText(parsed.data.notes),
           cashierName: session.user.name || session.user.email || 'Cashier',
           items: {
-            create: items.map((item) => {
-              const product = productMap.get(item.productId)!;
-              const unitPrice = Number(product.price);
-              return {
-                productId: item.productId,
-                productName: product.name,
-                qty: item.qty,
-                unitPrice,
-                lineTotal: roundCurrency(unitPrice * item.qty)
-              };
-            })
+            create: saleLines.map((line) => ({
+              productId: line.productId,
+              productVariantId: line.variant?.id ?? null,
+              productName: line.product.name,
+              variantLabel: line.variant ? buildVariantLabel(line.variant) || null : null,
+              variantSkuSnapshot: line.variant?.sku ?? null,
+              variantBarcodeSnapshot: line.variant?.barcode ?? null,
+              qty: line.qty,
+              unitPrice: line.unitPrice,
+              lineTotal: line.lineTotal
+            }))
           },
           payments: {
             create: paymentValidation.payments.map((payment) => ({
@@ -197,13 +231,13 @@ export async function POST(request: Request) {
         include: { items: true }
       });
 
-      for (const item of items) {
-        const product = productMap.get(item.productId)!;
+      for (const [productId, qty] of productQtyTotals) {
+        const product = productMap.get(productId)!;
         await tx.product.update({
           where: { id: product.id },
           data: {
             stockQty: {
-              decrement: item.qty
+              decrement: qty
             }
           }
         });
@@ -213,7 +247,7 @@ export async function POST(request: Request) {
             shopId,
             productId: product.id,
             type: 'SALE_COMPLETED',
-            qtyChange: item.qty * -1,
+            qtyChange: qty * -1,
             referenceId: saleRecord.id,
             userId,
             notes: `Sale ${saleRecord.saleNumber}`
@@ -230,7 +264,8 @@ export async function POST(request: Request) {
         entityId: saleRecord.id,
         description: `Completed sale ${saleRecord.saleNumber}.`,
         metadata: {
-          itemCount: items.reduce((sum, item) => sum + item.qty, 0),
+          itemCount: saleLines.reduce((sum, line) => sum + line.qty, 0),
+          variantLineCount: saleLines.filter((line) => line.variant).length,
           paymentMethod: paymentMethodSummary,
           paymentCount: paymentValidation.payments.length,
           totalAmount,

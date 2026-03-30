@@ -6,8 +6,27 @@ import {
   cleanupExpiredParkedSales,
   serializeParkedSale
 } from '@/lib/parked-sales';
+import { buildVariantLabel } from '@/lib/product-merchandising';
 import { prisma } from '@/lib/prisma';
 import { getActiveCashSession } from '@/lib/register';
+
+type CheckoutProduct = {
+  id: string;
+  productId: string;
+  variantId: string | null;
+  name: string;
+  variantLabel: string | null;
+  barcode: string | null;
+  sku: string | null;
+  price: string;
+  stockQty: number;
+  categoryId: string | null;
+  imageUrl: string | null;
+  category: {
+    id: string;
+    name: string;
+  } | null;
+};
 
 export default async function CheckoutPage() {
   const { shopId, session, role, userId } = await getActiveShopContext();
@@ -24,6 +43,14 @@ export default async function CheckoutPage() {
             id: true,
             name: true
           }
+        },
+        variants: {
+          where: { isActive: true },
+          orderBy: { createdAt: 'asc' }
+        },
+        images: {
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+          take: 1
         }
       }
     }),
@@ -73,24 +100,52 @@ export default async function CheckoutPage() {
       />
 
       <CheckoutClient
-        products={products.map((product) => ({
-          id: product.id,
-          name: product.name,
-          barcode: product.barcode,
-          sku: product.sku,
-          price: product.price.toString(),
-          stockQty: product.stockQty,
-          categoryId: product.categoryId,
-          category: product.category
-            ? {
-                id: product.category.id,
-                name: product.category.name
-              }
-            : null
-        }))}
+        products={products.flatMap<CheckoutProduct>((product) => {
+          if (product.variants.length) {
+            return product.variants.map((variant) => ({
+              id: variant.id,
+              productId: product.id,
+              variantId: variant.id,
+              name: product.name,
+              variantLabel: buildVariantLabel(variant) || null,
+              barcode: variant.barcode,
+              sku: variant.sku,
+              price: variant.priceOverride?.toString() ?? product.price.toString(),
+              stockQty: product.stockQty,
+              categoryId: product.categoryId,
+              imageUrl: product.images[0]?.imageUrl ?? null,
+              category: product.category
+                ? {
+                    id: product.category.id,
+                    name: product.category.name
+                  }
+                : null
+            }));
+          }
+
+          return [{
+            id: product.id,
+            productId: product.id,
+            variantId: null,
+            name: product.name,
+            variantLabel: null,
+            barcode: product.barcode,
+            sku: product.sku,
+            price: product.price.toString(),
+            stockQty: product.stockQty,
+            categoryId: product.categoryId,
+            imageUrl: product.images[0]?.imageUrl ?? null,
+            category: product.category
+              ? {
+                  id: product.category.id,
+                  name: product.category.name
+                }
+              : null
+          }];
+        })}
         categories={categories}
         taxRate={Number(settings?.taxRate ?? 12)}
-        currencySymbol={settings?.currencySymbol ?? 'â‚±'}
+        currencySymbol={settings?.currencySymbol ?? '₱'}
         cashierName={session.user.name ?? 'Cashier'}
         hasActiveCashSession={Boolean(activeCashSession)}
         initialParkedSales={parkedSales.map(serializeParkedSale)}

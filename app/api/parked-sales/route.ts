@@ -10,6 +10,7 @@ import {
   serializeParkedSale
 } from '@/lib/parked-sales';
 import { collapseSaleItems, normalizeText } from '@/lib/inventory';
+import { buildVariantLabel } from '@/lib/product-merchandising';
 import { prisma } from '@/lib/prisma';
 
 export async function POST(request: Request) {
@@ -39,31 +40,31 @@ export async function POST(request: Request) {
           shopId,
           id: { in: items.map((item) => item.productId) }
         },
-        select: {
-          id: true,
-          name: true,
-          price: true
+        include: {
+          variants: true
         }
       })
     ]);
 
     const productMap = new Map(products.map((product) => [product.id, product]));
 
-    for (const item of items) {
-      if (!productMap.has(item.productId)) {
-        return NextResponse.json(
-          { error: 'One or more selected products were not found.' },
-          { status: 404 }
-        );
-      }
-    }
-
     const heldItems = items.map((item) => {
-      const product = productMap.get(item.productId)!;
-      const unitPrice = Number(product.price);
+      const product = productMap.get(item.productId);
+      if (!product) {
+        throw new Error('PRODUCT_NOT_FOUND');
+      }
+
+      const variant = item.variantId ? product.variants.find((entry) => entry.id === item.variantId) ?? null : null;
+      if (item.variantId && (!variant || !variant.isActive)) {
+        throw new Error('VARIANT_NOT_FOUND');
+      }
+
+      const unitPrice = Number(variant?.priceOverride ?? product.price);
       return {
         productId: item.productId,
+        productVariantId: variant?.id ?? null,
         productName: product.name,
+        variantLabel: variant ? buildVariantLabel(variant) || null : null,
         qty: item.qty,
         unitPrice,
         lineTotal: unitPrice * item.qty
@@ -92,7 +93,9 @@ export async function POST(request: Request) {
           items: {
             create: heldItems.map((item) => ({
               productId: item.productId,
+              productVariantId: item.productVariantId,
               productName: item.productName,
+              variantLabel: item.variantLabel,
               qty: item.qty,
               unitPrice: item.unitPrice,
               lineTotal: item.lineTotal
@@ -135,6 +138,20 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error) {
+    if (error instanceof Error && error.message === 'PRODUCT_NOT_FOUND') {
+      return NextResponse.json(
+        { error: 'One or more selected products were not found.' },
+        { status: 404 }
+      );
+    }
+
+    if (error instanceof Error && error.message === 'VARIANT_NOT_FOUND') {
+      return NextResponse.json(
+        { error: 'One or more selected variants were not found.' },
+        { status: 404 }
+      );
+    }
+
     return apiErrorResponse(error, 'Unable to hold the cart.');
   }
 }

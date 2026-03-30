@@ -35,7 +35,9 @@ export type SerializedParkedSale = {
   items: Array<{
     id: string;
     productId: string;
+    productVariantId: string | null;
     productName: string;
+    variantLabel: string | null;
     qty: number;
     unitPrice: string;
     lineTotal: string;
@@ -104,7 +106,9 @@ export function serializeParkedSale(record: ParkedSaleRecord): SerializedParkedS
     items: record.items.map((item) => ({
       id: item.id,
       productId: item.productId,
+      productVariantId: item.productVariantId ?? null,
       productName: item.productName,
+      variantLabel: item.variantLabel ?? null,
       qty: item.qty,
       unitPrice: item.unitPrice.toString(),
       lineTotal: item.lineTotal.toString(),
