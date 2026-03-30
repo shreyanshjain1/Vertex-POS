@@ -5,16 +5,27 @@ import Button from '@/components/ui/Button';
 import { requirePageRole } from '@/lib/authz';
 import { ensureInventoryReasons } from '@/lib/inventory-reasons';
 import { prisma } from '@/lib/prisma';
+import { ensureUnitsOfMeasure } from '@/lib/uom';
 
 export default async function InventoryPage() {
   const { shopId } = await requirePageRole('MANAGER');
   const reasons = await ensureInventoryReasons(shopId);
+  await ensureUnitsOfMeasure(shopId);
 
   const [settings, products, movements, batches] = await Promise.all([
     prisma.shopSetting.findUnique({ where: { shopId } }),
     prisma.product.findMany({
       where: { shopId },
       include: {
+        baseUnitOfMeasure: true,
+        uomConversions: {
+          include: {
+            unitOfMeasure: true
+          },
+          orderBy: {
+            ratioToBase: 'asc'
+          }
+        },
         batches: {
           orderBy: [{ expiryDate: 'asc' }, { receivedAt: 'desc' }]
         }
@@ -70,6 +81,13 @@ export default async function InventoryPage() {
           barcode: product.barcode,
           stockQty: product.stockQty,
           reorderPoint: product.reorderPoint,
+          baseUnitOfMeasure: product.baseUnitOfMeasure,
+          uomConversions: product.uomConversions.map((conversion) => ({
+            id: conversion.id,
+            unitOfMeasureId: conversion.unitOfMeasureId,
+            ratioToBase: conversion.ratioToBase,
+            unitOfMeasure: conversion.unitOfMeasure
+          })),
           trackBatches: product.trackBatches,
           trackExpiry: product.trackExpiry,
           batches: product.batches.map((batch) => ({

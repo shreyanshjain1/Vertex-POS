@@ -3,12 +3,20 @@
 import { useMemo, useState } from 'react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import { summarizeConversions } from '@/lib/uom';
 
 type Product = {
   id: string;
   name: string;
   stockQty: number;
   reorderPoint: number;
+  baseUnitOfMeasure?: { id: string; code: string; name: string; isBase: boolean } | null;
+  uomConversions: Array<{
+    id: string;
+    unitOfMeasureId: string;
+    ratioToBase: number;
+    unitOfMeasure: { id: string; code: string; name: string; isBase: boolean };
+  }>;
   isActive: boolean;
 };
 
@@ -161,7 +169,16 @@ export default function AdjustmentForm({
 
       {selectedProduct ? (
         <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
-          Selected product: <span className="font-semibold text-stone-900">{selectedProduct.name}</span> | Current stock: <span className="font-semibold text-stone-900">{selectedProduct.stockQty}</span>
+          Selected product: <span className="font-semibold text-stone-900">{selectedProduct.name}</span> | Current stock: <span className="font-semibold text-stone-900">{selectedProduct.stockQty}</span> {selectedProduct.baseUnitOfMeasure?.name.toLowerCase() ?? 'base units'}
+          <div className="mt-1 text-xs text-stone-500">
+            {summarizeConversions(
+              selectedProduct.uomConversions.map((conversion) => ({
+                unitName: conversion.unitOfMeasure.name,
+                ratioToBase: conversion.ratioToBase
+              })),
+              selectedProduct.baseUnitOfMeasure?.name
+            )}
+          </div>
         </div>
       ) : null}
 

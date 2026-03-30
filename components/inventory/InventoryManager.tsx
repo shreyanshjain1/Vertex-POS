@@ -12,6 +12,13 @@ type Product = {
   barcode: string | null;
   stockQty: number;
   reorderPoint: number;
+  baseUnitOfMeasure?: { id: string; code: string; name: string; isBase: boolean } | null;
+  uomConversions: Array<{
+    id: string;
+    unitOfMeasureId: string;
+    ratioToBase: number;
+    unitOfMeasure: { id: string; code: string; name: string; isBase: boolean };
+  }>;
   trackBatches: boolean;
   trackExpiry: boolean;
   batches: Array<{
