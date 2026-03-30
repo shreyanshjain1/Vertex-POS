@@ -3,24 +3,48 @@ import AppHeader from '@/components/layout/AppHeader';
 import InventoryManager from '@/components/inventory/InventoryManager';
 import Button from '@/components/ui/Button';
 import { requirePageRole } from '@/lib/authz';
+import { ensureInventoryReasons } from '@/lib/inventory-reasons';
 import { prisma } from '@/lib/prisma';
 
 export default async function InventoryPage() {
   const { shopId } = await requirePageRole('MANAGER');
-  const settings = await prisma.shopSetting.findUnique({ where: { shopId } });
+  const reasons = await ensureInventoryReasons(shopId);
 
-  const [products, movements] = await Promise.all([
+  const [settings, products, movements, batches] = await Promise.all([
+    prisma.shopSetting.findUnique({ where: { shopId } }),
     prisma.product.findMany({
       where: { shopId },
+      include: {
+        batches: {
+          orderBy: [{ expiryDate: 'asc' }, { receivedAt: 'desc' }]
+        }
+      },
       orderBy: [{ isActive: 'desc' }, { name: 'asc' }]
     }),
     prisma.inventoryMovement.findMany({
       where: { shopId },
       include: {
-        product: true
+        product: true,
+        reason: true
       },
       orderBy: { createdAt: 'desc' },
       take: 80
+    }),
+    prisma.productBatch.findMany({
+      where: { shopId },
+      include: {
+        product: {
+          select: {
+            id: true,
+            name: true,
+            sku: true,
+            trackBatches: true,
+            trackExpiry: true
+          }
+        }
+      },
+      orderBy: [{ expiryDate: 'asc' }, { receivedAt: 'desc' }],
+      take: 120
     })
   ]);
 
@@ -46,7 +70,35 @@ export default async function InventoryPage() {
           barcode: product.barcode,
           stockQty: product.stockQty,
           reorderPoint: product.reorderPoint,
+          trackBatches: product.trackBatches,
+          trackExpiry: product.trackExpiry,
+          batches: product.batches.map((batch) => ({
+            id: batch.id,
+            lotNumber: batch.lotNumber,
+            expiryDate: batch.expiryDate?.toISOString() ?? null,
+            quantity: batch.quantity
+          })),
           isActive: product.isActive
+        }))}
+        reasons={reasons.map((reason) => ({
+          id: reason.id,
+          code: reason.code,
+          label: reason.label
+        }))}
+        batches={batches.map((batch) => ({
+          id: batch.id,
+          lotNumber: batch.lotNumber,
+          expiryDate: batch.expiryDate?.toISOString() ?? null,
+          quantity: batch.quantity,
+          receivedAt: batch.receivedAt.toISOString(),
+          notes: batch.notes,
+          product: {
+            id: batch.product.id,
+            name: batch.product.name,
+            sku: batch.product.sku,
+            trackBatches: batch.product.trackBatches,
+            trackExpiry: batch.product.trackExpiry
+          }
         }))}
         movements={movements.map((movement) => ({
           id: movement.id,
@@ -54,6 +106,8 @@ export default async function InventoryPage() {
           qtyChange: movement.qtyChange,
           referenceId: movement.referenceId,
           notes: movement.notes,
+          reasonLabel: movement.reason?.label ?? null,
+          reasonCode: movement.reason?.code ?? null,
           createdAt: movement.createdAt.toISOString(),
           product: {
             id: movement.product.id,
@@ -63,6 +117,12 @@ export default async function InventoryPage() {
           }
         }))}
         lowStockThreshold={settings?.lowStockThreshold ?? 5}
+        inventoryFeatures={{
+          batchTrackingEnabled: settings?.batchTrackingEnabled ?? false,
+          expiryTrackingEnabled: settings?.expiryTrackingEnabled ?? false,
+          fefoEnabled: settings?.fefoEnabled ?? false,
+          expiryAlertDays: settings?.expiryAlertDays ?? 30
+        }}
       />
     </div>
   );

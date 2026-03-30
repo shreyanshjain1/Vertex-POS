@@ -12,9 +12,22 @@ type Product = {
   isActive: boolean;
 };
 
-export default function AdjustmentForm({ products }: { products: Product[] }) {
+type InventoryReason = {
+  id: string;
+  code: string;
+  label: string;
+};
+
+export default function AdjustmentForm({
+  products,
+  reasons
+}: {
+  products: Product[];
+  reasons: InventoryReason[];
+}) {
   const activeProducts = products.filter((product) => product.isActive);
   const [productId, setProductId] = useState(activeProducts[0]?.id ?? '');
+  const [reasonId, setReasonId] = useState(reasons[0]?.id ?? '');
   const [adjustmentType, setAdjustmentType] = useState<'ADD' | 'REMOVE'>('ADD');
   const [qty, setQty] = useState('1');
   const [notes, setNotes] = useState('');
@@ -39,6 +52,11 @@ export default function AdjustmentForm({ products }: { products: Product[] }) {
       return;
     }
 
+    if (!reasonId) {
+      setError('Please select an adjustment reason.');
+      return;
+    }
+
     if (!Number.isFinite(parsedQty) || parsedQty <= 0) {
       setError('Adjustment quantity must be greater than 0.');
       return;
@@ -59,6 +77,7 @@ export default function AdjustmentForm({ products }: { products: Product[] }) {
         },
         body: JSON.stringify({
           productId,
+          reasonId,
           qtyChange: adjustmentType === 'REMOVE' ? parsedQty * -1 : parsedQty,
           notes: notes.trim() || null
         })
@@ -115,6 +134,21 @@ export default function AdjustmentForm({ products }: { products: Product[] }) {
         </div>
 
         <div>
+          <label className="mb-2 block text-sm font-semibold text-stone-700">Reason code</label>
+          <select
+            className="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-emerald-500 focus:bg-white"
+            value={reasonId}
+            onChange={(event) => setReasonId(event.target.value)}
+          >
+            {reasons.map((reason) => (
+              <option key={reason.id} value={reason.id}>
+                {reason.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
           <label className="mb-2 block text-sm font-semibold text-stone-700">Quantity</label>
           <Input type="number" min="1" placeholder="Enter quantity" value={qty} onChange={(event) => setQty(event.target.value)} />
         </div>
@@ -122,7 +156,7 @@ export default function AdjustmentForm({ products }: { products: Product[] }) {
 
       <div>
         <label className="mb-2 block text-sm font-semibold text-stone-700">Notes</label>
-        <Input placeholder="Reason for adjustment" value={notes} onChange={(event) => setNotes(event.target.value)} />
+        <Input placeholder="Supporting notes (optional)" value={notes} onChange={(event) => setNotes(event.target.value)} />
       </div>
 
       {selectedProduct ? (

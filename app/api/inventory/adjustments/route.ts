@@ -3,11 +3,13 @@ import { inventoryAdjustmentSchema } from '@/lib/auth/validation';
 import { requireRole } from '@/lib/authz';
 import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
+import { ensureInventoryReasons } from '@/lib/inventory-reasons';
 import { prisma } from '@/lib/prisma';
 
 export async function POST(request: Request) {
   try {
     const { shopId, userId } = await requireRole('MANAGER');
+    await ensureInventoryReasons(shopId);
     const body = await request.json();
     const parsed = inventoryAdjustmentSchema.safeParse(body);
 
@@ -18,12 +20,25 @@ export async function POST(request: Request) {
       );
     }
 
-    const product = await prisma.product.findFirst({
-      where: { id: parsed.data.productId, shopId }
-    });
+    const [product, reason] = await Promise.all([
+      prisma.product.findFirst({
+        where: { id: parsed.data.productId, shopId }
+      }),
+      prisma.inventoryReason.findFirst({
+        where: {
+          id: parsed.data.reasonId,
+          shopId,
+          isActive: true
+        }
+      })
+    ]);
 
     if (!product) {
       return NextResponse.json({ error: 'Product not found.' }, { status: 404 });
+    }
+
+    if (!reason) {
+      return NextResponse.json({ error: 'Select a valid adjustment reason.' }, { status: 400 });
     }
 
     if (!product.isActive) {
@@ -53,6 +68,7 @@ export async function POST(request: Request) {
         data: {
           shopId,
           productId: product.id,
+          reasonId: reason.id,
           type: 'MANUAL_ADJUSTMENT',
           qtyChange: parsed.data.qtyChange,
           userId,
@@ -67,11 +83,13 @@ export async function POST(request: Request) {
         action: 'STOCK_ADJUSTED',
         entityType: 'Product',
         entityId: product.id,
-        description: `Adjusted stock for ${product.name} by ${parsed.data.qtyChange}.`,
+        description: `Adjusted stock for ${product.name} by ${parsed.data.qtyChange} with reason ${reason.label}.`,
         metadata: {
           previousStock: product.stockQty,
           nextStock,
           qtyChange: parsed.data.qtyChange,
+          reasonCode: reason.code,
+          reasonLabel: reason.label,
           notes: parsed.data.notes || null
         }
       });

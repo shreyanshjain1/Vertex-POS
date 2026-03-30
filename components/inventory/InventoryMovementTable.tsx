@@ -9,6 +9,8 @@ type Movement = {
   qtyChange: number;
   referenceId?: string | null;
   notes?: string | null;
+  reasonLabel?: string | null;
+  reasonCode?: string | null;
   createdAt: string;
   product: {
     name: string;
@@ -55,6 +57,7 @@ export default function InventoryMovementTable({
             <th className="px-3 py-3">Date / Time</th>
             <th className="px-3 py-3">Product</th>
             <th className="px-3 py-3">Type</th>
+            <th className="px-3 py-3">Reason</th>
             <th className="px-3 py-3">Qty Change</th>
             <th className="px-3 py-3">Reference</th>
             <th className="px-3 py-3">Notes</th>
@@ -67,6 +70,16 @@ export default function InventoryMovementTable({
               <td className="px-3 py-3 font-medium text-stone-900">{movement.product.name}</td>
               <td className="px-3 py-3">
                 <Badge tone={toneForType(movement.type)}>{movement.type.replaceAll('_', ' ')}</Badge>
+              </td>
+              <td className="px-3 py-3 text-stone-600">
+                {movement.reasonLabel ? (
+                  <div>
+                    <div className="font-medium text-stone-900">{movement.reasonLabel}</div>
+                    <div className="text-xs uppercase tracking-[0.12em] text-stone-400">
+                      {movement.reasonCode?.replaceAll('_', ' ') ?? 'Reason'}
+                    </div>
+                  </div>
+                ) : 'N/A'}
               </td>
               <td className={`px-3 py-3 font-semibold ${movement.qtyChange >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                 {movement.qtyChange > 0 ? `+${movement.qtyChange}` : movement.qtyChange}
