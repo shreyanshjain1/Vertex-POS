@@ -5,6 +5,7 @@ import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
 import { normalizeText } from '@/lib/inventory';
 import { prisma } from '@/lib/prisma';
+import { sanitizeDefaultPaymentMethods } from '@/lib/shop-settings';
 
 export async function GET() {
   try {
@@ -38,6 +39,7 @@ export async function PUT(request: Request) {
         where: { id: shopId },
         data: {
           name: parsed.data.shopName.trim(),
+          legalBusinessName: parsed.data.legalBusinessName.trim(),
           phone: normalizeText(parsed.data.phone),
           email: normalizeText(parsed.data.email),
           address: normalizeText(parsed.data.address),
@@ -50,12 +52,20 @@ export async function PUT(request: Request) {
         update: {
           currencyCode: parsed.data.currencyCode.trim().toUpperCase(),
           currencySymbol: parsed.data.currencySymbol.trim(),
+          timezone: parsed.data.timezone.trim(),
+          taxMode: parsed.data.taxMode,
           taxRate: parsed.data.taxRate,
+          defaultPaymentMethods: sanitizeDefaultPaymentMethods(parsed.data.defaultPaymentMethods),
           receiptHeader: normalizeText(parsed.data.receiptHeader),
           receiptFooter: normalizeText(parsed.data.receiptFooter),
           receiptWidth: parsed.data.receiptWidth,
+          printerName: normalizeText(parsed.data.printerName),
+          printerConnection: parsed.data.printerConnection,
+          barcodeScannerNotes: normalizeText(parsed.data.barcodeScannerNotes),
           lowStockEnabled: parsed.data.lowStockEnabled,
           lowStockThreshold: parsed.data.lowStockThreshold,
+          openingFloatRequired: parsed.data.openingFloatRequired,
+          openingFloatAmount: parsed.data.openingFloatAmount,
           salePrefix: parsed.data.salePrefix.trim().toUpperCase(),
           receiptPrefix: parsed.data.receiptPrefix.trim().toUpperCase(),
           purchasePrefix: parsed.data.purchasePrefix.trim().toUpperCase()
@@ -64,12 +74,20 @@ export async function PUT(request: Request) {
           shopId,
           currencyCode: parsed.data.currencyCode.trim().toUpperCase(),
           currencySymbol: parsed.data.currencySymbol.trim(),
+          timezone: parsed.data.timezone.trim(),
+          taxMode: parsed.data.taxMode,
           taxRate: parsed.data.taxRate,
+          defaultPaymentMethods: sanitizeDefaultPaymentMethods(parsed.data.defaultPaymentMethods),
           receiptHeader: normalizeText(parsed.data.receiptHeader),
           receiptFooter: normalizeText(parsed.data.receiptFooter),
           receiptWidth: parsed.data.receiptWidth,
+          printerName: normalizeText(parsed.data.printerName),
+          printerConnection: parsed.data.printerConnection,
+          barcodeScannerNotes: normalizeText(parsed.data.barcodeScannerNotes),
           lowStockEnabled: parsed.data.lowStockEnabled,
           lowStockThreshold: parsed.data.lowStockThreshold,
+          openingFloatRequired: parsed.data.openingFloatRequired,
+          openingFloatAmount: parsed.data.openingFloatAmount,
           salePrefix: parsed.data.salePrefix.trim().toUpperCase(),
           receiptPrefix: parsed.data.receiptPrefix.trim().toUpperCase(),
           purchasePrefix: parsed.data.purchasePrefix.trim().toUpperCase()

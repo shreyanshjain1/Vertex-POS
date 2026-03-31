@@ -3,6 +3,11 @@ import { PAYMENT_METHODS } from '@/lib/payments';
 import { CREATE_PURCHASE_STATUS_OPTIONS, MANUAL_PURCHASE_STATUS_OPTIONS } from '@/lib/purchases';
 import { SHOP_TYPE_OPTIONS } from '@/lib/shop-config';
 import {
+  DEFAULT_PAYMENT_METHODS,
+  PRINTER_CONNECTION_OPTIONS,
+  TAX_MODE_OPTIONS
+} from '@/lib/shop-settings';
+import {
   SUPPLIER_CREDIT_MEMO_STATUS_OPTIONS,
   SUPPLIER_RETURN_CREATE_STATUS_OPTIONS,
   SUPPLIER_RETURN_DISPOSITION_OPTIONS,
@@ -15,6 +20,7 @@ import {
 const shopRoleSchema = z.enum(['ADMIN', 'MANAGER', 'CASHIER']);
 const optionalText = () => z.string().trim().optional().nullable();
 const shopTypeSchema = z.enum(SHOP_TYPE_OPTIONS.map((option) => option.value) as [string, ...string[]]);
+const paymentMethodSchema = z.enum(PAYMENT_METHODS);
 const imageUrlSchema = z
   .string()
   .trim()
@@ -63,17 +69,27 @@ export const registerSchema = z.object({
 
 export const onboardSchema = z.object({
   shopName: z.string().trim().min(2).max(120),
+  legalBusinessName: z.string().trim().min(2).max(160),
   posType: shopTypeSchema,
   phone: optionalText(),
   email: z.string().trim().email().optional().nullable().or(z.literal('')),
   address: optionalText(),
   taxId: optionalText(),
+  timezone: z.string().trim().min(2).max(80),
   currencyCode: z.string().trim().min(3).max(3),
   currencySymbol: z.string().trim().min(1).max(5),
+  taxMode: z.enum(TAX_MODE_OPTIONS).default('EXCLUSIVE'),
   taxRate: z.coerce.number().min(0).max(100),
   receiptHeader: optionalText(),
   receiptFooter: optionalText(),
+  receiptWidth: z.enum(['58mm', '80mm']).default('80mm'),
   lowStockThreshold: z.coerce.number().int().min(0).max(9999),
+  defaultPaymentMethods: z.array(paymentMethodSchema).min(1).default(DEFAULT_PAYMENT_METHODS),
+  openingFloatRequired: z.coerce.boolean().default(true),
+  openingFloatAmount: z.coerce.number().min(0).max(999999.99).default(0),
+  printerName: optionalText(),
+  printerConnection: z.enum(PRINTER_CONNECTION_OPTIONS).default('MANUAL'),
+  barcodeScannerNotes: z.string().trim().max(500).optional().nullable(),
   categories: z.array(z.object({ name: z.string().trim().min(2).max(60) })).default([]),
   suppliers: z.array(z.object({
     name: z.string().trim().min(2).max(120),
@@ -361,6 +377,20 @@ export const purchaseSchema = z.object({
   })).min(1)
 });
 
+export const stockTransferSchema = z.object({
+  toShopId: z.string().trim().min(1, 'Select a destination branch.'),
+  notes: z.string().trim().max(500).optional().nullable(),
+  items: z.array(z.object({
+    fromProductId: z.string().trim().min(1),
+    toProductId: z.string().trim().min(1),
+    qty: z.coerce.number().int().positive('Transfer quantity must be greater than zero.')
+  })).min(1, 'Add at least one transfer line.')
+});
+
+export const stockTransferActionSchema = z.object({
+  action: z.enum(['SEND', 'RECEIVE', 'CANCEL'])
+});
+
 export const purchaseStatusUpdateSchema = z.object({
   action: z.literal('UPDATE_STATUS'),
   status: z.enum(MANUAL_PURCHASE_STATUS_OPTIONS),
@@ -396,18 +426,27 @@ export const supplierPaymentSchema = z.object({
 
 export const settingSchema = z.object({
   shopName: z.string().trim().min(2).max(120),
+  legalBusinessName: z.string().trim().min(2).max(160),
   phone: z.string().trim().max(40).optional().nullable(),
   email: z.string().trim().email().optional().nullable().or(z.literal('')),
   address: z.string().trim().max(255).optional().nullable(),
   taxId: z.string().trim().max(60).optional().nullable(),
+  timezone: z.string().trim().min(2).max(80),
   currencyCode: z.string().trim().min(3).max(3),
   currencySymbol: z.string().trim().min(1).max(5),
+  taxMode: z.enum(TAX_MODE_OPTIONS).default('EXCLUSIVE'),
   taxRate: z.coerce.number().min(0).max(100),
   receiptHeader: z.string().trim().max(255).optional().nullable(),
   receiptFooter: z.string().trim().max(255).optional().nullable(),
   receiptWidth: z.enum(['58mm', '80mm']),
+  defaultPaymentMethods: z.array(paymentMethodSchema).min(1).default(DEFAULT_PAYMENT_METHODS),
+  printerName: z.string().trim().max(120).optional().nullable(),
+  printerConnection: z.enum(PRINTER_CONNECTION_OPTIONS).default('MANUAL'),
+  barcodeScannerNotes: z.string().trim().max(500).optional().nullable(),
   lowStockEnabled: z.coerce.boolean(),
   lowStockThreshold: z.coerce.number().int().min(0).max(9999),
+  openingFloatRequired: z.coerce.boolean(),
+  openingFloatAmount: z.coerce.number().min(0).max(999999.99),
   salePrefix: z.string().trim().min(2).max(10).regex(/^[A-Za-z0-9]+$/, 'Use letters or numbers only for the sale prefix'),
   receiptPrefix: z.string().trim().min(2).max(10).regex(/^[A-Za-z0-9]+$/, 'Use letters or numbers only for the receipt prefix'),
   purchasePrefix: z.string().trim().min(2).max(10).regex(/^[A-Za-z0-9]+$/, 'Use letters or numbers only for the purchase prefix')

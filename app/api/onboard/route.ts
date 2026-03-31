@@ -6,6 +6,7 @@ import { logActivity } from '@/lib/activity';
 import { normalizeText } from '@/lib/inventory';
 import { prisma } from '@/lib/prisma';
 import { getShopTypeDefaults, INVENTORY_REASON_PRESETS } from '@/lib/shop-config';
+import { sanitizeDefaultPaymentMethods } from '@/lib/shop-settings';
 import { slugify } from '@/lib/slug';
 import { DEFAULT_UNITS_OF_MEASURE } from '@/lib/uom';
 
@@ -92,6 +93,7 @@ export async function POST(request: Request) {
       const shop = await tx.shop.create({
         data: {
           name: parsed.data.shopName.trim(),
+          legalBusinessName: parsed.data.legalBusinessName.trim(),
           slug,
           posType: parsed.data.posType as ShopType,
           phone: normalizeText(parsed.data.phone),
@@ -122,10 +124,19 @@ export async function POST(request: Request) {
           shopId: shop.id,
           currencyCode: parsed.data.currencyCode.trim().toUpperCase(),
           currencySymbol: parsed.data.currencySymbol.trim(),
+          timezone: parsed.data.timezone.trim(),
+          taxMode: parsed.data.taxMode,
           taxRate: parsed.data.taxRate,
+          defaultPaymentMethods: sanitizeDefaultPaymentMethods(parsed.data.defaultPaymentMethods),
           receiptHeader: normalizeText(parsed.data.receiptHeader),
           receiptFooter: normalizeText(parsed.data.receiptFooter),
+          receiptWidth: parsed.data.receiptWidth,
+          printerName: normalizeText(parsed.data.printerName),
+          printerConnection: parsed.data.printerConnection,
+          barcodeScannerNotes: normalizeText(parsed.data.barcodeScannerNotes),
           lowStockThreshold: parsed.data.lowStockThreshold,
+          openingFloatRequired: parsed.data.openingFloatRequired,
+          openingFloatAmount: parsed.data.openingFloatAmount,
           batchTrackingEnabled: shopTypeDefaults.batchTrackingEnabled,
           expiryTrackingEnabled: shopTypeDefaults.expiryTrackingEnabled,
           fefoEnabled: shopTypeDefaults.fefoEnabled,

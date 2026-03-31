@@ -4,6 +4,17 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import { PAYMENT_METHODS, type PaymentMethod } from '@/lib/payments';
+import {
+  DEFAULT_PAYMENT_METHODS,
+  DEFAULT_TIMEZONE,
+  getPrinterConnectionLabel,
+  getTaxModeLabel,
+  PRINTER_CONNECTION_OPTIONS,
+  type PrinterConnectionValue,
+  TAX_MODE_OPTIONS,
+  type TaxModeValue
+} from '@/lib/shop-settings';
 import { SHOP_TYPE_OPTIONS, getShopTypeDefaults, type SupportedShopType } from '@/lib/shop-config';
 
 function createCategoryRows(shopType: SupportedShopType) {
@@ -31,17 +42,27 @@ export default function OnboardPage() {
   const [error, setError] = useState('');
   const [form, setForm] = useState({
     shopName: '',
+    legalBusinessName: '',
     posType: 'GENERAL_RETAIL' as SupportedShopType,
     phone: '',
     email: '',
     address: '',
     taxId: '',
+    timezone: DEFAULT_TIMEZONE,
     currencyCode: 'PHP',
     currencySymbol: '₱',
+    taxMode: 'EXCLUSIVE' as TaxModeValue,
     taxRate: '12',
     receiptHeader: 'Thank you for shopping with us!',
     receiptFooter: 'Please come again.',
-    lowStockThreshold: String(getShopTypeDefaults('GENERAL_RETAIL').lowStockThreshold)
+    receiptWidth: '80mm' as '58mm' | '80mm',
+    lowStockThreshold: String(getShopTypeDefaults('GENERAL_RETAIL').lowStockThreshold),
+    defaultPaymentMethods: [...DEFAULT_PAYMENT_METHODS] as PaymentMethod[],
+    openingFloatRequired: true,
+    openingFloatAmount: '0',
+    printerName: '',
+    printerConnection: 'MANUAL' as PrinterConnectionValue,
+    barcodeScannerNotes: 'Scan barcode or SKU, then press Enter to add the item quickly at checkout.'
   });
   const [categories, setCategories] = useState(() => createCategoryRows('GENERAL_RETAIL'));
   const [suppliers, setSuppliers] = useState(() => createSupplierRows('GENERAL_RETAIL'));
@@ -61,9 +82,22 @@ export default function OnboardPage() {
     setProducts(createProductRows(shopType));
   }
 
+  function togglePaymentMethod(method: PaymentMethod) {
+    setForm((current) => {
+      const nextMethods = current.defaultPaymentMethods.includes(method)
+        ? current.defaultPaymentMethods.filter((entry) => entry !== method)
+        : [...current.defaultPaymentMethods, method];
+
+      return {
+        ...current,
+        defaultPaymentMethods: nextMethods.length ? nextMethods : current.defaultPaymentMethods
+      };
+    });
+  }
+
   function canContinue() {
     if (step === 1) {
-      return form.shopName.trim().length >= 2;
+      return form.shopName.trim().length >= 2 && form.legalBusinessName.trim().length >= 2;
     }
 
     return true;
@@ -91,6 +125,7 @@ export default function OnboardPage() {
         ...form,
         taxRate: Number(form.taxRate),
         lowStockThreshold: Number(form.lowStockThreshold),
+        openingFloatAmount: Number(form.openingFloatAmount),
         categories: categories.filter((item) => item.name.trim()),
         suppliers: suppliers.filter((item) => item.name.trim()),
         products: products.filter((item) => item.name.trim()).map((item) => ({
@@ -119,20 +154,27 @@ export default function OnboardPage() {
     <main className="min-h-screen bg-stone-50 py-10">
       <div className="mx-auto max-w-6xl px-6">
         <div className="mb-8">
-          <div className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-600">Onboarding wizard</div>
-          <h1 className="mt-2 text-4xl font-black text-stone-900">Set up your shop to start selling.</h1>
-          <p className="mt-2 text-sm text-stone-500">We will create your shop profile, defaults, categories, starter products, suppliers, and inventory settings in one guided flow.</p>
+          <div className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-600">Business setup</div>
+          <h1 className="mt-2 text-4xl font-black text-stone-900">Set up your business and first branch.</h1>
+          <p className="mt-2 text-sm text-stone-500">
+            We will configure the legal business identity, branch defaults, receipt setup, checkout behavior, and starter catalog in one practical flow.
+          </p>
         </div>
 
         <div className="mb-6 flex flex-wrap gap-3 text-sm">
-          {[1, 2, 3, 4].map((value) => (
+          {[
+            'Branch identity',
+            'Operations setup',
+            'Starter lists',
+            'Starter products'
+          ].map((label, index) => (
             <div
-              key={value}
+              key={label}
               className={`rounded-full px-4 py-2 font-semibold ${
-                step >= value ? 'bg-emerald-600 text-white' : 'border border-stone-200 bg-white text-stone-500'
+                step >= index + 1 ? 'bg-emerald-600 text-white' : 'border border-stone-200 bg-white text-stone-500'
               }`}
             >
-              Step {value}
+              Step {index + 1}: {label}
             </div>
           ))}
         </div>
@@ -141,9 +183,13 @@ export default function OnboardPage() {
           {step === 1 ? (
             <div className="space-y-6">
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="md:col-span-2">
-                  <label className="mb-2 block text-sm font-semibold">Shop name</label>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold">Branch / store name</label>
                   <Input value={form.shopName} onChange={(event) => setForm((current) => ({ ...current, shopName: event.target.value }))} required />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold">Legal business name</label>
+                  <Input value={form.legalBusinessName} onChange={(event) => setForm((current) => ({ ...current, legalBusinessName: event.target.value }))} required />
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-semibold">Phone</label>
@@ -154,8 +200,12 @@ export default function OnboardPage() {
                   <Input type="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} />
                 </div>
                 <div>
-                  <label className="mb-2 block text-sm font-semibold">Tax ID / Permit</label>
+                  <label className="mb-2 block text-sm font-semibold">Tax ID / permit</label>
                   <Input value={form.taxId} onChange={(event) => setForm((current) => ({ ...current, taxId: event.target.value }))} />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold">Timezone</label>
+                  <Input value={form.timezone} onChange={(event) => setForm((current) => ({ ...current, timezone: event.target.value }))} />
                 </div>
                 <div className="md:col-span-2">
                   <label className="mb-2 block text-sm font-semibold">Address</label>
@@ -164,7 +214,7 @@ export default function OnboardPage() {
               </div>
 
               <div>
-                <div className="mb-3 text-sm font-semibold text-stone-900">Shop type</div>
+                <div className="mb-3 text-sm font-semibold text-stone-900">Business type</div>
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   {SHOP_TYPE_OPTIONS.map((option) => (
                     <button
@@ -207,30 +257,118 @@ export default function OnboardPage() {
           ) : null}
 
           {step === 2 ? (
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-6">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-semibold">Currency code</label>
+                  <Input value={form.currencyCode} onChange={(event) => setForm((current) => ({ ...current, currencyCode: event.target.value.toUpperCase() }))} />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold">Currency symbol</label>
+                  <Input value={form.currencySymbol} onChange={(event) => setForm((current) => ({ ...current, currencySymbol: event.target.value }))} />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold">Tax mode</label>
+                  <select
+                    className="h-11 w-full rounded-2xl border border-stone-200 bg-white px-4 text-sm"
+                    value={form.taxMode}
+                    onChange={(event) => setForm((current) => ({ ...current, taxMode: event.target.value as TaxModeValue }))}
+                  >
+                    {TAX_MODE_OPTIONS.map((entry) => (
+                      <option key={entry} value={entry}>
+                        {getTaxModeLabel(entry)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold">Tax rate (%)</label>
+                  <Input type="number" step="0.01" value={form.taxRate} onChange={(event) => setForm((current) => ({ ...current, taxRate: event.target.value }))} />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold">Low stock threshold</label>
+                  <Input type="number" value={form.lowStockThreshold} onChange={(event) => setForm((current) => ({ ...current, lowStockThreshold: event.target.value }))} />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold">Receipt width</label>
+                  <select
+                    className="h-11 w-full rounded-2xl border border-stone-200 bg-white px-4 text-sm"
+                    value={form.receiptWidth}
+                    onChange={(event) => setForm((current) => ({ ...current, receiptWidth: event.target.value as '58mm' | '80mm' }))}
+                  >
+                    <option value="58mm">58mm thermal roll</option>
+                    <option value="80mm">80mm thermal roll</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold">Required opening float</label>
+                  <Input type="number" step="0.01" value={form.openingFloatAmount} onChange={(event) => setForm((current) => ({ ...current, openingFloatAmount: event.target.value }))} />
+                </div>
+                <label className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
+                  <input
+                    type="checkbox"
+                    checked={form.openingFloatRequired}
+                    onChange={(event) => setForm((current) => ({ ...current, openingFloatRequired: event.target.checked }))}
+                  />
+                  Require opening float before a register session starts
+                </label>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold">Printer connection</label>
+                  <select
+                    className="h-11 w-full rounded-2xl border border-stone-200 bg-white px-4 text-sm"
+                    value={form.printerConnection}
+                    onChange={(event) => setForm((current) => ({ ...current, printerConnection: event.target.value as PrinterConnectionValue }))}
+                  >
+                    {PRINTER_CONNECTION_OPTIONS.map((entry) => (
+                      <option key={entry} value={entry}>
+                        {getPrinterConnectionLabel(entry)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold">Printer name</label>
+                  <Input value={form.printerName} onChange={(event) => setForm((current) => ({ ...current, printerName: event.target.value }))} />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="mb-2 block text-sm font-semibold">Receipt header</label>
+                  <Input value={form.receiptHeader} onChange={(event) => setForm((current) => ({ ...current, receiptHeader: event.target.value }))} />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="mb-2 block text-sm font-semibold">Receipt footer</label>
+                  <Input value={form.receiptFooter} onChange={(event) => setForm((current) => ({ ...current, receiptFooter: event.target.value }))} />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="mb-2 block text-sm font-semibold">Barcode scanner notes</label>
+                  <textarea
+                    className="min-h-24 w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-900"
+                    value={form.barcodeScannerNotes}
+                    onChange={(event) => setForm((current) => ({ ...current, barcodeScannerNotes: event.target.value }))}
+                  />
+                </div>
+              </div>
+
               <div>
-                <label className="mb-2 block text-sm font-semibold">Currency code</label>
-                <Input value={form.currencyCode} onChange={(event) => setForm((current) => ({ ...current, currencyCode: event.target.value.toUpperCase() }))} />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-semibold">Currency symbol</label>
-                <Input value={form.currencySymbol} onChange={(event) => setForm((current) => ({ ...current, currencySymbol: event.target.value }))} />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-semibold">Tax rate (%)</label>
-                <Input type="number" step="0.01" value={form.taxRate} onChange={(event) => setForm((current) => ({ ...current, taxRate: event.target.value }))} />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-semibold">Low stock threshold</label>
-                <Input type="number" value={form.lowStockThreshold} onChange={(event) => setForm((current) => ({ ...current, lowStockThreshold: event.target.value }))} />
-              </div>
-              <div className="md:col-span-2">
-                <label className="mb-2 block text-sm font-semibold">Receipt header</label>
-                <Input value={form.receiptHeader} onChange={(event) => setForm((current) => ({ ...current, receiptHeader: event.target.value }))} />
-              </div>
-              <div className="md:col-span-2">
-                <label className="mb-2 block text-sm font-semibold">Receipt footer</label>
-                <Input value={form.receiptFooter} onChange={(event) => setForm((current) => ({ ...current, receiptFooter: event.target.value }))} />
+                <div className="mb-3 text-sm font-semibold text-stone-900">Default payment methods</div>
+                <div className="flex flex-wrap gap-2">
+                  {PAYMENT_METHODS.map((method) => {
+                    const active = form.defaultPaymentMethods.includes(method);
+                    return (
+                      <button
+                        key={method}
+                        type="button"
+                        onClick={() => togglePaymentMethod(method)}
+                        className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                          active
+                            ? 'border-emerald-600 bg-emerald-600 text-white'
+                            : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300 hover:bg-stone-50'
+                        }`}
+                      >
+                        {method}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           ) : null}
