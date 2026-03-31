@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireRole } from '@/lib/authz';
+import { requirePermission } from '@/lib/authz';
 import { apiErrorResponse } from '@/lib/api';
 import { getStockLevel, stockLevelLabel } from '@/lib/inventory';
 import { prisma } from '@/lib/prisma';
@@ -11,7 +11,7 @@ function csvCell(value: string | number | null | undefined) {
 
 export async function GET() {
   try {
-    const { shopId, shop } = await requireRole('MANAGER');
+    const { shopId, shop } = await requirePermission('VIEW_PURCHASE_COSTS');
     const settings = await prisma.shopSetting.findUnique({ where: { shopId } });
     const products = await prisma.product.findMany({
       where: { shopId },

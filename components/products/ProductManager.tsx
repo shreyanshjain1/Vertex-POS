@@ -159,6 +159,8 @@ export default function ProductManager({
   initialProducts,
   categories,
   units,
+  canEditProducts,
+  canViewPurchaseCosts,
   currencySymbol,
   lowStockThreshold,
   inventoryDefaults
@@ -166,6 +168,8 @@ export default function ProductManager({
   initialProducts: Product[];
   categories: Category[];
   units: UnitOfMeasure[];
+  canEditProducts: boolean;
+  canViewPurchaseCosts: boolean;
   currencySymbol: string;
   lowStockThreshold: number;
   inventoryDefaults: {
@@ -496,6 +500,7 @@ export default function ProductManager({
 
   return (
     <div className="space-y-6">
+      {canEditProducts ? (
       <Card>
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -571,10 +576,12 @@ export default function ProductManager({
                 <FieldLabel>Barcode</FieldLabel>
                 <Input value={form.barcode} onChange={(event) => setForm((current) => ({ ...current, barcode: event.target.value }))} />
               </div>
-              <div>
-                <FieldLabel>Cost price</FieldLabel>
-                <Input type="number" step="0.01" value={form.cost} onChange={(event) => setForm((current) => ({ ...current, cost: event.target.value }))} />
-              </div>
+              {canViewPurchaseCosts ? (
+                <div>
+                  <FieldLabel>Cost price</FieldLabel>
+                  <Input type="number" step="0.01" value={form.cost} onChange={(event) => setForm((current) => ({ ...current, cost: event.target.value }))} />
+                </div>
+              ) : null}
               <div>
                 <FieldLabel>Selling price</FieldLabel>
                 <Input type="number" step="0.01" value={form.price} onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))} />
@@ -846,53 +853,57 @@ export default function ProductManager({
 
           {editingId ? (
             <div className="grid gap-6 xl:grid-cols-2">
-              <div className="rounded-[26px] border border-stone-200 bg-white/70 p-4 sm:p-5">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Price history</div>
-                <div className="mt-1 text-lg font-black text-stone-900">Recent price changes</div>
-                <div className="mt-4 space-y-3">
-                  {(products.find((product) => product.id === editingId)?.priceHistory ?? []).length ? (
-                    products.find((product) => product.id === editingId)!.priceHistory.map((entry) => (
-                      <div key={entry.id} className="rounded-[20px] border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
-                        <div className="font-semibold text-stone-900">
-                          {money(entry.previousPrice, currencySymbol)} to {money(entry.newPrice, currencySymbol)}
+              {canViewPurchaseCosts ? (
+                <>
+                  <div className="rounded-[26px] border border-stone-200 bg-white/70 p-4 sm:p-5">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Price history</div>
+                    <div className="mt-1 text-lg font-black text-stone-900">Recent price changes</div>
+                    <div className="mt-4 space-y-3">
+                      {(products.find((product) => product.id === editingId)?.priceHistory ?? []).length ? (
+                        products.find((product) => product.id === editingId)!.priceHistory.map((entry) => (
+                          <div key={entry.id} className="rounded-[20px] border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+                            <div className="font-semibold text-stone-900">
+                              {money(entry.previousPrice, currencySymbol)} to {money(entry.newPrice, currencySymbol)}
+                            </div>
+                            <div className="mt-1 text-xs text-stone-500">
+                              {shortDate(entry.effectiveDate)} by {entry.changedByUser.name ?? entry.changedByUser.email}
+                            </div>
+                            {entry.note ? <div className="mt-2 text-xs text-stone-500">{entry.note}</div> : null}
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-[20px] border border-dashed border-stone-300 bg-stone-50 px-4 py-5 text-sm text-stone-500">
+                          No price changes recorded yet.
                         </div>
-                        <div className="mt-1 text-xs text-stone-500">
-                          {shortDate(entry.effectiveDate)} by {entry.changedByUser.name ?? entry.changedByUser.email}
-                        </div>
-                        {entry.note ? <div className="mt-2 text-xs text-stone-500">{entry.note}</div> : null}
-                      </div>
-                    ))
-                  ) : (
-                    <div className="rounded-[20px] border border-dashed border-stone-300 bg-stone-50 px-4 py-5 text-sm text-stone-500">
-                      No price changes recorded yet.
+                      )}
                     </div>
-                  )}
-                </div>
-              </div>
+                  </div>
 
-              <div className="rounded-[26px] border border-stone-200 bg-white/70 p-4 sm:p-5">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Cost history</div>
-                <div className="mt-1 text-lg font-black text-stone-900">Recent cost changes</div>
-                <div className="mt-4 space-y-3">
-                  {(products.find((product) => product.id === editingId)?.costHistory ?? []).length ? (
-                    products.find((product) => product.id === editingId)!.costHistory.map((entry) => (
-                      <div key={entry.id} className="rounded-[20px] border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
-                        <div className="font-semibold text-stone-900">
-                          {money(entry.previousCost, currencySymbol)} to {money(entry.newCost, currencySymbol)}
+                  <div className="rounded-[26px] border border-stone-200 bg-white/70 p-4 sm:p-5">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Cost history</div>
+                    <div className="mt-1 text-lg font-black text-stone-900">Recent cost changes</div>
+                    <div className="mt-4 space-y-3">
+                      {(products.find((product) => product.id === editingId)?.costHistory ?? []).length ? (
+                        products.find((product) => product.id === editingId)!.costHistory.map((entry) => (
+                          <div key={entry.id} className="rounded-[20px] border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+                            <div className="font-semibold text-stone-900">
+                              {money(entry.previousCost, currencySymbol)} to {money(entry.newCost, currencySymbol)}
+                            </div>
+                            <div className="mt-1 text-xs text-stone-500">
+                              {shortDate(entry.effectiveDate)} by {entry.changedByUser.name ?? entry.changedByUser.email}
+                            </div>
+                            {entry.note ? <div className="mt-2 text-xs text-stone-500">{entry.note}</div> : null}
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-[20px] border border-dashed border-stone-300 bg-stone-50 px-4 py-5 text-sm text-stone-500">
+                          No cost changes recorded yet.
                         </div>
-                        <div className="mt-1 text-xs text-stone-500">
-                          {shortDate(entry.effectiveDate)} by {entry.changedByUser.name ?? entry.changedByUser.email}
-                        </div>
-                        {entry.note ? <div className="mt-2 text-xs text-stone-500">{entry.note}</div> : null}
-                      </div>
-                    ))
-                  ) : (
-                    <div className="rounded-[20px] border border-dashed border-stone-300 bg-stone-50 px-4 py-5 text-sm text-stone-500">
-                      No cost changes recorded yet.
+                      )}
                     </div>
-                  )}
-                </div>
-              </div>
+                  </div>
+                </>
+              ) : null}
             </div>
           ) : null}
 
@@ -911,6 +922,15 @@ export default function ProductManager({
           </div>
         </form>
       </Card>
+      ) : (
+      <Card>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">Catalog access</div>
+        <div className="mt-2 text-2xl font-black text-stone-900">Read-only product view</div>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">
+          This account can review the catalog{canViewPurchaseCosts ? ' and purchase-cost data' : ''}, but it does not have permission to create, edit, archive, or restore products.
+        </p>
+      </Card>
+      )}
 
       <Card>
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -995,10 +1015,16 @@ export default function ProductManager({
                       </td>
                       <td className="px-4 py-4">
                         <div className="font-semibold text-stone-900">{money(product.price, currencySymbol)}</div>
-                        <div className="text-xs text-stone-500">Cost {money(product.cost, currencySymbol)}</div>
-                        <div className={`mt-2 text-xs ${margin.tone === 'red' ? 'text-red-700' : margin.tone === 'amber' ? 'text-amber-700' : 'text-emerald-700'}`}>
-                          {margin.message}
-                        </div>
+                        {canViewPurchaseCosts ? (
+                          <>
+                            <div className="text-xs text-stone-500">Cost {money(product.cost, currencySymbol)}</div>
+                            <div className={`mt-2 text-xs ${margin.tone === 'red' ? 'text-red-700' : margin.tone === 'amber' ? 'text-amber-700' : 'text-emerald-700'}`}>
+                              {margin.message}
+                            </div>
+                          </>
+                        ) : (
+                          <div className="text-xs text-stone-500">Cost visibility is restricted for this account.</div>
+                        )}
                       </td>
                       <td className="px-4 py-4">
                         <div className="font-semibold text-stone-900">{product.stockQty}</div>
@@ -1019,14 +1045,18 @@ export default function ProductManager({
                         </div>
                       </td>
                       <td className="px-4 py-4">
-                        <div className="flex gap-2">
-                          <Button type="button" variant="secondary" onClick={() => beginEdit(product)}>
-                            Edit
-                          </Button>
-                          <Button type="button" variant="ghost" className="text-xs uppercase tracking-[0.14em]" onClick={() => toggleArchive(product)}>
-                            {product.isActive ? 'Archive' : 'Restore'}
-                          </Button>
-                        </div>
+                        {canEditProducts ? (
+                          <div className="flex gap-2">
+                            <Button type="button" variant="secondary" onClick={() => beginEdit(product)}>
+                              Edit
+                            </Button>
+                            <Button type="button" variant="ghost" className="text-xs uppercase tracking-[0.14em]" onClick={() => toggleArchive(product)}>
+                              {product.isActive ? 'Archive' : 'Restore'}
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-stone-500">No edit access</span>
+                        )}
                       </td>
                     </tr>
                   );

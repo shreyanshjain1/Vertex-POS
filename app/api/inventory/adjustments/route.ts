@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { inventoryAdjustmentSchema } from '@/lib/auth/validation';
-import { requireRole } from '@/lib/authz';
+import { requirePermission } from '@/lib/authz';
 import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
 import { ensureInventoryReasons } from '@/lib/inventory-reasons';
@@ -8,7 +8,7 @@ import { prisma } from '@/lib/prisma';
 
 export async function POST(request: Request) {
   try {
-    const { shopId, userId } = await requireRole('MANAGER');
+    const { shopId, userId } = await requirePermission('ADJUST_INVENTORY');
     await ensureInventoryReasons(shopId);
     const body = await request.json();
     const parsed = inventoryAdjustmentSchema.safeParse(body);

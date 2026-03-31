@@ -1,11 +1,19 @@
+import { redirect } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import ProductManager from '@/components/products/ProductManager';
-import { requirePageRole } from '@/lib/authz';
+import { getActiveShopContext } from '@/lib/auth/get-active-shop';
 import { prisma } from '@/lib/prisma';
 import { ensureUnitsOfMeasure } from '@/lib/uom';
 
 export default async function ProductsPage() {
-  const { shopId } = await requirePageRole('MANAGER');
+  const { shopId, permissions } = await getActiveShopContext();
+  const canEditProducts = permissions.EDIT_PRODUCTS;
+  const canViewPurchaseCosts = permissions.VIEW_PURCHASE_COSTS || permissions.EDIT_PRODUCTS;
+
+  if (!canEditProducts && !canViewPurchaseCosts) {
+    redirect('/dashboard');
+  }
+
   const units = await ensureUnitsOfMeasure(shopId);
   const [products, categories, settings] = await Promise.all([
     prisma.product.findMany({
@@ -75,7 +83,7 @@ export default async function ProductsPage() {
       <ProductManager
         initialProducts={products.map((product) => ({
           ...product,
-          cost: product.cost.toString(),
+          cost: canViewPurchaseCosts ? product.cost.toString() : '0',
           price: product.price.toString(),
           baseUnitOfMeasure: product.baseUnitOfMeasure,
           variants: product.variants.map((variant) => ({
@@ -98,8 +106,8 @@ export default async function ProductsPage() {
           })),
           costHistory: product.costHistory.map((entry) => ({
             ...entry,
-            previousCost: entry.previousCost.toString(),
-            newCost: entry.newCost.toString(),
+            previousCost: canViewPurchaseCosts ? entry.previousCost.toString() : '0',
+            newCost: canViewPurchaseCosts ? entry.newCost.toString() : '0',
             effectiveDate: entry.effectiveDate.toISOString(),
             createdAt: entry.createdAt.toISOString()
           })),
@@ -118,6 +126,8 @@ export default async function ProductsPage() {
         }))}
         categories={categories}
         units={units}
+        canEditProducts={canEditProducts}
+        canViewPurchaseCosts={canViewPurchaseCosts}
         currencySymbol={settings?.currencySymbol ?? '₱'}
         lowStockThreshold={settings?.lowStockThreshold ?? 5}
         inventoryDefaults={{

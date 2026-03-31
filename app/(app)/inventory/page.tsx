@@ -2,13 +2,13 @@ import Link from 'next/link';
 import AppHeader from '@/components/layout/AppHeader';
 import InventoryManager from '@/components/inventory/InventoryManager';
 import Button from '@/components/ui/Button';
-import { requirePageRole } from '@/lib/authz';
+import { requirePagePermission } from '@/lib/authz';
 import { ensureInventoryReasons } from '@/lib/inventory-reasons';
 import { prisma } from '@/lib/prisma';
 import { ensureUnitsOfMeasure } from '@/lib/uom';
 
 export default async function InventoryPage() {
-  const { shopId } = await requirePageRole('MANAGER');
+  const { shopId } = await requirePagePermission('ADJUST_INVENTORY');
   const reasons = await ensureInventoryReasons(shopId);
   await ensureUnitsOfMeasure(shopId);
 

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { productSchema } from '@/lib/auth/validation';
-import { requireRole } from '@/lib/authz';
+import { requirePermission } from '@/lib/authz';
 import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
 import { normalizeText } from '@/lib/inventory';
@@ -68,7 +68,7 @@ function serializeProduct(product: {
 
 export async function GET() {
   try {
-    const { shopId } = await requireRole('CASHIER');
+    const { shopId } = await requirePermission('EDIT_PRODUCTS');
     const products = await prisma.product.findMany({
       where: { shopId },
       include: {
@@ -110,7 +110,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { shopId, userId } = await requireRole('MANAGER');
+    const { shopId, userId } = await requirePermission('EDIT_PRODUCTS');
     const units = await ensureUnitsOfMeasure(shopId);
     const body = await request.json();
     const parsed = productSchema.safeParse(body);

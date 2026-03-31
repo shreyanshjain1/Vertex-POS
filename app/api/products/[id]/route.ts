@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { productUpdateSchema } from '@/lib/auth/validation';
-import { requireRole } from '@/lib/authz';
+import { requirePermission } from '@/lib/authz';
 import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
 import { normalizeText } from '@/lib/inventory';
@@ -71,7 +71,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { shopId, userId } = await requireRole('MANAGER');
+    const { shopId, userId } = await requirePermission('EDIT_PRODUCTS');
     const units = await ensureUnitsOfMeasure(shopId);
     const { id } = await params;
     const body = await request.json();
@@ -324,6 +324,21 @@ export async function PATCH(
             note: nextChangeNote
           }
         });
+
+        await logActivity({
+          tx,
+          shopId,
+          userId,
+          action: 'PRODUCT_PRICE_CHANGED',
+          entityType: 'Product',
+          entityId: existing.id,
+          description: `Changed selling price for ${existing.name}.`,
+          metadata: {
+            previousPrice: Number(existing.price),
+            nextPrice: parsed.data.price!,
+            note: nextChangeNote
+          }
+        });
       }
 
       if (costChanged) {
@@ -334,6 +349,21 @@ export async function PATCH(
             newCost: parsed.data.cost!,
             effectiveDate: new Date(),
             changedByUserId: userId,
+            note: nextChangeNote
+          }
+        });
+
+        await logActivity({
+          tx,
+          shopId,
+          userId,
+          action: 'PRODUCT_COST_CHANGED',
+          entityType: 'Product',
+          entityId: existing.id,
+          description: `Changed cost basis for ${existing.name}.`,
+          metadata: {
+            previousCost: Number(existing.cost),
+            nextCost: parsed.data.cost!,
             note: nextChangeNote
           }
         });
