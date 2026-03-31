@@ -8,6 +8,9 @@ import {
   SUPPLIER_RETURN_DISPOSITION_OPTIONS,
   SUPPLIER_RETURN_REASON_OPTIONS
 } from '@/lib/supplier-returns';
+import {
+  CUSTOMER_TYPE_OPTIONS
+} from '@/lib/customers';
 
 const shopRoleSchema = z.enum(['ADMIN', 'MANAGER', 'CASHIER']);
 const optionalText = () => z.string().trim().optional().nullable();
@@ -167,6 +170,39 @@ export const supplierSchema = z.object({
   isActive: z.coerce.boolean().optional().default(true)
 });
 
+export const customerSchema = z.object({
+  type: z.enum(CUSTOMER_TYPE_OPTIONS).default('INDIVIDUAL'),
+  firstName: z.string().trim().max(80).optional().nullable(),
+  lastName: z.string().trim().max(80).optional().nullable(),
+  businessName: z.string().trim().max(160).optional().nullable(),
+  contactPerson: z.string().trim().max(120).optional().nullable(),
+  taxId: z.string().trim().max(80).optional().nullable(),
+  phone: z.string().trim().max(40).optional().nullable(),
+  email: z.string().trim().email().optional().nullable().or(z.literal('')),
+  address: z.string().trim().max(255).optional().nullable(),
+  notes: z.string().trim().max(500).optional().nullable(),
+  isActive: z.coerce.boolean().optional().default(true)
+}).superRefine((input, ctx) => {
+  if (input.type === 'BUSINESS') {
+    if (!input.businessName?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['businessName'],
+        message: 'Business customers need a business name.'
+      });
+    }
+    return;
+  }
+
+  if (!input.firstName?.trim() && !input.lastName?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['firstName'],
+      message: 'Enter at least a first name or last name.'
+    });
+  }
+});
+
 export const supplierReturnSchema = z.object({
   supplierId: z.string().trim().min(1),
   status: z.enum(SUPPLIER_RETURN_CREATE_STATUS_OPTIONS).default('DRAFT'),
@@ -209,16 +245,54 @@ export const salePaymentSchema = z.object({
 });
 
 export const saleSchema = z.object({
+  customerId: z.string().trim().optional().nullable(),
   customerName: z.string().trim().max(120).optional().nullable(),
   customerPhone: z.string().trim().max(40).optional().nullable(),
+  loyaltyPointsToRedeem: z.coerce.number().int().min(0).max(999999).default(0),
+  isCreditSale: z.coerce.boolean().default(false),
+  creditDueDate: z.string().trim().optional().nullable().or(z.literal('')),
   discountAmount: z.coerce.number().min(0).default(0),
   notes: z.string().trim().max(300).optional().nullable(),
-  payments: z.array(salePaymentSchema).min(1, 'Add at least one payment line.'),
+  payments: z.array(salePaymentSchema).default([]),
   items: z.array(z.object({
     productId: z.string().trim().min(1),
     variantId: z.string().trim().min(1).optional().nullable(),
     qty: z.coerce.number().int().positive()
   })).min(1)
+}).superRefine((input, ctx) => {
+  if (input.isCreditSale) {
+    if (!input.customerId?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customerId'],
+        message: 'Credit sales require an attached customer.'
+      });
+    }
+
+    if (!input.creditDueDate || !input.creditDueDate.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['creditDueDate'],
+        message: 'Credit sales require a due date.'
+      });
+    }
+
+    if (input.payments.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['payments'],
+        message: 'Credit sales should not include checkout payment lines.'
+      });
+    }
+  }
+
+  if (input.loyaltyPointsToRedeem > 0 && !input.customerId?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['customerId'],
+      message: 'Attach a customer before redeeming loyalty points.'
+    });
+  }
 });
 
 const approvalSchema = z.object({
@@ -254,6 +328,7 @@ export const saleRefundSchema = approvalSchema.extend({
 });
 
 export const parkedSaleCreateSchema = z.object({
+  customerId: z.string().trim().optional().nullable(),
   customerName: z.string().trim().max(120).optional().nullable(),
   customerPhone: z.string().trim().max(40).optional().nullable(),
   discountAmount: z.coerce.number().min(0).default(0),
@@ -263,6 +338,15 @@ export const parkedSaleCreateSchema = z.object({
     variantId: z.string().trim().min(1).optional().nullable(),
     qty: z.coerce.number().int().positive()
   })).min(1, 'Add at least one item before holding the cart.')
+});
+
+export const receivablePaymentSchema = z.object({
+  action: z.literal('RECORD_PAYMENT'),
+  customerCreditLedgerId: z.string().trim().min(1),
+  amount: z.coerce.number().positive('Payment amount must be greater than zero.').max(999999.99),
+  method: z.enum(PAYMENT_METHODS),
+  referenceNumber: z.string().trim().max(80).optional().nullable(),
+  paidAt: z.string().trim().min(1, 'Payment date is required.')
 });
 
 export const purchaseSchema = z.object({

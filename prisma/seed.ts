@@ -1,6 +1,9 @@
 import {
   PayableStatus,
   CashSessionStatus,
+  CustomerCreditStatus,
+  CustomerLoyaltyLedgerType,
+  CustomerType,
   DocumentSequenceType,
   PrismaClient,
   PurchaseStatus,
@@ -170,6 +173,45 @@ async function main() {
       phone: '09170000002',
       address: 'Pasig City',
       notes: 'Grooming supplies and pet-care retail products'
+    }
+  });
+
+  const annaCustomer = await prisma.customer.create({
+    data: {
+      shopId: shop.id,
+      type: CustomerType.INDIVIDUAL,
+      firstName: 'Anna',
+      lastName: 'Reyes',
+      phone: '09171230001',
+      email: 'anna.reyes@demo.local',
+      address: 'Mandaluyong City',
+      notes: 'Regular retail customer who actively uses loyalty rewards.'
+    }
+  });
+
+  const businessCustomer = await prisma.customer.create({
+    data: {
+      shopId: shop.id,
+      type: CustomerType.BUSINESS,
+      businessName: 'Happy Tails Rescue',
+      contactPerson: 'Joan Santiago',
+      taxId: 'TIN-8899-4455',
+      phone: '09181230002',
+      email: 'purchasing@happytails.local',
+      address: 'Marikina City',
+      notes: 'Approved for short-term customer credit on scheduled bulk orders.'
+    }
+  });
+
+  await prisma.customer.create({
+    data: {
+      shopId: shop.id,
+      type: CustomerType.INDIVIDUAL,
+      firstName: 'Marco',
+      lastName: 'Villanueva',
+      phone: '09181230003',
+      notes: 'Archived demo customer record.',
+      isActive: false
     }
   });
 
@@ -513,6 +555,343 @@ async function main() {
       referenceId: supplierReturn.id,
       userId: manager.id,
       notes: 'Seed supplier return'
+    }
+  });
+
+  const annaFirstSale = await prisma.sale.create({
+    data: {
+      shopId: shop.id,
+      cashierUserId: cashier.id,
+      customerId: annaCustomer.id,
+      saleNumber: 'SAL-20260326-0001',
+      receiptNumber: 'RCP-20260326-0001',
+      customerName: 'Anna Reyes',
+      customerPhone: annaCustomer.phone,
+      subtotal: 470,
+      taxAmount: 56.4,
+      discountAmount: 0,
+      totalAmount: 526.4,
+      changeDue: 0,
+      paymentMethod: 'Cash',
+      isCreditSale: false,
+      loyaltyPointsEarned: 5,
+      loyaltyPointsRedeemed: 0,
+      loyaltyDiscountAmount: 0,
+      notes: 'Seed customer sale with loyalty earn.',
+      cashierName: cashier.name,
+      items: {
+        create: [
+          {
+            productId: products[2].id,
+            productName: products[2].name,
+            qty: 2,
+            unitPrice: 150,
+            lineTotal: 300
+          },
+          {
+            productId: products[7].id,
+            productName: products[7].name,
+            qty: 2,
+            unitPrice: 85,
+            lineTotal: 170
+          }
+        ]
+      },
+      payments: {
+        create: [
+          {
+            method: 'Cash',
+            amount: 526.4
+          }
+        ]
+      }
+    }
+  });
+
+  await prisma.customerLoyaltyLedger.create({
+    data: {
+      shopId: shop.id,
+      customerId: annaCustomer.id,
+      saleId: annaFirstSale.id,
+      type: CustomerLoyaltyLedgerType.EARNED,
+      points: 5,
+      balanceAfter: 5,
+      note: `Earned from sale ${annaFirstSale.saleNumber}.`
+    }
+  });
+
+  await prisma.product.update({
+    where: { id: products[2].id },
+    data: {
+      stockQty: { decrement: 2 }
+    }
+  });
+
+  await prisma.inventoryMovement.create({
+    data: {
+      shopId: shop.id,
+      productId: products[2].id,
+      type: 'SALE_COMPLETED',
+      qtyChange: -2,
+      referenceId: annaFirstSale.id,
+      userId: cashier.id,
+      notes: 'Seed customer sale'
+    }
+  });
+
+  await prisma.product.update({
+    where: { id: products[7].id },
+    data: {
+      stockQty: { decrement: 2 }
+    }
+  });
+
+  await prisma.inventoryMovement.create({
+    data: {
+      shopId: shop.id,
+      productId: products[7].id,
+      type: 'SALE_COMPLETED',
+      qtyChange: -2,
+      referenceId: annaFirstSale.id,
+      userId: cashier.id,
+      notes: 'Seed customer sale'
+    }
+  });
+
+  const annaSecondSale = await prisma.sale.create({
+    data: {
+      shopId: shop.id,
+      cashierUserId: cashier.id,
+      customerId: annaCustomer.id,
+      saleNumber: 'SAL-20260327-0001',
+      receiptNumber: 'RCP-20260327-0001',
+      customerName: 'Anna Reyes',
+      customerPhone: annaCustomer.phone,
+      subtotal: 265,
+      taxAmount: 31.8,
+      discountAmount: 3,
+      totalAmount: 293.8,
+      changeDue: 0,
+      paymentMethod: 'Card',
+      isCreditSale: false,
+      loyaltyPointsEarned: 2,
+      loyaltyPointsRedeemed: 3,
+      loyaltyDiscountAmount: 3,
+      notes: 'Seed customer sale with loyalty redemption.',
+      cashierName: cashier.name,
+      items: {
+        create: [
+          {
+            productId: products[0].id,
+            productName: products[0].name,
+            qty: 2,
+            unitPrice: 90,
+            lineTotal: 180
+          },
+          {
+            productId: products[7].id,
+            productName: products[7].name,
+            qty: 1,
+            unitPrice: 85,
+            lineTotal: 85
+          }
+        ]
+      },
+      payments: {
+        create: [
+          {
+            method: 'Card',
+            amount: 293.8,
+            referenceNumber: 'CARD-20260327-2938'
+          }
+        ]
+      }
+    }
+  });
+
+  await prisma.customerLoyaltyLedger.create({
+    data: {
+      shopId: shop.id,
+      customerId: annaCustomer.id,
+      saleId: annaSecondSale.id,
+      type: CustomerLoyaltyLedgerType.REDEEMED,
+      points: 3,
+      balanceAfter: 2,
+      note: `Redeemed on sale ${annaSecondSale.saleNumber}.`
+    }
+  });
+
+  await prisma.customerLoyaltyLedger.create({
+    data: {
+      shopId: shop.id,
+      customerId: annaCustomer.id,
+      saleId: annaSecondSale.id,
+      type: CustomerLoyaltyLedgerType.EARNED,
+      points: 2,
+      balanceAfter: 4,
+      note: `Earned from sale ${annaSecondSale.saleNumber}.`
+    }
+  });
+
+  await prisma.product.update({
+    where: { id: products[0].id },
+    data: {
+      stockQty: { decrement: 2 }
+    }
+  });
+
+  await prisma.inventoryMovement.create({
+    data: {
+      shopId: shop.id,
+      productId: products[0].id,
+      type: 'SALE_COMPLETED',
+      qtyChange: -2,
+      referenceId: annaSecondSale.id,
+      userId: cashier.id,
+      notes: 'Seed loyalty redemption sale'
+    }
+  });
+
+  await prisma.product.update({
+    where: { id: products[7].id },
+    data: {
+      stockQty: { decrement: 1 }
+    }
+  });
+
+  await prisma.inventoryMovement.create({
+    data: {
+      shopId: shop.id,
+      productId: products[7].id,
+      type: 'SALE_COMPLETED',
+      qtyChange: -1,
+      referenceId: annaSecondSale.id,
+      userId: cashier.id,
+      notes: 'Seed loyalty redemption sale'
+    }
+  });
+
+  const businessCreditSale = await prisma.sale.create({
+    data: {
+      shopId: shop.id,
+      cashierUserId: manager.id,
+      customerId: businessCustomer.id,
+      saleNumber: 'SAL-20260329-0001',
+      receiptNumber: 'RCP-20260329-0001',
+      customerName: businessCustomer.businessName,
+      customerPhone: businessCustomer.phone,
+      subtotal: 950,
+      taxAmount: 114,
+      discountAmount: 0,
+      totalAmount: 1064,
+      changeDue: 0,
+      paymentMethod: 'Customer Credit',
+      isCreditSale: true,
+      loyaltyPointsEarned: 10,
+      loyaltyPointsRedeemed: 0,
+      loyaltyDiscountAmount: 0,
+      notes: 'Seed credit sale for business customer.',
+      cashierName: manager.name,
+      items: {
+        create: [
+          {
+            productId: products[17].id,
+            productName: products[17].name,
+            qty: 3,
+            unitPrice: 220,
+            lineTotal: 660
+          },
+          {
+            productId: products[18].id,
+            productName: products[18].name,
+            qty: 2,
+            unitPrice: 145,
+            lineTotal: 290
+          }
+        ]
+      }
+    }
+  });
+
+  await prisma.customerLoyaltyLedger.create({
+    data: {
+      shopId: shop.id,
+      customerId: businessCustomer.id,
+      saleId: businessCreditSale.id,
+      type: CustomerLoyaltyLedgerType.EARNED,
+      points: 10,
+      balanceAfter: 10,
+      note: `Earned from sale ${businessCreditSale.saleNumber}.`
+    }
+  });
+
+  const businessReceivable = await prisma.customerCreditLedger.create({
+    data: {
+      shopId: shop.id,
+      customerId: businessCustomer.id,
+      saleId: businessCreditSale.id,
+      dueDate: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10),
+      originalAmount: 1064,
+      balance: 1064,
+      status: CustomerCreditStatus.OPEN
+    }
+  });
+
+  await prisma.receivablePayment.create({
+    data: {
+      shopId: shop.id,
+      customerCreditLedgerId: businessReceivable.id,
+      amount: 400,
+      method: 'Bank Transfer',
+      referenceNumber: 'AR-20260330-0400',
+      paidAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 4),
+      createdByUserId: manager.id
+    }
+  });
+
+  await prisma.customerCreditLedger.update({
+    where: { id: businessReceivable.id },
+    data: {
+      balance: 664,
+      status: CustomerCreditStatus.OVERDUE
+    }
+  });
+
+  await prisma.product.update({
+    where: { id: products[17].id },
+    data: {
+      stockQty: { decrement: 3 }
+    }
+  });
+
+  await prisma.inventoryMovement.create({
+    data: {
+      shopId: shop.id,
+      productId: products[17].id,
+      type: 'SALE_COMPLETED',
+      qtyChange: -3,
+      referenceId: businessCreditSale.id,
+      userId: manager.id,
+      notes: 'Seed business credit sale'
+    }
+  });
+
+  await prisma.product.update({
+    where: { id: products[18].id },
+    data: {
+      stockQty: { decrement: 2 }
+    }
+  });
+
+  await prisma.inventoryMovement.create({
+    data: {
+      shopId: shop.id,
+      productId: products[18].id,
+      type: 'SALE_COMPLETED',
+      qtyChange: -2,
+      referenceId: businessCreditSale.id,
+      userId: manager.id,
+      notes: 'Seed business credit sale'
     }
   });
 
