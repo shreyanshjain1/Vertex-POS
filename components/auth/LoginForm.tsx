@@ -30,9 +30,10 @@ export default function LoginForm({
   inactiveAccess: boolean;
   callbackUrl: string | null;
 }) {
+  const showDevAutofill = process.env.NODE_ENV !== 'production';
   const router = useRouter();
-  const [email, setEmail] = useState('owner@vertexpos.local');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const destination = getSafeCallbackUrl(callbackUrl);
@@ -65,11 +66,11 @@ export default function LoginForm({
         <div className="hidden rounded-3xl bg-gradient-to-br from-emerald-600 to-emerald-700 p-10 text-white shadow-xl md:block">
           <div className="mb-6 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15 text-2xl font-black">V</div>
           <h1 className="text-4xl font-black leading-tight">Sign in to manage your store.</h1>
-          <p className="mt-4 text-base leading-7 text-emerald-50">Use the seeded demo account or your own account to access products, checkout, purchases, reports, and settings.</p>
+          <p className="mt-4 text-base leading-7 text-emerald-50">Use your business account to access checkout, inventory, reports, and branch operations securely.</p>
         </div>
         <div className="rounded-3xl border border-stone-200 bg-white p-8 shadow-lg md:p-10">
           <h2 className="text-3xl font-black text-stone-900">Sign in</h2>
-          <p className="mt-2 text-sm text-stone-500">Use the seeded demo account or your own account.</p>
+          <p className="mt-2 text-sm text-stone-500">Use the email and password assigned to your account.</p>
           {inactiveAccess ? (
             <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               Your shop access is inactive. Contact an administrator if you still need access.
@@ -84,6 +85,22 @@ export default function LoginForm({
               <label className="mb-2 block text-sm font-semibold text-stone-800">Password</label>
               <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
             </div>
+            {showDevAutofill ? (
+              <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+                <div className="font-semibold">Development helper</div>
+                <div className="mt-1 text-sky-800">Demo credentials are only available in non-production builds.</div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail('owner@vertexpos.local');
+                    setPassword('password123');
+                  }}
+                  className="mt-3 font-semibold text-sky-700 hover:text-sky-900"
+                >
+                  Fill local demo credentials
+                </button>
+              </div>
+            ) : null}
             {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
             <Button type="submit" className="w-full" disabled={loading}>{loading ? 'Signing in...' : 'Sign in'}</Button>
           </form>
