@@ -3,7 +3,7 @@
 import { ShopRole } from '@prisma/client';
 import { AnimatePresence, motion } from 'framer-motion';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import { useMemo, useState } from 'react';
 
@@ -11,6 +11,13 @@ type SidebarProps = {
   shopName: string;
   shopType: string;
   role: ShopRole;
+  activeShopId: string;
+  availableShops: Array<{
+    id: string;
+    name: string;
+    posType: string;
+    role: ShopRole;
+  }>;
 };
 
 type IconName =
@@ -24,6 +31,7 @@ type IconName =
   | 'categories'
   | 'customers'
   | 'inventory'
+  | 'transfers'
   | 'suppliers'
   | 'purchases'
   | 'reports'
@@ -115,6 +123,13 @@ const sections: Array<{ title: string; links: NavLink[] }> = [
         label: 'Inventory',
         description: 'Track stock levels and adjustments.',
         icon: 'inventory',
+        minRole: 'MANAGER'
+      },
+      {
+        href: '/transfers',
+        label: 'Transfers',
+        description: 'Move stock between branches with send and receive controls.',
+        icon: 'transfers',
         minRole: 'MANAGER'
       },
       {
@@ -295,6 +310,15 @@ function SidebarIcon({ name, active = false }: { name: IconName; active?: boolea
           <path d="M9 12h6" />
         </svg>
       );
+    case 'transfers':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={`${common} ${color}`}>
+          <path d="M7 7h10" />
+          <path d="m13 4 4 3-4 3" />
+          <path d="M17 17H7" />
+          <path d="m11 14-4 3 4 3" />
+        </svg>
+      );
     case 'suppliers':
       return (
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={`${common} ${color}`}>
@@ -345,10 +369,19 @@ function SidebarIcon({ name, active = false }: { name: IconName; active?: boolea
   }
 }
 
-export default function AppSidebar({ shopName, shopType, role }: SidebarProps) {
+export default function AppSidebar({
+  shopName,
+  shopType,
+  role,
+  activeShopId,
+  availableShops
+}: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [switchingShop, setSwitchingShop] = useState(false);
+  const [switchError, setSwitchError] = useState('');
   const shopTypeLabel = formatShopType(shopType);
 
   const visibleSections = useMemo(
@@ -365,6 +398,32 @@ export default function AppSidebar({ shopName, shopType, role }: SidebarProps) {
   const activeLink = visibleSections
     .flatMap((section) => section.links)
     .find((link) => pathname === link.href || pathname.startsWith(`${link.href}/`));
+
+  async function switchShop(nextShopId: string) {
+    if (!nextShopId || nextShopId === activeShopId) {
+      return;
+    }
+
+    setSwitchError('');
+    setSwitchingShop(true);
+
+    const response = await fetch('/api/user-shops/active', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shopId: nextShopId })
+    });
+
+    const data = await response.json().catch(() => ({ error: 'Unable to switch branches right now.' }));
+
+    if (!response.ok) {
+      setSwitchError(data.error ?? 'Unable to switch branches right now.');
+      setSwitchingShop(false);
+      return;
+    }
+
+    router.refresh();
+    setSwitchingShop(false);
+  }
 
   const sidebarContent = (
     <div className="flex h-full flex-col gap-4 p-4">
@@ -387,6 +446,24 @@ export default function AppSidebar({ shopName, shopType, role }: SidebarProps) {
                     {role}
                   </span>
                 </div>
+                {availableShops.length > 1 ? (
+                  <div className="mt-4 space-y-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Active branch</div>
+                    <select
+                      className="h-11 w-full rounded-2xl border border-stone-200 bg-white px-4 text-sm text-stone-900 outline-none transition hover:border-stone-300 focus:border-emerald-500"
+                      value={activeShopId}
+                      onChange={(event) => void switchShop(event.target.value)}
+                      disabled={switchingShop}
+                    >
+                      {availableShops.map((entry) => (
+                        <option key={entry.id} value={entry.id}>
+                          {entry.name} ({entry.role})
+                        </option>
+                      ))}
+                    </select>
+                    {switchError ? <div className="text-xs text-red-600">{switchError}</div> : null}
+                  </div>
+                ) : null}
               </>
             ) : null}
           </div>

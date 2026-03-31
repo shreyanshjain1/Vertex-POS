@@ -77,6 +77,13 @@ export default function CommandPalette({ role }: { role: ShopRole }) {
         href: '/purchases#record-purchase'
       },
       {
+        id: 'branch-transfer',
+        label: 'Branch transfer',
+        description: 'Create or receive stock transfers between branches.',
+        minRole: 'MANAGER',
+        href: '/transfers'
+      },
+      {
         id: 'inventory-adjustment',
         label: 'Inventory adjustment',
         description: 'Increase or decrease stock with an audit trail.',

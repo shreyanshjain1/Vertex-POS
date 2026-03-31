@@ -32,11 +32,17 @@ async function resolveActiveShopContext(mode: GuardMode) {
     throw new AuthenticationError();
   }
 
-  const preferredMembership = session.user.defaultShopId
+  const currentUser = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { defaultShopId: true }
+  });
+  const preferredShopId = currentUser?.defaultShopId ?? session.user.defaultShopId ?? null;
+
+  const preferredMembership = preferredShopId
     ? await prisma.userShop.findFirst({
         where: {
           userId: session.user.id,
-          shopId: session.user.defaultShopId,
+          shopId: preferredShopId,
           isActive: true
         },
         include: { shop: true }
@@ -72,7 +78,7 @@ async function resolveActiveShopContext(mode: GuardMode) {
     );
   }
 
-  if (session.user.defaultShopId !== membership.shopId) {
+  if (preferredShopId !== membership.shopId) {
     await prisma.user.update({
       where: { id: session.user.id },
       data: { defaultShopId: membership.shopId }
