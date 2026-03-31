@@ -4,6 +4,7 @@ import {
 } from '@prisma/client';
 import { logActivity } from '@/lib/activity';
 import { verifyPassword } from '@/lib/auth/password';
+import { getCustomerDisplayName } from '@/lib/customers';
 import { getNextDocumentNumber } from '@/lib/document-sequence';
 import { normalizeText, roundCurrency } from '@/lib/inventory';
 import {
@@ -102,9 +103,37 @@ export const saleAdjustmentInclude = Prisma.validator<Prisma.SaleAdjustmentInclu
 });
 
 export const saleDetailInclude = Prisma.validator<Prisma.SaleInclude>()({
+  customer: {
+    select: {
+      id: true,
+      type: true,
+      firstName: true,
+      lastName: true,
+      businessName: true,
+      contactPerson: true,
+      phone: true,
+      email: true
+    }
+  },
   items: true,
   payments: {
     orderBy: { createdAt: 'asc' }
+  },
+  customerCreditLedger: {
+    include: {
+      payments: {
+        include: {
+          createdByUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true
+            }
+          }
+        },
+        orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }]
+      }
+    }
   },
   adjustments: {
     include: saleAdjustmentInclude,
@@ -212,6 +241,16 @@ export function serializeSaleDetail(sale: SaleWithDetail) {
     saleNumber: sale.saleNumber,
     receiptNumber: sale.receiptNumber,
     status: sale.status,
+    customerId: sale.customerId,
+    customer: sale.customer
+      ? {
+          id: sale.customer.id,
+          displayName: getCustomerDisplayName(sale.customer),
+          phone: sale.customer.phone,
+          email: sale.customer.email,
+          type: sale.customer.type
+        }
+      : null,
     customerName: sale.customerName,
     customerPhone: sale.customerPhone,
     subtotal: sale.subtotal.toString(),
@@ -220,6 +259,10 @@ export function serializeSaleDetail(sale: SaleWithDetail) {
     totalAmount: sale.totalAmount.toString(),
     changeDue: sale.changeDue.toString(),
     paymentMethod: sale.paymentMethod,
+    isCreditSale: sale.isCreditSale,
+    loyaltyPointsEarned: sale.loyaltyPointsEarned,
+    loyaltyPointsRedeemed: sale.loyaltyPointsRedeemed,
+    loyaltyDiscountAmount: sale.loyaltyDiscountAmount.toString(),
     notes: sale.notes,
     cashierName: sale.cashierName,
     voidReason: sale.voidReason,
@@ -250,6 +293,24 @@ export function serializeSaleDetail(sale: SaleWithDetail) {
       referenceNumber: payment.referenceNumber,
       createdAt: payment.createdAt.toISOString()
     })),
+    customerCreditLedger: sale.customerCreditLedger
+      ? {
+          id: sale.customerCreditLedger.id,
+          dueDate: sale.customerCreditLedger.dueDate.toISOString(),
+          originalAmount: sale.customerCreditLedger.originalAmount.toString(),
+          balance: sale.customerCreditLedger.balance.toString(),
+          status: sale.customerCreditLedger.status,
+          payments: sale.customerCreditLedger.payments.map((payment) => ({
+            id: payment.id,
+            amount: payment.amount.toString(),
+            method: payment.method,
+            referenceNumber: payment.referenceNumber,
+            paidAt: payment.paidAt.toISOString(),
+            createdAt: payment.createdAt.toISOString(),
+            createdByUser: serializeUser(payment.createdByUser)
+          }))
+        }
+      : null,
     adjustments: sale.adjustments.map(serializeSaleAdjustment)
   };
 }
@@ -338,9 +399,10 @@ export function getSaleRefundState(sale: SaleWithDetail) {
   return {
     items,
     hasVoid,
-    canVoid: sale.status === 'COMPLETED' && sale.adjustments.length === 0,
+    canVoid: sale.status === 'COMPLETED' && !sale.isCreditSale && sale.adjustments.length === 0,
     canRefund:
       sale.status === 'COMPLETED' &&
+      !sale.isCreditSale &&
       !hasVoid &&
       items.some((item) => item.refundableQty > 0 && item.remainingCredit > 0),
     refundableAmount: roundCurrency(items.reduce((sum, item) => sum + item.remainingCredit, 0))

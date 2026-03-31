@@ -13,6 +13,7 @@ type Sale = {
   totalAmount: string;
   customerName: string | null;
   status: string;
+  isCreditSale?: boolean;
 };
 
 export default function SalesTable({
@@ -66,6 +67,7 @@ export default function SalesTable({
                   <td className="px-4 py-4">{sale.customerName ?? 'Walk-in customer'}</td>
                   <td className="px-4 py-4">
                     <Badge tone="blue">{sale.paymentMethod}</Badge>
+                    {sale.isCreditSale ? <div className="mt-2"><Badge tone="amber">Credit</Badge></div> : null}
                   </td>
                   <td className="px-4 py-4">{sale.cashierName ?? 'Cashier'}</td>
                   <td className="px-4 py-4">{dateTime(sale.createdAt)}</td>

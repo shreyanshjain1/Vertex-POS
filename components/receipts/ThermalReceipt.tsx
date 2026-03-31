@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import Button from '@/components/ui/Button';
-import { dateTime, money } from '@/lib/format';
+import { dateTime, money, shortDate } from '@/lib/format';
 
 type ReceiptWidth = '58mm' | '80mm';
 
@@ -30,6 +30,11 @@ type ReceiptSale = {
   cashierName: string | null;
   customerName: string | null;
   customerPhone: string | null;
+  isCreditSale: boolean;
+  creditDueDate: string | null;
+  loyaltyPointsEarned: number;
+  loyaltyPointsRedeemed: number;
+  loyaltyDiscountAmount: string;
   subtotal: string;
   taxAmount: string;
   discountAmount: string;
@@ -141,6 +146,7 @@ export default function ThermalReceipt({
           <div className="flex justify-between gap-3"><span>Payment</span><span className="text-right">{sale.paymentMethod}</span></div>
           <div className="flex justify-between gap-3"><span>Customer</span><span className="text-right">{sale.customerName ?? 'Walk-in'}</span></div>
           {sale.customerPhone ? <div className="flex justify-between gap-3"><span>Phone</span><span className="text-right">{sale.customerPhone}</span></div> : null}
+          {sale.isCreditSale && sale.creditDueDate ? <div className="flex justify-between gap-3"><span>Due</span><span className="text-right">{shortDate(sale.creditDueDate)}</span></div> : null}
         </div>
 
         <div className="space-y-2 border-b border-dashed border-stone-300 py-4">
@@ -159,8 +165,17 @@ export default function ThermalReceipt({
           <div className="flex justify-between"><span>Subtotal</span><span>{money(sale.subtotal, currencySymbol)}</span></div>
           <div className="flex justify-between"><span>Tax</span><span>{money(sale.taxAmount, currencySymbol)}</span></div>
           <div className="flex justify-between"><span>Discount</span><span>-{money(sale.discountAmount, currencySymbol)}</span></div>
+          {Number(sale.loyaltyDiscountAmount) > 0 ? <div className="flex justify-between"><span>Loyalty discount</span><span>-{money(sale.loyaltyDiscountAmount, currencySymbol)}</span></div> : null}
           <div className="flex justify-between pt-2 text-sm font-black text-stone-900"><span>Total</span><span>{money(sale.totalAmount, currencySymbol)}</span></div>
         </div>
+
+        {sale.loyaltyPointsEarned > 0 || sale.loyaltyPointsRedeemed > 0 ? (
+          <div className={`space-y-1 border-b border-dashed border-stone-300 py-4 ${compact ? 'text-[10px]' : 'text-[11px]'} text-stone-700`}>
+            <div className="font-semibold text-stone-900">Loyalty</div>
+            {sale.loyaltyPointsEarned > 0 ? <div className="flex justify-between"><span>Points earned</span><span>{sale.loyaltyPointsEarned}</span></div> : null}
+            {sale.loyaltyPointsRedeemed > 0 ? <div className="flex justify-between"><span>Points redeemed</span><span>{sale.loyaltyPointsRedeemed}</span></div> : null}
+          </div>
+        ) : null}
 
         <div className={`space-y-2 border-b border-dashed border-stone-300 py-4 ${compact ? 'text-[10px]' : 'text-[11px]'} text-stone-700`}>
           <div className="font-semibold text-stone-900">Payment summary</div>

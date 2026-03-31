@@ -7,6 +7,7 @@ import Card from '@/components/ui/Card';
 import { getActiveShopContext } from '@/lib/auth/get-active-shop';
 import { dateTime, money } from '@/lib/format';
 import { prisma } from '@/lib/prisma';
+import { getCustomerDisplayName } from '@/lib/customers';
 import { getSaleRefundState, saleDetailInclude } from '@/lib/sale-adjustments';
 
 export default async function SaleDetailPage({
@@ -96,10 +97,24 @@ export default async function SaleDetailPage({
         <Card>
           <h2 className="text-xl font-black text-stone-900">Sale metadata</h2>
           <div className="mt-5 space-y-3 text-sm text-stone-600">
-            <div>Customer: <span className="font-semibold text-stone-900">{sale.customerName ?? 'Walk-in customer'}</span></div>
+            <div>Customer: <span className="font-semibold text-stone-900">{sale.customer ? getCustomerDisplayName(sale.customer) : sale.customerName ?? 'Walk-in customer'}</span></div>
             <div>Phone: <span className="font-semibold text-stone-900">{sale.customerPhone ?? 'N/A'}</span></div>
+            {sale.customer?.email ? <div>Email: <span className="font-semibold text-stone-900">{sale.customer.email}</span></div> : null}
+            <div>Customer type: <span className="font-semibold text-stone-900">{sale.customer?.type ?? 'WALK_IN'}</span></div>
             <div>Notes: <span className="font-semibold text-stone-900">{sale.notes ?? 'N/A'}</span></div>
             <div>Status: <span className="font-semibold text-stone-900">{sale.status}</span></div>
+            <div>Credit sale: <span className="font-semibold text-stone-900">{sale.isCreditSale ? 'Yes' : 'No'}</span></div>
+            {sale.loyaltyPointsEarned > 0 || sale.loyaltyPointsRedeemed > 0 ? (
+              <div>
+                Loyalty: <span className="font-semibold text-stone-900">+{sale.loyaltyPointsEarned} earned / -{sale.loyaltyPointsRedeemed} redeemed</span>
+              </div>
+            ) : null}
+            {sale.customerCreditLedger ? (
+              <>
+                <div>Due date: <span className="font-semibold text-stone-900">{dateTime(sale.customerCreditLedger.dueDate)}</span></div>
+                <div>Receivable balance: <span className="font-semibold text-stone-900">{money(sale.customerCreditLedger.balance.toString(), currencySymbol)}</span></div>
+              </>
+            ) : null}
             <div>Remaining refundable value: <span className="font-semibold text-stone-900">{money(refundState.refundableAmount, currencySymbol)}</span></div>
             {sale.voidReason ? <div>Void reason: <span className="font-semibold text-stone-900">{sale.voidReason}</span></div> : null}
           </div>
@@ -108,12 +123,16 @@ export default async function SaleDetailPage({
             <div>
               {refundState.canVoid
                 ? 'This sale is still eligible for a full void.'
-                : 'Full void is no longer available because the sale already has adjustments or has already been voided.'}
+                : sale.isCreditSale
+                  ? 'Credit sales are locked from refund/void adjustments in this pass so receivables stay consistent.'
+                  : 'Full void is no longer available because the sale already has adjustments or has already been voided.'}
             </div>
             <div className="mt-2">
               {refundState.canRefund
                 ? 'Refund and exchange actions are still available for remaining quantities.'
-                : 'No refundable quantity is left on this sale.'}
+                : sale.isCreditSale
+                  ? 'Refund and exchange actions are disabled for credit sales in this pass.'
+                  : 'No refundable quantity is left on this sale.'}
             </div>
           </div>
         </Card>

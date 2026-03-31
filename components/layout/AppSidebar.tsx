@@ -22,6 +22,7 @@ type IconName =
   | 'stock-counts'
   | 'products'
   | 'categories'
+  | 'customers'
   | 'inventory'
   | 'suppliers'
   | 'purchases'
@@ -157,6 +158,13 @@ const sections: Array<{ title: string; links: NavLink[] }> = [
         minRole: 'MANAGER'
       },
       {
+        href: '/customers',
+        label: 'Customers',
+        description: 'Track customer history, loyalty, and receivables.',
+        icon: 'customers',
+        minRole: 'MANAGER'
+      },
+      {
         href: '/suppliers',
         label: 'Suppliers',
         description: 'Maintain vendor relationships and details.',
@@ -267,6 +275,15 @@ function SidebarIcon({ name, active = false }: { name: IconName; active?: boolea
           <path d="M13 7h7v5h-7z" />
           <path d="M4 14h7v5H4z" />
           <path d="M13 14h7v5h-7z" />
+        </svg>
+      );
+    case 'customers':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={`${common} ${color}`}>
+          <path d="M5 19v-1a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v1" />
+          <path d="M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" />
+          <path d="M19 8h2" />
+          <path d="M20 7v2" />
         </svg>
       );
     case 'inventory':

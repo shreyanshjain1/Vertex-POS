@@ -19,6 +19,7 @@ export default async function PrintReceiptPage({
       where: { id, shopId },
       include: {
         items: true,
+        customerCreditLedger: true,
         payments: {
           orderBy: { createdAt: 'asc' }
         }
@@ -41,7 +42,9 @@ export default async function PrintReceiptPage({
         referenceNumber: payment.referenceNumber,
         createdAt: payment.createdAt.toISOString()
       }))
-    : [
+    : sale.isCreditSale
+      ? []
+      : [
         {
           id: `legacy-${sale.id}`,
           method: sale.paymentMethod,
@@ -79,6 +82,11 @@ export default async function PrintReceiptPage({
           cashierName: sale.cashierName,
           customerName: sale.customerName,
           customerPhone: sale.customerPhone,
+          isCreditSale: sale.isCreditSale,
+          creditDueDate: sale.customerCreditLedger?.dueDate.toISOString() ?? null,
+          loyaltyPointsEarned: sale.loyaltyPointsEarned,
+          loyaltyPointsRedeemed: sale.loyaltyPointsRedeemed,
+          loyaltyDiscountAmount: sale.loyaltyDiscountAmount.toString(),
           subtotal: sale.subtotal.toString(),
           taxAmount: sale.taxAmount.toString(),
           discountAmount: sale.discountAmount.toString(),
