@@ -31,6 +31,7 @@ enum ShopType {
 
 enum InventoryMovementType {
   PURCHASE_RECEIVED
+  SUPPLIER_RETURN_POSTED
   SALE_COMPLETED
   SALE_VOIDED
   RETURN_RESTOCKED
@@ -59,6 +60,32 @@ enum PayableStatus {
   PARTIALLY_PAID
   PAID
   OVERDUE
+}
+
+enum SupplierReturnStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+}
+
+enum SupplierReturnReason {
+  DAMAGED_FROM_SUPPLIER
+  WRONG_ITEM
+  OVER_DELIVERY
+  EXPIRED_ON_RECEIPT
+  QUALITY_ISSUE
+}
+
+enum SupplierReturnDisposition {
+  SELLABLE
+  DAMAGED
+  EXPIRED
+}
+
+enum SupplierCreditMemoStatus {
+  PENDING
+  ISSUED
+  APPLIED
 }
 
 enum NotificationType {
@@ -141,6 +168,8 @@ model User {
   createdStockCounts       StockCount[]          @relation("StockCountCreatedBy")
   approvedStockCounts      StockCount[]          @relation("StockCountApprovedBy")
   receivedPurchaseReceipts PurchaseReceipt[]     @relation("PurchaseReceiptReceivedBy")
+  createdSupplierReturns   SupplierReturn[]      @relation("SupplierReturnCreatedBy")
+  approvedSupplierReturns  SupplierReturn[]      @relation("SupplierReturnApprovedBy")
   createdSupplierPayments  SupplierPayment[]     @relation("SupplierPaymentCreatedBy")
   productPriceChanges      ProductPriceHistory[]
   productCostChanges       ProductCostHistory[]
@@ -180,6 +209,7 @@ model Shop {
   stockCounts            StockCount[]
   parkedSales            ParkedSale[]
   suppliers              Supplier[]
+  supplierReturns        SupplierReturn[]
   purchases              PurchaseOrder[]
   purchaseReceipts       PurchaseReceipt[]
   supplierInvoices       SupplierInvoice[]
@@ -271,6 +301,7 @@ model Product {
   batches              ProductBatch[]
   purchaseItems        PurchaseItem[]
   purchaseReceiptItems PurchaseReceiptItem[]
+  supplierReturnItems  SupplierReturnItem[]
   inventoryMoves       InventoryMovement[]
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
@@ -677,21 +708,22 @@ model ProductImage {
 }
 
 model Supplier {
-  id             String                 @id @default(cuid())
-  shopId         String
-  name           String
-  contactName    String?
-  email          String?
-  phone          String?
-  address        String?
-  notes          String?
-  isActive       Boolean                @default(true)
-  shop           Shop                   @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  purchases      PurchaseOrder[]
-  invoices       SupplierInvoice[]
-  payableEntries AccountsPayableEntry[]
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
+  id              String                 @id @default(cuid())
+  shopId          String
+  name            String
+  contactName     String?
+  email           String?
+  phone           String?
+  address         String?
+  notes           String?
+  isActive        Boolean                @default(true)
+  shop            Shop                   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  purchases       PurchaseOrder[]
+  supplierReturns SupplierReturn[]
+  invoices        SupplierInvoice[]
+  payableEntries  AccountsPayableEntry[]
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
 
   @@unique([shopId, name])
   @@index([shopId])
@@ -772,6 +804,52 @@ model PurchaseReceiptItem {
 
   @@unique([purchaseReceiptId, purchaseItemId])
   @@index([purchaseItemId, createdAt])
+  @@index([productId, createdAt])
+}
+
+model SupplierReturn {
+  id               String                   @id @default(cuid())
+  shopId           String
+  supplierId       String
+  createdByUserId  String
+  approvedByUserId String?
+  status           SupplierReturnStatus     @default(DRAFT)
+  returnNumber     String
+  reasonSummary    String
+  notes            String?
+  creditMemoNumber String?
+  creditMemoDate   DateTime?
+  creditAmount     Decimal                  @default(0) @db.Decimal(12, 2)
+  creditMemoStatus SupplierCreditMemoStatus @default(PENDING)
+  postedAt         DateTime?
+  shop             Shop                     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  supplier         Supplier                 @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  createdByUser    User                     @relation("SupplierReturnCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  approvedByUser   User?                    @relation("SupplierReturnApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  items            SupplierReturnItem[]
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  @@unique([shopId, returnNumber])
+  @@index([shopId, status, createdAt])
+  @@index([supplierId, status, createdAt])
+}
+
+model SupplierReturnItem {
+  id                  String                    @id @default(cuid())
+  supplierReturnId    String
+  productId           String
+  productNameSnapshot String
+  qty                 Int
+  unitCost            Decimal                   @db.Decimal(12, 2)
+  lineTotal           Decimal                   @db.Decimal(12, 2)
+  reason              SupplierReturnReason
+  disposition         SupplierReturnDisposition
+  supplierReturn      SupplierReturn            @relation(fields: [supplierReturnId], references: [id], onDelete: Cascade)
+  product             Product                   @relation(fields: [productId], references: [id], onDelete: Restrict)
+  createdAt           DateTime                  @default(now())
+
+  @@index([supplierReturnId, createdAt])
   @@index([productId, createdAt])
 }
 
