@@ -196,37 +196,43 @@ enum StockTransferStatus {
 }
 
 model User {
-  id                        String                @id @default(cuid())
-  email                     String                @unique
+  id                        String                   @id @default(cuid())
+  email                     String                   @unique
   name                      String?
   passwordHash              String
+  failedLoginAttempts       Int                      @default(0)
+  lockedUntil               DateTime?
+  emailVerifiedAt           DateTime?
+  forcePasswordReset        Boolean                  @default(false)
+  lastLoginAt               DateTime?
   defaultShopId             String?
-  defaultShop               Shop?                 @relation("DefaultShop", fields: [defaultShopId], references: [id], onDelete: SetNull)
-  ownedShops                Shop[]                @relation("ShopOwner")
+  defaultShop               Shop?                    @relation("DefaultShop", fields: [defaultShopId], references: [id], onDelete: SetNull)
+  ownedShops                Shop[]                   @relation("ShopOwner")
   memberships               UserShop[]
-  cashierSales              Sale[]                @relation("CashierUser")
-  createdSaleAdjustments    SaleAdjustment[]      @relation("SaleAdjustmentCreatedBy")
-  approvedSaleAdjustments   SaleAdjustment[]      @relation("SaleAdjustmentApprovedBy")
-  createdStockCounts        StockCount[]          @relation("StockCountCreatedBy")
-  approvedStockCounts       StockCount[]          @relation("StockCountApprovedBy")
-  receivedPurchaseReceipts  PurchaseReceipt[]     @relation("PurchaseReceiptReceivedBy")
-  createdSupplierReturns    SupplierReturn[]      @relation("SupplierReturnCreatedBy")
-  approvedSupplierReturns   SupplierReturn[]      @relation("SupplierReturnApprovedBy")
-  createdStockTransfers     StockTransfer[]       @relation("StockTransferCreatedBy")
-  receivedStockTransfers    StockTransfer[]       @relation("StockTransferReceivedBy")
-  createdSupplierPayments   SupplierPayment[]     @relation("SupplierPaymentCreatedBy")
-  createdReceivablePayments ReceivablePayment[]   @relation("ReceivablePaymentCreatedBy")
+  cashierSales              Sale[]                   @relation("CashierUser")
+  createdSaleAdjustments    SaleAdjustment[]         @relation("SaleAdjustmentCreatedBy")
+  approvedSaleAdjustments   SaleAdjustment[]         @relation("SaleAdjustmentApprovedBy")
+  createdStockCounts        StockCount[]             @relation("StockCountCreatedBy")
+  approvedStockCounts       StockCount[]             @relation("StockCountApprovedBy")
+  receivedPurchaseReceipts  PurchaseReceipt[]        @relation("PurchaseReceiptReceivedBy")
+  createdSupplierReturns    SupplierReturn[]         @relation("SupplierReturnCreatedBy")
+  approvedSupplierReturns   SupplierReturn[]         @relation("SupplierReturnApprovedBy")
+  createdStockTransfers     StockTransfer[]          @relation("StockTransferCreatedBy")
+  receivedStockTransfers    StockTransfer[]          @relation("StockTransferReceivedBy")
+  createdSupplierPayments   SupplierPayment[]        @relation("SupplierPaymentCreatedBy")
+  createdReceivablePayments ReceivablePayment[]      @relation("ReceivablePaymentCreatedBy")
   productPriceChanges       ProductPriceHistory[]
   productCostChanges        ProductCostHistory[]
   cashSessions              CashSession[]
   parkedSales               ParkedSale[]
   activities                ActivityLog[]
   authAuditLogs             AuthAuditLog[]
-  passwordResetTokens       PasswordResetToken[]  @relation("PasswordResetTokenUser")
-  resetTokensCreated        PasswordResetToken[]  @relation("PasswordResetTokenCreatedBy")
-  jobsCreated               WorkerJob[]           @relation("WorkerJobCreatedBy")
-  createdAt                 DateTime              @default(now())
-  updatedAt                 DateTime              @updatedAt
+  emailVerificationTokens   EmailVerificationToken[]
+  passwordResetTokens       PasswordResetToken[]     @relation("PasswordResetTokenUser")
+  resetTokensCreated        PasswordResetToken[]     @relation("PasswordResetTokenCreatedBy")
+  jobsCreated               WorkerJob[]              @relation("WorkerJobCreatedBy")
+  createdAt                 DateTime                 @default(now())
+  updatedAt                 DateTime                 @updatedAt
 
   @@index([defaultShopId])
 }
@@ -283,16 +289,17 @@ model Shop {
 }
 
 model UserShop {
-  id           String    @id @default(cuid())
-  userId       String
-  shopId       String
-  role         ShopRole  @default(CASHIER)
-  isActive     Boolean   @default(true)
-  assignedAt   DateTime  @default(now())
-  disabledAt   DateTime?
-  staffPinHash String?
-  pinSetAt     DateTime?
-  createdAt    DateTime  @default(now())
+  id                String    @id @default(cuid())
+  userId            String
+  shopId            String
+  role              ShopRole  @default(CASHIER)
+  customPermissions Json?
+  isActive          Boolean   @default(true)
+  assignedAt        DateTime  @default(now())
+  disabledAt        DateTime?
+  staffPinHash      String?
+  pinSetAt          DateTime?
+  createdAt         DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
@@ -1170,6 +1177,19 @@ model PasswordResetToken {
 
   @@index([userId, createdAt])
   @@index([shopId, createdAt])
+  @@index([expiresAt])
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
   @@index([expiresAt])
 }
 
