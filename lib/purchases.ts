@@ -22,10 +22,10 @@ export type ManualPurchaseStatus = (typeof MANUAL_PURCHASE_STATUS_OPTIONS)[numbe
 export type Tone = 'stone' | 'emerald' | 'amber' | 'red' | 'blue';
 
 const PURCHASE_STATUS_LABELS: Record<PurchaseLifecycleStatus, string> = {
-  DRAFT: 'Draft',
-  SENT: 'Sent',
+  DRAFT: 'Awaiting send',
+  SENT: 'Order sent',
   PARTIALLY_RECEIVED: 'Partially received',
-  FULLY_RECEIVED: 'Fully received',
+  FULLY_RECEIVED: 'Received in full',
   CANCELLED: 'Cancelled',
   CLOSED: 'Closed'
 };

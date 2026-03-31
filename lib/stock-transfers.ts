@@ -4,9 +4,9 @@ export type StockTransferStatusValue = (typeof STOCK_TRANSFER_STATUS_OPTIONS)[nu
 export type StockTransferTone = 'stone' | 'emerald' | 'amber' | 'red' | 'blue';
 
 const STOCK_TRANSFER_STATUS_LABELS: Record<StockTransferStatusValue, string> = {
-  DRAFT: 'Draft',
-  IN_TRANSIT: 'In transit',
-  RECEIVED: 'Received',
+  DRAFT: 'Pending dispatch',
+  IN_TRANSIT: 'Sent to destination',
+  RECEIVED: 'Received by destination',
   CANCELLED: 'Cancelled'
 };
 
