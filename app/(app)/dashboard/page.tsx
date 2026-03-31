@@ -18,7 +18,7 @@ function pluralize(count: number, singular: string, plural = `${singular}s`) {
 }
 
 export default async function DashboardPage() {
-  const { shopId, shop, role } = await getActiveShopContext();
+  const { shopId, shop, role, userId } = await getActiveShopContext();
   const settings = await prisma.shopSetting.findUnique({ where: { shopId } });
   const now = new Date();
   const todayStart = new Date(now);
@@ -37,7 +37,8 @@ export default async function DashboardPage() {
     weeklySales,
     weeklyRefunds,
     pendingPurchases,
-    recentMovements
+    recentMovements,
+    recentAuthEvents
   ] = await Promise.all([
     prisma.product.count({ where: { shopId, isActive: true } }),
     prisma.product.count({
@@ -98,6 +99,11 @@ export default async function DashboardPage() {
           }
         }
       },
+      orderBy: { createdAt: 'desc' },
+      take: 6
+    }),
+    prisma.authAuditLog.findMany({
+      where: { userId },
       orderBy: { createdAt: 'desc' },
       take: 6
     })
@@ -274,6 +280,35 @@ export default async function DashboardPage() {
           ) : (
             <div className="rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-5 text-sm text-stone-500">
               No stock movement has been recorded yet.
+            </div>
+          )}
+        </div>
+      </Card>
+
+      <Card>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">Session watch</div>
+            <h2 className="mt-2 text-2xl font-black text-stone-950">Recent device and session events</h2>
+          </div>
+        </div>
+
+        <div className="mt-5 space-y-3">
+          {recentAuthEvents.length ? (
+            recentAuthEvents.map((event) => (
+              <div key={event.id} className="flex items-center justify-between rounded-[24px] border border-stone-200 bg-white p-4">
+                <div>
+                  <div className="font-semibold text-stone-900">{event.action.replaceAll('_', ' ')}</div>
+                  <div className="mt-1 text-sm text-stone-500">
+                    {dateTime(event.createdAt)} / {event.ipAddress ?? 'IP unavailable'}
+                  </div>
+                </div>
+                <div className="max-w-md text-right text-xs text-stone-500">{event.userAgent ?? 'User agent unavailable'}</div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-5 text-sm text-stone-500">
+              No recent authentication events were recorded for this account yet.
             </div>
           )}
         </div>

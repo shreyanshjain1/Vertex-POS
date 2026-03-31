@@ -6,11 +6,13 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import { useMemo, useState } from 'react';
+import type { PermissionKey, PermissionState } from '@/lib/permissions';
 
 type SidebarProps = {
   shopName: string;
   shopType: string;
   role: ShopRole;
+  permissions: PermissionState;
   activeShopId: string;
   availableShops: Array<{
     id: string;
@@ -45,6 +47,7 @@ type NavLink = {
   description: string;
   icon: IconName;
   minRole: ShopRole;
+  requiredPermission?: PermissionKey;
 };
 
 const ROLE_WEIGHT: Record<ShopRole, number> = {
@@ -123,7 +126,8 @@ const sections: Array<{ title: string; links: NavLink[] }> = [
         label: 'Inventory',
         description: 'Track stock levels and adjustments.',
         icon: 'inventory',
-        minRole: 'MANAGER'
+        minRole: 'MANAGER',
+        requiredPermission: 'ADJUST_INVENTORY'
       },
       {
         href: '/transfers',
@@ -151,7 +155,8 @@ const sections: Array<{ title: string; links: NavLink[] }> = [
         label: 'Staff',
         description: 'Manage employees, roles, and access.',
         icon: 'staff',
-        minRole: 'ADMIN'
+        minRole: 'ADMIN',
+        requiredPermission: 'MANAGE_STAFF'
       }
     ]
   },
@@ -196,7 +201,8 @@ const sections: Array<{ title: string; links: NavLink[] }> = [
         label: 'Reports',
         description: 'Owner reporting for sales, stock, profit, and cashier controls.',
         icon: 'reports',
-        minRole: 'ADMIN'
+        minRole: 'ADMIN',
+        requiredPermission: 'VIEW_REPORTS'
       },
       {
         href: '/settings',
@@ -373,6 +379,7 @@ export default function AppSidebar({
   shopName,
   shopType,
   role,
+  permissions,
   activeShopId,
   availableShops
 }: SidebarProps) {
@@ -389,10 +396,14 @@ export default function AppSidebar({
       sections
         .map((section) => ({
           ...section,
-          links: section.links.filter((link) => ROLE_WEIGHT[role] >= ROLE_WEIGHT[link.minRole])
+          links: section.links.filter(
+            (link) =>
+              ROLE_WEIGHT[role] >= ROLE_WEIGHT[link.minRole] &&
+              (!link.requiredPermission || permissions[link.requiredPermission])
+          )
         }))
         .filter((section) => section.links.length > 0),
-    [role]
+    [permissions, role]
   );
 
   const activeLink = visibleSections

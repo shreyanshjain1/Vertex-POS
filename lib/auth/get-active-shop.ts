@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
+import { getEffectivePermissionState } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 
 type GuardMode = 'redirect' | 'throw';
@@ -87,9 +88,12 @@ async function resolveActiveShopContext(mode: GuardMode) {
 
   return {
     session,
+    membershipId: membership.id,
     shopId: membership.shopId,
     shop: membership.shop,
     role: membership.role,
+    customPermissions: membership.customPermissions,
+    permissions: getEffectivePermissionState(membership.role, membership.customPermissions),
     userId: session.user.id
   };
 }

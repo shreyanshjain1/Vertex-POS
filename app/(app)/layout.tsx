@@ -4,7 +4,7 @@ import CommandPalette from '@/components/layout/CommandPalette';
 import { prisma } from '@/lib/prisma';
 
 export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
-  const { shop, role, userId } = await getActiveShopContext();
+  const { shop, role, userId, permissions } = await getActiveShopContext();
   const memberships = await prisma.userShop.findMany({
     where: {
       userId,
@@ -30,6 +30,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
           shopName={shop.name}
           shopType={shop.posType}
           role={role}
+          permissions={permissions}
           activeShopId={shop.id}
           availableShops={memberships.map((membership) => ({
             id: membership.shop.id,
