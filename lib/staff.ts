@@ -1,54 +1,82 @@
 import { Prisma, ShopRole } from '@prisma/client';
+import { hasPermission as membershipHasPermission } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 
 export const STAFF_LOGIN_ACTION = 'LOGIN_SUCCESS';
 
 export async function getManagedShops(userId: string) {
-  return prisma.shop.findMany({
-    where: {
-      OR: [
-        { ownerId: userId },
-        {
-          memberships: {
-            some: {
-              userId,
-              role: 'ADMIN',
-              isActive: true
-            }
+  const [ownedShops, memberships] = await Promise.all([
+    prisma.shop.findMany({
+      where: { ownerId: userId },
+      select: {
+        id: true,
+        name: true,
+        slug: true
+      },
+      orderBy: { name: 'asc' }
+    }),
+    prisma.userShop.findMany({
+      where: {
+        userId,
+        isActive: true
+      },
+      select: {
+        role: true,
+        customPermissions: true,
+        shop: {
+          select: {
+            id: true,
+            name: true,
+            slug: true
           }
         }
-      ]
-    },
-    select: {
-      id: true,
-      name: true,
-      slug: true
-    },
-    orderBy: { name: 'asc' }
-  });
+      },
+      orderBy: { assignedAt: 'asc' }
+    })
+  ]);
+
+  const managedMembershipShops = memberships
+    .filter((membership) => membershipHasPermission(membership.role, membership.customPermissions, 'MANAGE_STAFF'))
+    .map((membership) => membership.shop);
+
+  const deduped = new Map<string, { id: string; name: string; slug: string }>();
+
+  for (const shop of [...ownedShops, ...managedMembershipShops]) {
+    deduped.set(shop.id, shop);
+  }
+
+  return [...deduped.values()].sort((left, right) => left.name.localeCompare(right.name));
 }
 
 export async function assertManagedShopAccess(userId: string, shopId: string) {
-  const shop = await prisma.shop.findFirst({
-    where: {
-      id: shopId,
-      OR: [
-        { ownerId: userId },
-        {
-          memberships: {
-            some: {
-              userId,
-              role: 'ADMIN',
-              isActive: true
-            }
-          }
-        }
-      ]
-    },
-    select: { id: true }
-  });
+  const [ownedShop, membership] = await Promise.all([
+    prisma.shop.findFirst({
+      where: {
+        id: shopId,
+        ownerId: userId
+      },
+      select: { id: true }
+    }),
+    prisma.userShop.findFirst({
+      where: {
+        userId,
+        shopId,
+        isActive: true
+      },
+      select: {
+        role: true,
+        customPermissions: true
+      }
+    })
+  ]);
 
-  return Boolean(shop);
+  if (ownedShop) {
+    return true;
+  }
+
+  return Boolean(
+    membership && membershipHasPermission(membership.role, membership.customPermissions, 'MANAGE_STAFF')
+  );
 }
 
 export function formatRoleLabel(role: ShopRole) {

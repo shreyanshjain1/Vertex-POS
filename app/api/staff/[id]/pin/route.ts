@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireRole } from '@/lib/authz';
+import { requirePermission } from '@/lib/authz';
 import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
 import { hashPassword } from '@/lib/auth/password';
@@ -13,7 +13,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const { userId } = await requireRole('ADMIN');
+    const { userId } = await requirePermission('MANAGE_STAFF');
     const body = await request.json();
     const parsed = staffPinSchema.safeParse(body);
 

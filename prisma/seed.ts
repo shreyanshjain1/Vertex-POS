@@ -31,20 +31,50 @@ async function main() {
 
   const owner = await prisma.user.upsert({
     where: { email: 'owner@vertexpos.local' },
-    update: {},
-    create: { email: 'owner@vertexpos.local', name: 'Store Owner', passwordHash }
+    update: {
+      emailVerifiedAt: new Date(),
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+      forcePasswordReset: false
+    },
+    create: {
+      email: 'owner@vertexpos.local',
+      name: 'Store Owner',
+      passwordHash,
+      emailVerifiedAt: new Date()
+    }
   });
 
   const manager = await prisma.user.upsert({
     where: { email: 'manager@vertexpos.local' },
-    update: {},
-    create: { email: 'manager@vertexpos.local', name: 'Store Manager', passwordHash }
+    update: {
+      emailVerifiedAt: new Date(),
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+      forcePasswordReset: false
+    },
+    create: {
+      email: 'manager@vertexpos.local',
+      name: 'Store Manager',
+      passwordHash,
+      emailVerifiedAt: new Date()
+    }
   });
 
   const cashier = await prisma.user.upsert({
     where: { email: 'cashier@vertexpos.local' },
-    update: {},
-    create: { email: 'cashier@vertexpos.local', name: 'Main Cashier', passwordHash }
+    update: {
+      emailVerifiedAt: new Date(),
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+      forcePasswordReset: false
+    },
+    create: {
+      email: 'cashier@vertexpos.local',
+      name: 'Main Cashier',
+      passwordHash,
+      emailVerifiedAt: new Date()
+    }
   });
 
   const existing = await prisma.shop.findFirst({ where: { ownerId: owner.id } });

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireRole } from '@/lib/authz';
+import { requirePermission } from '@/lib/authz';
 import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
 import { logAuthAudit } from '@/lib/auth/audit';
@@ -14,7 +14,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const { userId } = await requireRole('ADMIN');
+    const { userId } = await requirePermission('MANAGE_STAFF');
     const body = await request.json().catch(() => ({}));
     const parsed = passwordResetGenerateSchema.safeParse(body);
 
@@ -75,6 +75,15 @@ export async function POST(
           createdById: userId,
           tokenHash,
           expiresAt
+        }
+      });
+
+      await tx.user.update({
+        where: { id: membership.userId },
+        data: {
+          forcePasswordReset: true,
+          failedLoginAttempts: 0,
+          lockedUntil: null
         }
       });
 

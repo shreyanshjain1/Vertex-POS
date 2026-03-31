@@ -1,8 +1,10 @@
+import { Prisma } from '@prisma/client';
 import { NextResponse } from 'next/server';
-import { requireRole } from '@/lib/authz';
+import { requirePermission } from '@/lib/authz';
 import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
 import { staffUpdateSchema } from '@/lib/auth/validation';
+import { normalizePermissionOverride } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { serializeStaffListItem } from '@/lib/serializers/staff';
 import {
@@ -17,7 +19,7 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const { userId, shopId: activeShopId } = await requireRole('ADMIN');
+    const { userId, shopId: activeShopId } = await requirePermission('MANAGE_STAFF');
     const body = await request.json();
     const parsed = staffUpdateSchema.safeParse(body);
 
@@ -93,6 +95,11 @@ export async function PATCH(
       }
     }
 
+    const nextCustomPermissions = normalizePermissionOverride(
+      parsed.data.role,
+      parsed.data.customPermissions ?? []
+    );
+
     const removesLastActiveAdmin =
       existing.role === 'ADMIN' &&
       existing.isActive &&
@@ -119,6 +126,8 @@ export async function PATCH(
           role: parsed.data.role,
           shopId: parsed.data.shopId,
           isActive: parsed.data.isActive,
+          customPermissions:
+            nextCustomPermissions === null ? Prisma.DbNull : nextCustomPermissions,
           assignedAt: parsed.data.shopId !== existing.shopId ? now : existing.assignedAt,
           disabledAt: parsed.data.isActive ? null : now,
           ...(parsed.data.role !== 'CASHIER'
@@ -208,10 +217,33 @@ export async function PATCH(
         });
       }
 
+      const previousPermissions = Array.isArray(existing.customPermissions)
+        ? existing.customPermissions
+        : [];
+      const permissionsChanged =
+        JSON.stringify(previousPermissions) !== JSON.stringify(nextCustomPermissions ?? []);
+
+      if (permissionsChanged) {
+        await logActivity({
+          tx,
+          shopId: membership.shopId,
+          userId,
+          action: 'STAFF_PERMISSIONS_CHANGED',
+          entityType: 'UserShop',
+          entityId: membership.id,
+          description: `Updated permissions for ${membership.user.name ?? membership.user.email}.`,
+          metadata: {
+            previousPermissions,
+            nextPermissions: nextCustomPermissions ?? []
+          }
+        });
+      }
+
       if (
         parsed.data.shopId === existing.shopId &&
         parsed.data.role === existing.role &&
-        parsed.data.isActive === existing.isActive
+        parsed.data.isActive === existing.isActive &&
+        !permissionsChanged
       ) {
         await logActivity({
           tx,

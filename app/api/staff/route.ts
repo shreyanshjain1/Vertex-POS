@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireRole } from '@/lib/authz';
+import { requirePermission } from '@/lib/authz';
 import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
 import { hashPassword } from '@/lib/auth/password';
@@ -10,7 +10,7 @@ import { assertManagedShopAccess, getManagedShops } from '@/lib/staff';
 
 export async function GET(request: Request) {
   try {
-    const { userId } = await requireRole('ADMIN');
+    const { userId } = await requirePermission('MANAGE_STAFF');
     const url = new URL(request.url);
     const query = url.searchParams.get('query')?.trim() ?? '';
     const role = url.searchParams.get('role')?.trim() ?? '';
@@ -100,7 +100,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { userId } = await requireRole('ADMIN');
+    const { userId } = await requirePermission('MANAGE_STAFF');
     const body = await request.json();
     const parsed = staffCreateSchema.safeParse(body);
 
@@ -136,6 +136,7 @@ export async function POST(request: Request) {
           name: parsed.data.name.trim(),
           email: parsed.data.email,
           passwordHash,
+          emailVerifiedAt: new Date(),
           defaultShopId: parsed.data.shopId
         }
       });

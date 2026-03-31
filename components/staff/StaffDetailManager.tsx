@@ -6,6 +6,13 @@ import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
 import { dateTime, shortDate } from '@/lib/format';
+import {
+  getDefaultPermissionList,
+  PERMISSION_DESCRIPTIONS,
+  PERMISSION_KEYS,
+  PERMISSION_LABELS,
+  type PermissionKey
+} from '@/lib/permissions';
 import { SerializedAuthAuditLog } from '@/lib/serializers/staff';
 
 type ManagedShop = {
@@ -27,9 +34,13 @@ type StaffDetail = {
   assignedAt: string;
   disabledAt: string | null;
   lastLogin: string | null;
+  customPermissions: PermissionKey[];
   authActivity: SerializedAuthAuditLog[];
   hasPin: boolean;
   pinSetAt: string | null;
+  emailVerifiedAt: string | null;
+  forcePasswordReset: boolean;
+  lockedUntil: string | null;
 };
 
 const selectClassName =
@@ -47,6 +58,14 @@ function authTone(action: string) {
   return 'amber';
 }
 
+function getPermissionDraft(role: StaffDetail['role'], customPermissions: PermissionKey[]) {
+  return customPermissions.length ? customPermissions : getDefaultPermissionList(role);
+}
+
+function isLocked(lockedUntil: string | null) {
+  return Boolean(lockedUntil && new Date(lockedUntil) > new Date());
+}
+
 export default function StaffDetailManager({
   initialStaff,
   shops
@@ -58,7 +77,8 @@ export default function StaffDetailManager({
   const [assignment, setAssignment] = useState({
     role: initialStaff.role,
     shopId: initialStaff.shopId,
-    isActive: initialStaff.isActive
+    isActive: initialStaff.isActive,
+    customPermissions: getPermissionDraft(initialStaff.role, initialStaff.customPermissions)
   });
   const [pin, setPin] = useState('');
   const [resetUrl, setResetUrl] = useState('');
@@ -102,7 +122,8 @@ export default function StaffDetailManager({
     setAssignment({
       role: data.item.role,
       shopId: data.item.shopId,
-      isActive: data.item.isActive
+      isActive: data.item.isActive,
+      customPermissions: getPermissionDraft(data.item.role, data.item.customPermissions ?? [])
     });
     setAssignmentSuccess('Staff assignment updated successfully.');
   }
@@ -128,6 +149,11 @@ export default function StaffDetailManager({
 
     setResetUrl(data.resetUrl);
     setResetExpiresAt(data.expiresAt);
+    setStaff((current) => ({
+      ...current,
+      forcePasswordReset: true,
+      lockedUntil: null
+    }));
     setResetSuccess('Password reset link generated. Share it securely with the staff member.');
   }
 
@@ -168,6 +194,17 @@ export default function StaffDetailManager({
     setPinSuccess(data.hasPin ? 'Cashier PIN saved securely.' : 'Cashier PIN cleared.');
   }
 
+  function togglePermission(permission: PermissionKey) {
+    setAssignment((current) => ({
+      ...current,
+      customPermissions: current.customPermissions.includes(permission)
+        ? current.customPermissions.filter((entry) => entry !== permission)
+        : [...current.customPermissions, permission]
+    }));
+  }
+
+  const currentlyLocked = isLocked(staff.lockedUntil);
+
   return (
     <div className="space-y-6">
       <Card>
@@ -184,6 +221,9 @@ export default function StaffDetailManager({
                 {staff.role}
               </Badge>
               <Badge tone="stone">{staff.shopName}</Badge>
+              <Badge tone={staff.emailVerifiedAt ? 'emerald' : 'amber'}>
+                {staff.emailVerifiedAt ? 'Email verified' : 'Email unverified'}
+              </Badge>
             </div>
           </div>
 
@@ -200,6 +240,19 @@ export default function StaffDetailManager({
               </div>
               <div className="mt-1 text-sm text-stone-500">
                 {staff.disabledAt ? `Disabled ${dateTime(staff.disabledAt)}` : 'Current assignment is live.'}
+              </div>
+            </div>
+            <div className="rounded-[24px] border border-stone-200 bg-stone-50 px-4 py-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Security state</div>
+              <div className="mt-2 text-lg font-black text-stone-950">
+                {currentlyLocked ? 'Temporarily locked' : staff.forcePasswordReset ? 'Reset required' : 'Healthy'}
+              </div>
+              <div className="mt-1 text-sm text-stone-500">
+                {currentlyLocked
+                  ? `Unlocks ${dateTime(staff.lockedUntil!)}`
+                  : staff.forcePasswordReset
+                    ? 'Next sign-in requires an admin-issued reset.'
+                    : 'No active lockout or forced reset flag.'}
               </div>
             </div>
           </div>
@@ -224,7 +277,8 @@ export default function StaffDetailManager({
                   onChange={(event) =>
                     setAssignment((current) => ({
                       ...current,
-                      role: event.target.value as StaffDetail['role']
+                      role: event.target.value as StaffDetail['role'],
+                      customPermissions: getPermissionDraft(event.target.value as StaffDetail['role'], [])
                     }))
                   }
                 >
@@ -269,6 +323,28 @@ export default function StaffDetailManager({
               Staff assignment is active and can sign in to the selected shop
             </label>
 
+            <div className="rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Permission matrix</div>
+              <div className="mt-2 text-sm text-stone-600">
+                Start from the selected role defaults, then fine-tune permissions for this assignment only when needed.
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {PERMISSION_KEYS.map((permission) => (
+                  <label key={permission} className="flex items-start gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
+                    <input
+                      type="checkbox"
+                      checked={assignment.customPermissions.includes(permission)}
+                      onChange={() => togglePermission(permission)}
+                    />
+                    <span>
+                      <span className="block font-semibold text-stone-900">{PERMISSION_LABELS[permission]}</span>
+                      <span className="mt-1 block text-xs text-stone-500">{PERMISSION_DESCRIPTIONS[permission]}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
             {assignmentError ? (
               <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{assignmentError}</div>
             ) : null}
@@ -286,6 +362,16 @@ export default function StaffDetailManager({
         </Card>
 
         <div className="space-y-6">
+          <Card>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Account security</div>
+            <h3 className="mt-2 text-xl font-black text-stone-950">Verification, lockout, and reset state</h3>
+            <div className="mt-5 space-y-3 text-sm text-stone-600">
+              <div>Email verification: <span className="font-semibold text-stone-900">{staff.emailVerifiedAt ? `Verified ${dateTime(staff.emailVerifiedAt)}` : 'Not verified yet'}</span></div>
+              <div>Forced reset: <span className="font-semibold text-stone-900">{staff.forcePasswordReset ? 'Required on next access' : 'Not required'}</span></div>
+              <div>Login lockout: <span className="font-semibold text-stone-900">{currentlyLocked ? `Locked until ${dateTime(staff.lockedUntil!)}` : 'No active lockout'}</span></div>
+            </div>
+          </Card>
+
           <Card>
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Password reset</div>
             <h3 className="mt-2 text-xl font-black text-stone-950">Admin-managed reset link</h3>
@@ -378,7 +464,7 @@ export default function StaffDetailManager({
           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Auth activity</div>
           <h3 className="mt-2 text-xl font-black text-stone-950">Recent login and password events</h3>
           <p className="mt-2 text-sm text-stone-500">
-            Review successful logins, failed attempts, and password reset activity for this staff account.
+            Review successful logins, failed attempts, blocked access, and password reset activity for this staff account.
           </p>
         </div>
 

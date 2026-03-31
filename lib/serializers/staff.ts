@@ -1,4 +1,5 @@
 import { AuthAuditLog, Shop, ShopRole, User, UserShop } from '@prisma/client';
+import type { PermissionKey } from '@/lib/permissions';
 
 type StaffMembershipRecord = UserShop & {
   shop: Pick<Shop, 'id' | 'name' | 'slug'>;
@@ -20,6 +21,7 @@ export type SerializedStaffListItem = {
   assignedAt: string;
   disabledAt: string | null;
   lastLogin: string | null;
+  customPermissions: PermissionKey[];
 };
 
 export function serializeStaffListItem(record: StaffMembershipRecord): SerializedStaffListItem {
@@ -35,7 +37,10 @@ export function serializeStaffListItem(record: StaffMembershipRecord): Serialize
     isActive: record.isActive,
     assignedAt: record.assignedAt.toISOString(),
     disabledAt: record.disabledAt?.toISOString() ?? null,
-    lastLogin: record.user.authAuditLogs?.[0]?.createdAt.toISOString() ?? null
+    lastLogin: record.user.authAuditLogs?.[0]?.createdAt.toISOString() ?? null,
+    customPermissions: Array.isArray(record.customPermissions)
+      ? (record.customPermissions.filter((value): value is PermissionKey => typeof value === 'string') as PermissionKey[])
+      : []
   };
 }
 

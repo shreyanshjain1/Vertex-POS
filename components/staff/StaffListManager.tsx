@@ -88,7 +88,8 @@ export default function StaffListManager({
       body: JSON.stringify({
         role: item.role,
         shopId: item.shopId,
-        isActive: !item.isActive
+        isActive: !item.isActive,
+        customPermissions: item.customPermissions
       })
     });
 
