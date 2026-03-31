@@ -39,6 +39,8 @@ enum InventoryMovementType {
   STOCK_COUNT_POSTED
   MANUAL_ADJUSTMENT
   OPENING_STOCK
+  TRANSFER_OUT
+  TRANSFER_IN
 }
 
 enum SaleStatus {
@@ -88,6 +90,19 @@ enum SupplierCreditMemoStatus {
   APPLIED
 }
 
+enum TaxMode {
+  EXCLUSIVE
+  INCLUSIVE
+  NON_TAXABLE
+}
+
+enum PrinterConnectionType {
+  USB
+  NETWORK
+  BLUETOOTH
+  MANUAL
+}
+
 enum CustomerType {
   INDIVIDUAL
   BUSINESS
@@ -131,6 +146,7 @@ enum DocumentSequenceType {
   PURCHASE
   RETURN
   STOCK_COUNT
+  TRANSFER
 }
 
 enum StockCountStatus {
@@ -172,6 +188,13 @@ enum ParkedSaleStatus {
   EXPIRED
 }
 
+enum StockTransferStatus {
+  DRAFT
+  IN_TRANSIT
+  RECEIVED
+  CANCELLED
+}
+
 model User {
   id                        String                @id @default(cuid())
   email                     String                @unique
@@ -189,6 +212,8 @@ model User {
   receivedPurchaseReceipts  PurchaseReceipt[]     @relation("PurchaseReceiptReceivedBy")
   createdSupplierReturns    SupplierReturn[]      @relation("SupplierReturnCreatedBy")
   approvedSupplierReturns   SupplierReturn[]      @relation("SupplierReturnApprovedBy")
+  createdStockTransfers     StockTransfer[]       @relation("StockTransferCreatedBy")
+  receivedStockTransfers    StockTransfer[]       @relation("StockTransferReceivedBy")
   createdSupplierPayments   SupplierPayment[]     @relation("SupplierPaymentCreatedBy")
   createdReceivablePayments ReceivablePayment[]   @relation("ReceivablePaymentCreatedBy")
   productPriceChanges       ProductPriceHistory[]
@@ -209,6 +234,7 @@ model User {
 model Shop {
   id                     String                  @id @default(cuid())
   name                   String
+  legalBusinessName      String?
   slug                   String                  @unique
   posType                ShopType                @default(RETAIL)
   phone                  String?
@@ -234,6 +260,8 @@ model Shop {
   receivablePayments     ReceivablePayment[]
   suppliers              Supplier[]
   supplierReturns        SupplierReturn[]
+  outgoingTransfers      StockTransfer[]         @relation("StockTransferFromShop")
+  incomingTransfers      StockTransfer[]         @relation("StockTransferToShop")
   purchases              PurchaseOrder[]
   purchaseReceipts       PurchaseReceipt[]
   supplierInvoices       SupplierInvoice[]
@@ -322,39 +350,41 @@ model Customer {
 }
 
 model Product {
-  id                   String                 @id @default(cuid())
-  shopId               String
-  categoryId           String?
-  baseUnitOfMeasureId  String
-  sku                  String?
-  barcode              String?
-  name                 String
-  description          String?
-  cost                 Decimal                @db.Decimal(12, 2)
-  price                Decimal                @db.Decimal(12, 2)
-  stockQty             Int                    @default(0)
-  reorderPoint         Int                    @default(5)
-  trackBatches         Boolean                @default(false)
-  trackExpiry          Boolean                @default(false)
-  isActive             Boolean                @default(true)
-  category             Category?              @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  baseUnitOfMeasure    UnitOfMeasure          @relation("ProductBaseUnit", fields: [baseUnitOfMeasureId], references: [id], onDelete: Restrict)
-  shop                 Shop                   @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  uomConversions       ProductUomConversion[]
-  variants             ProductVariant[]
-  priceHistory         ProductPriceHistory[]
-  costHistory          ProductCostHistory[]
-  images               ProductImage[]
-  saleItems            SaleItem[]
-  adjustmentItems      SaleAdjustmentItem[]
-  stockCountItems      StockCountItem[]
-  batches              ProductBatch[]
-  purchaseItems        PurchaseItem[]
-  purchaseReceiptItems PurchaseReceiptItem[]
-  supplierReturnItems  SupplierReturnItem[]
-  inventoryMoves       InventoryMovement[]
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
+  id                    String                 @id @default(cuid())
+  shopId                String
+  categoryId            String?
+  baseUnitOfMeasureId   String
+  sku                   String?
+  barcode               String?
+  name                  String
+  description           String?
+  cost                  Decimal                @db.Decimal(12, 2)
+  price                 Decimal                @db.Decimal(12, 2)
+  stockQty              Int                    @default(0)
+  reorderPoint          Int                    @default(5)
+  trackBatches          Boolean                @default(false)
+  trackExpiry           Boolean                @default(false)
+  isActive              Boolean                @default(true)
+  category              Category?              @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  baseUnitOfMeasure     UnitOfMeasure          @relation("ProductBaseUnit", fields: [baseUnitOfMeasureId], references: [id], onDelete: Restrict)
+  shop                  Shop                   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  uomConversions        ProductUomConversion[]
+  variants              ProductVariant[]
+  priceHistory          ProductPriceHistory[]
+  costHistory           ProductCostHistory[]
+  images                ProductImage[]
+  saleItems             SaleItem[]
+  adjustmentItems       SaleAdjustmentItem[]
+  stockCountItems       StockCountItem[]
+  batches               ProductBatch[]
+  purchaseItems         PurchaseItem[]
+  purchaseReceiptItems  PurchaseReceiptItem[]
+  supplierReturnItems   SupplierReturnItem[]
+  outgoingTransferItems StockTransferItem[]    @relation("StockTransferSourceProduct")
+  incomingTransferItems StockTransferItem[]    @relation("StockTransferDestinationProduct")
+  inventoryMoves        InventoryMovement[]
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
 
   @@unique([shopId, sku])
   @@unique([shopId, barcode])
@@ -915,6 +945,48 @@ model SupplierReturnItem {
   @@index([productId, createdAt])
 }
 
+model StockTransfer {
+  id               String              @id @default(cuid())
+  fromShopId       String
+  toShopId         String
+  createdByUserId  String
+  receivedByUserId String?
+  transferNumber   String
+  status           StockTransferStatus @default(DRAFT)
+  notes            String?
+  fromShop         Shop                @relation("StockTransferFromShop", fields: [fromShopId], references: [id], onDelete: Cascade)
+  toShop           Shop                @relation("StockTransferToShop", fields: [toShopId], references: [id], onDelete: Cascade)
+  createdByUser    User                @relation("StockTransferCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  receivedByUser   User?               @relation("StockTransferReceivedBy", fields: [receivedByUserId], references: [id], onDelete: SetNull)
+  items            StockTransferItem[]
+  sentAt           DateTime?
+  receivedAt       DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@unique([fromShopId, transferNumber])
+  @@index([fromShopId, status, createdAt])
+  @@index([toShopId, status, createdAt])
+}
+
+model StockTransferItem {
+  id                             String        @id @default(cuid())
+  stockTransferId                String
+  fromProductId                  String
+  toProductId                    String
+  productNameSnapshot            String
+  destinationProductNameSnapshot String
+  qty                            Int
+  stockTransfer                  StockTransfer @relation(fields: [stockTransferId], references: [id], onDelete: Cascade)
+  fromProduct                    Product       @relation("StockTransferSourceProduct", fields: [fromProductId], references: [id], onDelete: Restrict)
+  toProduct                      Product       @relation("StockTransferDestinationProduct", fields: [toProductId], references: [id], onDelete: Restrict)
+  createdAt                      DateTime      @default(now())
+
+  @@index([stockTransferId, createdAt])
+  @@index([fromProductId])
+  @@index([toProductId])
+}
+
 model CustomerLoyaltyLedger {
   id           String                    @id @default(cuid())
   shopId       String
@@ -1102,26 +1174,34 @@ model PasswordResetToken {
 }
 
 model ShopSetting {
-  id                    String   @id @default(cuid())
-  shopId                String   @unique
-  currencyCode          String   @default("PHP")
-  currencySymbol        String   @default("₱")
-  taxRate               Decimal  @default(0) @db.Decimal(5, 2)
+  id                    String                @id @default(cuid())
+  shopId                String                @unique
+  currencyCode          String                @default("PHP")
+  timezone              String                @default("Asia/Manila")
+  taxMode               TaxMode               @default(EXCLUSIVE)
+  currencySymbol        String                @default("₱")
+  taxRate               Decimal               @default(0) @db.Decimal(5, 2)
+  defaultPaymentMethods Json?
   receiptHeader         String?
   receiptFooter         String?
-  receiptWidth          String   @default("80mm")
-  lowStockEnabled       Boolean  @default(true)
-  lowStockThreshold     Int      @default(5)
-  batchTrackingEnabled  Boolean  @default(false)
-  expiryTrackingEnabled Boolean  @default(false)
-  fefoEnabled           Boolean  @default(false)
-  expiryAlertDays       Int      @default(30)
-  salePrefix            String   @default("SAL")
-  receiptPrefix         String   @default("RCP")
-  purchasePrefix        String   @default("PO")
-  shop                  Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  updatedAt             DateTime @updatedAt
-  createdAt             DateTime @default(now())
+  receiptWidth          String                @default("80mm")
+  printerName           String?
+  printerConnection     PrinterConnectionType @default(MANUAL)
+  barcodeScannerNotes   String?
+  lowStockEnabled       Boolean               @default(true)
+  lowStockThreshold     Int                   @default(5)
+  openingFloatRequired  Boolean               @default(true)
+  openingFloatAmount    Decimal               @default(0) @db.Decimal(12, 2)
+  batchTrackingEnabled  Boolean               @default(false)
+  expiryTrackingEnabled Boolean               @default(false)
+  fefoEnabled           Boolean               @default(false)
+  expiryAlertDays       Int                   @default(30)
+  salePrefix            String                @default("SAL")
+  receiptPrefix         String                @default("RCP")
+  purchasePrefix        String                @default("PO")
+  shop                  Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  updatedAt             DateTime              @updatedAt
+  createdAt             DateTime              @default(now())
 }
 
 model WorkerJob {
