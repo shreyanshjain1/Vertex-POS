@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { type FormEvent, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
@@ -183,6 +184,7 @@ export default function CheckoutClient({
   const [holding, setHolding] = useState(false);
   const [resumeLoadingId, setResumeLoadingId] = useState<string | null>(null);
   const [cancelLoadingId, setCancelLoadingId] = useState<string | null>(null);
+  const hasSearchFilters = Boolean(query.trim() || selectedCategory);
 
   const filtered = useMemo(() => {
     const term = query.toLowerCase().trim();
@@ -313,6 +315,10 @@ export default function CheckoutClient({
     input.focus();
     if (selectText) input.select();
   }
+
+  useEffect(() => {
+    focusScanInput();
+  }, []);
 
   function resetPayments() {
     setPayments(buildInitialPaymentLines(defaultPaymentMethods, canAcceptCash));
@@ -666,9 +672,9 @@ export default function CheckoutClient({
       <Card className="space-y-5 overflow-hidden">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">Product browser</div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">Scanner-first checkout</div>
             <h2 className="mt-2 text-2xl font-black text-stone-900">Find products</h2>
-            <p className="mt-1 text-sm text-stone-500">Search by name, variant, SKU, barcode, or category to build a reliable cart quickly.</p>
+            <p className="mt-1 text-sm text-stone-500">Scan a barcode or type a SKU to add fast, then fall back to manual search or browsing when needed.</p>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:w-auto">
             <div className="rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-3"><div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Visible</div><div className="mt-1 text-xl font-black text-stone-950">{filtered.length}</div></div>
@@ -679,10 +685,16 @@ export default function CheckoutClient({
         <div className="rounded-[24px] border border-stone-200 bg-stone-50/80 p-4">
           <div className="grid gap-3 lg:grid-cols-[minmax(0,320px)_1fr]">
             <form onSubmit={handleScanSubmit} className="flex gap-3">
-              <Input ref={scanInputRef} placeholder="Scan barcode or enter SKU" value={scanQuery} onChange={(event) => setScanQuery(event.target.value)} />
+              <Input ref={scanInputRef} placeholder="Scan barcode or enter SKU" value={scanQuery} onChange={(event) => setScanQuery(event.target.value)} autoCapitalize="off" autoCorrect="off" spellCheck={false} />
               <Button type="submit" variant="secondary" className="shrink-0">Add</Button>
             </form>
             <Input placeholder="Search by product, variant, SKU, barcode..." value={query} onChange={(event) => setQuery(event.target.value)} />
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-500">
+            <span className="rounded-full border border-stone-200 bg-white px-3 py-1">Enter adds scanned item</span>
+            <span className="rounded-full border border-stone-200 bg-white px-3 py-1">`F2` focuses barcode input</span>
+            <span className="rounded-full border border-stone-200 bg-white px-3 py-1">Existing cart lines increase quantity automatically</span>
           </div>
 
           {barcodeScannerNotes ? (
@@ -723,7 +735,39 @@ export default function CheckoutClient({
           ))}
         </div>
 
-        {!filtered.length ? <div className="rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-6 text-sm text-stone-500">No products matched that search.</div> : null}
+        {!filtered.length ? (
+          products.length ? (
+            <div className="rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-6">
+              <div className="text-sm font-semibold text-stone-900">{hasSearchFilters ? 'No products matched that search.' : 'No products are visible right now.'}</div>
+              <div className="mt-2 text-sm text-stone-500">
+                {hasSearchFilters
+                  ? 'Try a barcode, SKU, or a broader category filter to keep checkout moving.'
+                  : 'The active branch catalog is empty or fully filtered out.'}
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" onClick={() => { setQuery(''); setSelectedCategory(''); focusScanInput(); }}>
+                  Reset search
+                </Button>
+                <Link href="/products" className="inline-flex h-11 items-center justify-center rounded-2xl border border-emerald-700/90 bg-[linear-gradient(180deg,#059669,#047857)] px-4 text-sm font-semibold text-white shadow-[0_18px_30px_-20px_rgba(5,150,105,0.9)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_36px_-20px_rgba(5,150,105,0.85)]">
+                  Add products
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-6">
+              <div className="text-sm font-semibold text-stone-900">This branch does not have sellable products yet.</div>
+              <div className="mt-2 text-sm text-stone-500">Add products with barcode or SKU data first, then the scanner-first checkout flow will be ready for cashiers.</div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Link href="/products" className="inline-flex h-11 items-center justify-center rounded-2xl border border-emerald-700/90 bg-[linear-gradient(180deg,#059669,#047857)] px-4 text-sm font-semibold text-white shadow-[0_18px_30px_-20px_rgba(5,150,105,0.9)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_36px_-20px_rgba(5,150,105,0.85)]">
+                  Create first product
+                </Link>
+                <Link href="/settings" className="inline-flex h-11 items-center justify-center rounded-2xl border border-stone-200 bg-white/90 px-4 text-sm font-semibold text-stone-800 shadow-[0_12px_24px_-18px_rgba(28,25,23,0.32)] transition duration-200 hover:-translate-y-0.5 hover:border-stone-300 hover:bg-white">
+                  Review branch settings
+                </Link>
+              </div>
+            </div>
+          )
+        ) : null}
       </Card>
 
       <Card className="space-y-5 xl:sticky xl:top-6">
@@ -754,7 +798,12 @@ export default function CheckoutClient({
               </div>
               <div className="mt-4 flex items-center justify-between rounded-[20px] border border-stone-200/80 bg-white/80 px-3 py-2.5 text-sm"><span className="text-stone-500">Line total</span><span className="font-semibold text-stone-900">{money(Number(item.price) * item.qty, currencySymbol)}</span></div>
             </div>
-          )) : <div className="rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-6 text-sm text-stone-500">No items in the cart yet.</div>}
+          )) : (
+            <div className="rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-6">
+              <div className="text-sm font-semibold text-stone-900">No items in the cart yet.</div>
+              <div className="mt-2 text-sm text-stone-500">Scan a barcode and press Enter, browse the product tiles, or use `F2` to jump back to the scanner input.</div>
+            </div>
+          )}
         </div>
 
         <div className="rounded-[26px] border border-stone-200 bg-stone-50/85 p-4">
