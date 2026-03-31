@@ -1,4 +1,5 @@
 import {
+  PayableStatus,
   CashSessionStatus,
   DocumentSequenceType,
   PrismaClient,
@@ -361,7 +362,7 @@ async function main() {
       shopId: shop.id,
       supplierId: coffeeSupplier.id,
       purchaseNumber: 'PO-20260325-0001',
-      status: PurchaseStatus.RECEIVED,
+      status: PurchaseStatus.FULLY_RECEIVED,
       totalAmount: 4160,
       receivedAt: new Date(),
       notes: 'Initial coffee and pastry stock load',
@@ -372,6 +373,39 @@ async function main() {
           { productId: products[7].id, unitOfMeasureId: boxUnit.id, unitCode: boxUnit.code, unitName: boxUnit.name, productName: products[7].name, qty: 10, ratioToBase: 6, receivedBaseQty: 60, unitCost: 168, lineTotal: 1680 },
           { productId: products[8].id, unitOfMeasureId: boxUnit.id, unitCode: boxUnit.code, unitName: boxUnit.name, productName: products[8].name, qty: 10, ratioToBase: 6, receivedBaseQty: 60, unitCost: 150, lineTotal: 1500 }
         ]
+      },
+      supplierInvoice: {
+        create: {
+          shopId: shop.id,
+          supplierId: coffeeSupplier.id,
+          invoiceNumber: 'MCS-INV-0001',
+          invoiceDate: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3),
+          dueDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
+          totalAmount: 4160,
+          paymentStatus: PayableStatus.PARTIALLY_PAID,
+          notes: 'Seeded supplier invoice for opening replenishment'
+        }
+      }
+    },
+    include: {
+      items: true,
+      supplierInvoice: true
+    }
+  });
+
+  await prisma.purchaseReceipt.create({
+    data: {
+      shopId: shop.id,
+      purchaseId: purchase.id,
+      receivedByUserId: manager.id,
+      receivedAt: purchase.receivedAt ?? new Date(),
+      notes: 'Seed full delivery for opening stock load',
+      items: {
+        create: purchase.items.map((item) => ({
+          purchaseItemId: item.id,
+          productId: item.productId,
+          qtyReceived: item.qty
+        }))
       }
     }
   });
@@ -400,8 +434,33 @@ async function main() {
         userId: manager.id,
         notes: 'Seed purchase'
       }
-    });
-  }
+      });
+    }
+
+  await prisma.supplierPayment.create({
+    data: {
+      shopId: shop.id,
+      supplierInvoiceId: purchase.supplierInvoice!.id,
+      method: 'Bank Transfer',
+      amount: 2000,
+      referenceNumber: 'BT-OPEN-2000',
+      paidAt: new Date(Date.now() - 1000 * 60 * 60 * 24),
+      createdByUserId: manager.id
+    }
+  });
+
+  await prisma.accountsPayableEntry.create({
+    data: {
+      shopId: shop.id,
+      supplierId: coffeeSupplier.id,
+      supplierInvoiceId: purchase.supplierInvoice!.id,
+      amountDue: 4160,
+      amountPaid: 2000,
+      balance: 2160,
+      status: PayableStatus.PARTIALLY_PAID,
+      dueDate: purchase.supplierInvoice!.dueDate
+    }
+  });
 
   const seededCashSession = await prisma.cashSession.create({
     data: {
