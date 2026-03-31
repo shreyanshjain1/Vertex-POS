@@ -1,10 +1,33 @@
 import { NextResponse } from 'next/server';
-import { PurchaseStatus } from '@prisma/client';
+import {
+  purchaseReceiptSchema,
+  purchaseStatusUpdateSchema,
+  supplierInvoiceSchema,
+  supplierPaymentSchema
+} from '@/lib/auth/validation';
 import { requireRole } from '@/lib/authz';
 import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
-import { normalizeText, roundCurrency } from '@/lib/inventory';
+import { normalizeText } from '@/lib/inventory';
+import {
+  getPurchaseDetailOrThrow,
+  PurchaseOperationError,
+  receivePurchaseOrder,
+  recordSupplierPayment,
+  updatePurchaseStatus,
+  upsertPurchaseInvoice
+} from '@/lib/purchase-operations';
 import { prisma } from '@/lib/prisma';
+import { serializePurchase } from '@/lib/purchases';
+
+function parseDateInput(value: string, label: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new PurchaseOperationError(`Enter a valid ${label}.`);
+  }
+
+  return parsed;
+}
 
 export async function PATCH(
   request: Request,
@@ -13,151 +36,160 @@ export async function PATCH(
   try {
     const { shopId, userId } = await requireRole('MANAGER');
     const { id } = await params;
-    const body = (await request.json().catch(() => ({}))) as {
-      status?: PurchaseStatus;
-      notes?: string | null;
-    };
+    const body = (await request.json().catch(() => ({}))) as { action?: string };
 
-    const purchase = await prisma.purchaseOrder.findFirst({
-      where: { id, shopId },
-      include: {
-        items: true
-      }
-    });
-
-    if (!purchase) {
-      return NextResponse.json({ error: 'Purchase not found.' }, { status: 404 });
+    if (!body.action) {
+      return NextResponse.json({ error: 'Select a purchase action first.' }, { status: 400 });
     }
 
-    const nextStatus = body.status ?? purchase.status;
+    const purchase = await prisma.$transaction(async (tx) => {
+      const existingPurchase = await getPurchaseDetailOrThrow(tx, id, shopId);
 
-    if (nextStatus === purchase.status && body.notes === undefined) {
-      return NextResponse.json({ error: 'No purchase changes were provided.' }, { status: 400 });
-    }
+      switch (body.action) {
+        case 'UPDATE_STATUS': {
+          const parsed = purchaseStatusUpdateSchema.safeParse(body);
 
-    if (purchase.status === 'CANCELLED') {
-      return NextResponse.json(
-        { error: 'Cancelled purchases cannot be updated.' },
-        { status: 400 }
-      );
-    }
-
-    if (purchase.status === 'RECEIVED' && nextStatus !== 'RECEIVED') {
-      return NextResponse.json(
-        { error: 'Received purchases cannot be moved back to another status.' },
-        { status: 400 }
-      );
-    }
-
-    const updatedPurchase = await prisma.$transaction(async (tx) => {
-      if (purchase.status === 'DRAFT' && nextStatus === 'RECEIVED') {
-        const products = await tx.product.findMany({
-          where: {
-            id: { in: purchase.items.map((item) => item.productId) }
-          },
-          select: {
-            id: true,
-            cost: true
+          if (!parsed.success) {
+            return NextResponse.json(
+              { error: parsed.error.issues[0]?.message ?? 'Invalid purchase update.' },
+              { status: 400 }
+            );
           }
-        });
-        const productMap = new Map(products.map((product) => [product.id, product]));
 
-        for (const item of purchase.items) {
-          const nextBaseCost = item.ratioToBase > 0
-            ? roundCurrency(Number(item.unitCost.toString()) / item.ratioToBase)
-            : Number(item.unitCost.toString());
+          if (parsed.data.status === existingPurchase.status) {
+            if (parsed.data.notes === undefined) {
+              return NextResponse.json({ error: 'No purchase changes were provided.' }, { status: 400 });
+            }
 
-          const product = productMap.get(item.productId);
-          if (product && Number(product.cost) !== nextBaseCost) {
-            await tx.productCostHistory.create({
+            await tx.purchaseOrder.update({
+              where: { id: existingPurchase.id },
               data: {
-                productId: item.productId,
-                previousCost: product.cost,
-                newCost: nextBaseCost,
-                effectiveDate: new Date(),
-                changedByUserId: userId,
-                note: `Purchase ${purchase.purchaseNumber}`
+                notes: normalizeText(parsed.data.notes)
               }
+            });
+
+            await logActivity({
+              tx,
+              shopId,
+              userId,
+              action: 'PURCHASE_UPDATED',
+              entityType: 'PurchaseOrder',
+              entityId: existingPurchase.id,
+              description: `Updated notes for purchase ${existingPurchase.purchaseNumber}.`
+            });
+          } else {
+            await updatePurchaseStatus({
+              tx,
+              purchase: existingPurchase,
+              shopId,
+              userId,
+              nextStatus: parsed.data.status,
+              notes: parsed.data.notes
             });
           }
 
-          await tx.product.update({
-            where: { id: item.productId },
-            data: {
-              stockQty: {
-                increment: item.receivedBaseQty
-              },
-              cost: nextBaseCost
-            }
+          break;
+        }
+        case 'RECEIVE': {
+          const parsed = purchaseReceiptSchema.safeParse(body);
+
+          if (!parsed.success) {
+            return NextResponse.json(
+              { error: parsed.error.issues[0]?.message ?? 'Invalid receipt payload.' },
+              { status: 400 }
+            );
+          }
+
+          await receivePurchaseOrder({
+            tx,
+            purchase: existingPurchase,
+            shopId,
+            userId,
+            receivedAt: parsed.data.receivedAt
+              ? parseDateInput(parsed.data.receivedAt, 'receive date')
+              : new Date(),
+            notes: parsed.data.notes,
+            items: parsed.data.items
           });
 
-          await tx.inventoryMovement.create({
-            data: {
-              shopId,
-              productId: item.productId,
-              type: 'PURCHASE_RECEIVED',
-              qtyChange: item.receivedBaseQty,
-              referenceId: purchase.id,
-              userId,
-              notes: `Purchase ${purchase.purchaseNumber} (${item.qty} ${item.unitName.toLowerCase()}${item.qty === 1 ? '' : 's'})`
-            }
-          });
+          break;
         }
+        case 'UPSERT_INVOICE': {
+          const parsed = supplierInvoiceSchema.safeParse(body);
+
+          if (!parsed.success) {
+            return NextResponse.json(
+              { error: parsed.error.issues[0]?.message ?? 'Invalid supplier invoice payload.' },
+              { status: 400 }
+            );
+          }
+
+          const invoiceDate = parseDateInput(parsed.data.invoiceDate, 'invoice date');
+          const dueDate = parseDateInput(parsed.data.dueDate, 'due date');
+
+          if (dueDate.getTime() < invoiceDate.getTime()) {
+            return NextResponse.json(
+              { error: 'Due date must be on or after the invoice date.' },
+              { status: 400 }
+            );
+          }
+
+          await upsertPurchaseInvoice({
+            tx,
+            purchase: existingPurchase,
+            shopId,
+            userId,
+            invoiceNumber: parsed.data.invoiceNumber.trim(),
+            invoiceDate,
+            dueDate,
+            totalAmount: parsed.data.totalAmount,
+            notes: parsed.data.notes
+          });
+
+          break;
+        }
+        case 'RECORD_PAYMENT': {
+          const parsed = supplierPaymentSchema.safeParse(body);
+
+          if (!parsed.success) {
+            return NextResponse.json(
+              { error: parsed.error.issues[0]?.message ?? 'Invalid supplier payment payload.' },
+              { status: 400 }
+            );
+          }
+
+          await recordSupplierPayment({
+            tx,
+            purchase: existingPurchase,
+            shopId,
+            userId,
+            method: parsed.data.method,
+            amount: parsed.data.amount,
+            referenceNumber: parsed.data.referenceNumber,
+            paidAt: parseDateInput(parsed.data.paidAt, 'payment date')
+          });
+
+          break;
+        }
+        default:
+          return NextResponse.json({ error: 'Unsupported purchase action.' }, { status: 400 });
       }
 
-      const record = await tx.purchaseOrder.update({
-        where: { id: purchase.id },
-        data: {
-          status: nextStatus,
-          notes: body.notes === undefined ? purchase.notes : normalizeText(body.notes),
-          receivedAt:
-            purchase.status === 'DRAFT' && nextStatus === 'RECEIVED'
-              ? new Date()
-              : nextStatus === 'RECEIVED'
-                ? purchase.receivedAt
-                : null
-        },
-        include: { supplier: true, items: true }
-      });
-
-      await logActivity({
-        tx,
-        shopId,
-        userId,
-        action:
-          nextStatus === 'RECEIVED'
-            ? 'PURCHASE_RECEIVED'
-            : nextStatus === 'CANCELLED'
-              ? 'PURCHASE_CANCELLED'
-              : 'PURCHASE_UPDATED',
-        entityType: 'PurchaseOrder',
-        entityId: purchase.id,
-        description:
-          nextStatus === 'RECEIVED'
-            ? `Received purchase ${purchase.purchaseNumber}.`
-            : nextStatus === 'CANCELLED'
-              ? `Cancelled purchase ${purchase.purchaseNumber}.`
-              : `Updated purchase ${purchase.purchaseNumber}.`
-      });
-
-      return record;
+      return getPurchaseDetailOrThrow(tx, id, shopId);
     });
+
+    if (purchase instanceof NextResponse) {
+      return purchase;
+    }
 
     return NextResponse.json({
-      purchase: {
-        ...updatedPurchase,
-        totalAmount: updatedPurchase.totalAmount.toString(),
-        createdAt: updatedPurchase.createdAt.toISOString(),
-        updatedAt: updatedPurchase.updatedAt.toISOString(),
-        receivedAt: updatedPurchase.receivedAt?.toISOString() ?? null,
-        items: updatedPurchase.items.map((item) => ({
-          ...item,
-          unitCost: item.unitCost.toString(),
-          lineTotal: item.lineTotal.toString()
-        }))
-      }
+      purchase: serializePurchase(purchase)
     });
   } catch (error) {
+    if (error instanceof PurchaseOperationError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+
     return apiErrorResponse(error, 'Unable to update purchase.');
   }
 }

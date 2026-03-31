@@ -1,7 +1,10 @@
 import AppHeader from '@/components/layout/AppHeader';
 import PurchaseManager from '@/components/purchases/PurchaseManager';
+import type { Purchase as PurchaseView } from '@/components/purchases/PurchaseManager';
 import { requirePageRole } from '@/lib/authz';
+import { purchaseDetailInclude } from '@/lib/purchase-operations';
 import { prisma } from '@/lib/prisma';
+import { serializePurchase } from '@/lib/purchases';
 import { ensureUnitsOfMeasure } from '@/lib/uom';
 
 export default async function PurchasesPage() {
@@ -29,7 +32,7 @@ export default async function PurchasesPage() {
     }),
     prisma.purchaseOrder.findMany({
       where: { shopId },
-      include: { supplier: true, items: true },
+      include: purchaseDetailInclude,
       orderBy: { createdAt: 'desc' },
       take: 40
     }),
@@ -40,7 +43,7 @@ export default async function PurchasesPage() {
     <div className="space-y-6">
       <AppHeader
         title="Purchases"
-        subtitle="Create draft POs, receive stock safely, and keep supplier-backed inventory movements accurate."
+        subtitle="Run purchase orders through sending, receiving, invoicing, and supplier settlement without losing inventory accuracy."
       />
       <PurchaseManager
         suppliers={suppliers}
@@ -49,19 +52,8 @@ export default async function PurchasesPage() {
           cost: product.cost.toString()
         }))}
         units={units}
-        purchases={purchases.map((purchase) => ({
-          ...purchase,
-          totalAmount: purchase.totalAmount.toString(),
-          createdAt: purchase.createdAt.toISOString(),
-          updatedAt: purchase.updatedAt.toISOString(),
-          receivedAt: purchase.receivedAt?.toISOString() ?? null,
-          items: purchase.items.map((item) => ({
-            ...item,
-            unitCost: item.unitCost.toString(),
-            lineTotal: item.lineTotal.toString()
-          }))
-        }))}
-        currencySymbol={settings?.currencySymbol ?? '₱'}
+        purchases={purchases.map((purchase) => serializePurchase(purchase) as unknown as PurchaseView)}
+        currencySymbol={settings?.currencySymbol ?? 'PHP '}
       />
     </div>
   );

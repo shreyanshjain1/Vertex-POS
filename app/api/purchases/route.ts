@@ -1,4 +1,4 @@
-import { DocumentSequenceType, PurchaseStatus } from '@prisma/client';
+import { DocumentSequenceType } from '@prisma/client';
 import { NextResponse } from 'next/server';
 import { purchaseSchema } from '@/lib/auth/validation';
 import { requireRole } from '@/lib/authz';
@@ -6,45 +6,29 @@ import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
 import { getNextDocumentNumber } from '@/lib/document-sequence';
 import { collapsePurchaseItems, normalizeText, roundCurrency } from '@/lib/inventory';
+import {
+  getPurchaseDetailOrThrow,
+  purchaseDetailInclude,
+  PurchaseOperationError,
+  receivePurchaseOrder
+} from '@/lib/purchase-operations';
 import { prisma } from '@/lib/prisma';
+import { serializePurchase } from '@/lib/purchases';
 import { ensureUnitsOfMeasure } from '@/lib/uom';
-
-function serializePurchase<
-  T extends {
-    totalAmount: { toString(): string };
-    createdAt: Date;
-    updatedAt: Date;
-    receivedAt: Date | null;
-  }
->(purchase: T) {
-  return {
-    ...purchase,
-    totalAmount: purchase.totalAmount.toString(),
-    createdAt: purchase.createdAt.toISOString(),
-    updatedAt: purchase.updatedAt.toISOString(),
-    receivedAt: purchase.receivedAt?.toISOString() ?? null
-  };
-}
 
 export async function GET() {
   try {
     const { shopId } = await requireRole('MANAGER');
     await ensureUnitsOfMeasure(shopId);
+
     const purchases = await prisma.purchaseOrder.findMany({
       where: { shopId },
-      include: { supplier: true, items: true },
+      include: purchaseDetailInclude,
       orderBy: { createdAt: 'desc' }
     });
 
     return NextResponse.json({
-      purchases: purchases.map((purchase) => ({
-        ...serializePurchase(purchase),
-        items: purchase.items.map((item) => ({
-          ...item,
-          unitCost: item.unitCost.toString(),
-          lineTotal: item.lineTotal.toString()
-        }))
-      }))
+      purchases: purchases.map(serializePurchase)
     });
   } catch (error) {
     return apiErrorResponse(error, 'Unable to load purchases.');
@@ -141,6 +125,7 @@ export async function POST(request: Request) {
     const totalAmount = roundCurrency(
       items.reduce((sum, item) => sum + item.qty * item.unitCost, 0)
     );
+    const createStatus = parsed.data.status === 'DRAFT' ? 'DRAFT' : 'SENT';
 
     const purchase = await prisma.$transaction(async (tx) => {
       const purchaseNumber = await getNextDocumentNumber(tx, {
@@ -154,10 +139,9 @@ export async function POST(request: Request) {
           shopId,
           supplierId: supplier.id,
           purchaseNumber,
-          status: parsed.data.status as PurchaseStatus,
+          status: createStatus,
           totalAmount,
           notes: normalizeText(parsed.data.notes),
-          receivedAt: parsed.data.status === 'RECEIVED' ? new Date() : null,
           items: {
             create: items.map((item) => ({
               productId: item.productId,
@@ -169,102 +153,68 @@ export async function POST(request: Request) {
               ratioToBase:
                 productMap.get(item.productId)!.baseUnitOfMeasureId === item.unitOfMeasureId
                   ? 1
-                  : productMap.get(item.productId)!.uomConversions.find((conversion) => conversion.unitOfMeasureId === item.unitOfMeasureId)!.ratioToBase,
-              receivedBaseQty:
-                item.qty *
-                (productMap.get(item.productId)!.baseUnitOfMeasureId === item.unitOfMeasureId
-                  ? 1
-                  : productMap.get(item.productId)!.uomConversions.find((conversion) => conversion.unitOfMeasureId === item.unitOfMeasureId)!.ratioToBase),
+                  : productMap
+                      .get(item.productId)!
+                      .uomConversions.find((conversion) => conversion.unitOfMeasureId === item.unitOfMeasureId)!.ratioToBase,
+              receivedBaseQty: 0,
               unitCost: item.unitCost,
               lineTotal: roundCurrency(item.qty * item.unitCost)
             }))
           }
         },
-        include: { supplier: true, items: true }
-      });
-
-      if (purchaseRecord.status === 'RECEIVED') {
-        for (const item of items) {
-          const product = productMap.get(item.productId)!;
-          const ratioToBase =
-            product.baseUnitOfMeasureId === item.unitOfMeasureId
-              ? 1
-              : product.uomConversions.find((conversion) => conversion.unitOfMeasureId === item.unitOfMeasureId)!.ratioToBase;
-          const nextBaseCost = roundCurrency(item.unitCost / ratioToBase);
-
-          if (Number(product.cost) !== nextBaseCost) {
-            await tx.productCostHistory.create({
-              data: {
-                productId: product.id,
-                previousCost: product.cost,
-                newCost: nextBaseCost,
-                effectiveDate: new Date(),
-                changedByUserId: userId,
-                note: `Purchase ${purchaseRecord.purchaseNumber}`
-              }
-            });
-          }
-
-          await tx.product.update({
-            where: { id: product.id },
-            data: {
-              stockQty: {
-                increment: item.qty * ratioToBase
-              },
-              cost: nextBaseCost
-            }
-          });
-
-          await tx.inventoryMovement.create({
-            data: {
-              shopId,
-              productId: product.id,
-              type: 'PURCHASE_RECEIVED',
-              qtyChange: item.qty * ratioToBase,
-              referenceId: purchaseRecord.id,
-              userId,
-              notes: `Purchase ${purchaseRecord.purchaseNumber} (${item.qty} ${unitMap.get(item.unitOfMeasureId)!.name.toLowerCase()}${item.qty === 1 ? '' : 's'})`
-            }
-          });
+        include: {
+          items: true
         }
-      }
+      });
 
       await logActivity({
         tx,
         shopId,
         userId,
-        action: purchaseRecord.status === 'RECEIVED' ? 'PURCHASE_RECEIVED' : 'PURCHASE_DRAFTED',
+        action: createStatus === 'DRAFT' ? 'PURCHASE_DRAFTED' : 'PURCHASE_CREATED',
         entityType: 'PurchaseOrder',
         entityId: purchaseRecord.id,
         description:
-          purchaseRecord.status === 'RECEIVED'
-            ? `Received purchase ${purchaseRecord.purchaseNumber}.`
-            : `Created draft purchase ${purchaseRecord.purchaseNumber}.`,
+          createStatus === 'DRAFT'
+            ? `Created draft purchase ${purchaseRecord.purchaseNumber}.`
+            : `Created purchase ${purchaseRecord.purchaseNumber} and marked it as sent.`,
         metadata: {
           totalAmount,
           lineCount: items.length,
-          supplierName: supplier.name,
-          receivedBaseQty: purchaseRecord.items.reduce((sum, item) => sum + item.receivedBaseQty, 0)
+          supplierName: supplier.name
         }
       });
 
-      return purchaseRecord;
+      if (parsed.data.status === 'FULLY_RECEIVED') {
+        const purchaseDetail = await getPurchaseDetailOrThrow(tx, purchaseRecord.id, shopId);
+        await receivePurchaseOrder({
+          tx,
+          purchase: purchaseDetail,
+          shopId,
+          userId,
+          receivedAt: new Date(),
+          notes: parsed.data.notes,
+          items: purchaseDetail.items.map((item) => ({
+            purchaseItemId: item.id,
+            qtyReceived: item.qty
+          }))
+        });
+      }
+
+      return getPurchaseDetailOrThrow(tx, purchaseRecord.id, shopId);
     });
 
     return NextResponse.json(
       {
-        purchase: {
-          ...serializePurchase(purchase),
-          items: purchase.items.map((item) => ({
-            ...item,
-            unitCost: item.unitCost.toString(),
-            lineTotal: item.lineTotal.toString()
-          }))
-        }
+        purchase: serializePurchase(purchase)
       },
       { status: 201 }
     );
   } catch (error) {
+    if (error instanceof PurchaseOperationError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+
     return apiErrorResponse(error, 'Unable to create purchase.');
   }
 }
