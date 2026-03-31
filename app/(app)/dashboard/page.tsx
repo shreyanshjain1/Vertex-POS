@@ -3,6 +3,7 @@ import DashboardStats from '@/components/dashboard/DashboardStats';
 import LowStockCard from '@/components/dashboard/LowStockCard';
 import RecentSalesCard from '@/components/dashboard/RecentSalesCard';
 import Card from '@/components/ui/Card';
+import { getInventoryMovementTypeLabel } from '@/lib/business-labels';
 import { getActiveShopContext } from '@/lib/auth/get-active-shop';
 import { dateTime, money, shortDate } from '@/lib/format';
 import { prisma } from '@/lib/prisma';
@@ -19,6 +20,7 @@ function pluralize(count: number, singular: string, plural = `${singular}s`) {
 
 export default async function DashboardPage() {
   const { shopId, shop, role, userId } = await getActiveShopContext();
+  const showBackOfficeInsights = role !== 'CASHIER';
   const settings = await prisma.shopSetting.findUnique({ where: { shopId } });
   const now = new Date();
   const todayStart = new Date(now);
@@ -83,25 +85,29 @@ export default async function DashboardPage() {
       where: { shopId, createdAt: { gte: weekStart } },
       _sum: { totalAmount: true }
     }),
-    prisma.purchaseOrder.count({
-      where: {
-        shopId,
-        status: { in: ['DRAFT', 'SENT', 'PARTIALLY_RECEIVED'] }
-      }
-    }),
-    prisma.inventoryMovement.findMany({
-      where: { shopId },
-      include: {
-        product: {
-          select: {
-            id: true,
-            name: true
+    showBackOfficeInsights
+      ? prisma.purchaseOrder.count({
+          where: {
+            shopId,
+            status: { in: ['DRAFT', 'SENT', 'PARTIALLY_RECEIVED'] }
           }
-        }
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 6
-    }),
+        })
+      : Promise.resolve(0),
+    showBackOfficeInsights
+      ? prisma.inventoryMovement.findMany({
+          where: { shopId },
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true
+              }
+            }
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 6
+        })
+      : Promise.resolve([]),
     prisma.authAuditLog.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
@@ -133,14 +139,14 @@ export default async function DashboardPage() {
           description: 'Run a live checkout to populate receipts, sales history, cashier metrics, and daily summary alerts.'
         }
       : null,
-    pendingPurchases === 0
+    showBackOfficeInsights && pendingPurchases === 0
       ? {
           href: '/purchases',
           title: 'Record supplier activity',
           description: 'Purchase and receiving records improve stock coverage, valuation, and low-stock guidance.'
         }
       : null,
-    !shop.address || !settings?.receiptHeader
+    showBackOfficeInsights && (!shop.address || !settings?.receiptHeader)
       ? {
           href: '/settings',
           title: 'Finish branch settings',
@@ -200,11 +206,13 @@ export default async function DashboardPage() {
                 <div className="mt-2 text-2xl font-black text-stone-950">{money(weeklySalesValue, currency)}</div>
                 <div className="mt-1 text-sm text-stone-500">Rolling revenue snapshot for the week.</div>
               </div>
-              <div className="rounded-[28px] border border-white/80 bg-white/82 p-4 backdrop-blur">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Pending purchases</div>
-                <div className="mt-2 text-2xl font-black text-stone-950">{pendingPurchases}</div>
-                <div className="mt-1 text-sm text-stone-500">Open purchase orders still moving through sending or receiving.</div>
-              </div>
+              {showBackOfficeInsights ? (
+                <div className="rounded-[28px] border border-white/80 bg-white/82 p-4 backdrop-blur">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Pending purchases</div>
+                  <div className="mt-2 text-2xl font-black text-stone-950">{pendingPurchases}</div>
+                  <div className="mt-1 text-sm text-stone-500">Open purchase orders still moving through sending or receiving.</div>
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -224,7 +232,7 @@ export default async function DashboardPage() {
                 <div className="mt-2 text-sm text-stone-300">{pluralize(todaySaleCount, 'sale')} completed so far.</div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className={`grid gap-3 ${showBackOfficeInsights ? 'sm:grid-cols-2' : 'sm:grid-cols-1'}`}>
                 <div className="rounded-[24px] border border-stone-200 bg-stone-50/90 p-4">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Restock pressure</div>
                   <div className="mt-2 text-2xl font-black text-stone-950">{pluralize(lowStockCount, 'product')}</div>
@@ -235,13 +243,15 @@ export default async function DashboardPage() {
                   </div>
                 </div>
 
-                <div className="rounded-[24px] border border-stone-200 bg-stone-50/90 p-4">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Receiving queue</div>
-                  <div className="mt-2 text-2xl font-black text-stone-950">{pendingPurchases}</div>
-                  <div className="mt-2 text-sm text-stone-500">
-                    {pendingPurchases > 0 ? 'Purchase orders are waiting for more supplier action.' : 'No open purchase orders are waiting.'}
+                {showBackOfficeInsights ? (
+                  <div className="rounded-[24px] border border-stone-200 bg-stone-50/90 p-4">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Receiving queue</div>
+                    <div className="mt-2 text-2xl font-black text-stone-950">{pendingPurchases}</div>
+                    <div className="mt-2 text-sm text-stone-500">
+                      {pendingPurchases > 0 ? 'Purchase orders are waiting for more supplier action.' : 'No open purchase orders are waiting.'}
+                    </div>
                   </div>
-                </div>
+                ) : null}
               </div>
 
               <div className="rounded-[24px] border border-stone-200 bg-white p-4">
@@ -268,6 +278,7 @@ export default async function DashboardPage() {
         todaySales={money(todaySalesValue, currency)}
         todaySaleCount={todaySaleCount}
         stockCoverage={stockCoverage}
+        showPendingPurchases={showBackOfficeInsights}
       />
 
       {nextSteps.length ? (
@@ -303,39 +314,41 @@ export default async function DashboardPage() {
         />
       </div>
 
-      <Card>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">Movement watch</div>
-            <h2 className="mt-2 text-2xl font-black text-stone-950">Recent stock movements</h2>
+      {showBackOfficeInsights ? (
+        <Card>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">Movement watch</div>
+              <h2 className="mt-2 text-2xl font-black text-stone-950">Recent stock movements</h2>
+            </div>
+            <Link href="/inventory" className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100">
+              Open inventory
+            </Link>
           </div>
-          <Link href="/inventory" className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100">
-            Open inventory
-          </Link>
-        </div>
 
-        <div className="mt-5 space-y-3">
-          {recentMovements.length ? (
-            recentMovements.map((movement) => (
-              <div key={movement.id} className="flex items-center justify-between rounded-[24px] border border-stone-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.86))] p-4 transition hover:border-stone-300">
-                <div>
-                  <div className="font-semibold text-stone-900">{movement.product.name}</div>
-                  <div className="mt-1 text-sm text-stone-500">
-                    {movement.type.replaceAll('_', ' ')} / {dateTime(movement.createdAt)}
+          <div className="mt-5 space-y-3">
+            {recentMovements.length ? (
+              recentMovements.map((movement) => (
+                <div key={movement.id} className="flex items-center justify-between rounded-[24px] border border-stone-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.86))] p-4 transition hover:border-stone-300">
+                  <div>
+                    <div className="font-semibold text-stone-900">{movement.product.name}</div>
+                    <div className="mt-1 text-sm text-stone-500">
+                      {getInventoryMovementTypeLabel(movement.type)} / {dateTime(movement.createdAt)}
+                    </div>
+                  </div>
+                  <div className={`rounded-full px-3 py-1 text-lg font-black ${movement.qtyChange >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                    {movement.qtyChange > 0 ? `+${movement.qtyChange}` : movement.qtyChange}
                   </div>
                 </div>
-                <div className={`rounded-full px-3 py-1 text-lg font-black ${movement.qtyChange >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
-                  {movement.qtyChange > 0 ? `+${movement.qtyChange}` : movement.qtyChange}
-                </div>
+              ))
+            ) : (
+              <div className="rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-5 text-sm text-stone-500">
+                No stock movement has been recorded yet.
               </div>
-            ))
-          ) : (
-            <div className="rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-5 text-sm text-stone-500">
-              No stock movement has been recorded yet.
-            </div>
-          )}
-        </div>
-      </Card>
+            )}
+          </div>
+        </Card>
+      ) : null}
 
       <Card>
         <div className="flex items-center justify-between gap-3">

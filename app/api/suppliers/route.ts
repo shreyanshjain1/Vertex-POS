@@ -8,7 +8,7 @@ import { prisma } from '@/lib/prisma';
 
 export async function GET() {
   try {
-    const { shopId } = await requireRole('CASHIER');
+    const { shopId } = await requireRole('MANAGER');
     const suppliers = await prisma.supplier.findMany({
       where: { shopId },
       include: { _count: { select: { purchases: true } } },

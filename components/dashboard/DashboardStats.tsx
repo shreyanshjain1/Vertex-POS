@@ -10,6 +10,7 @@ type Props = {
   todaySales: string;
   todaySaleCount: number;
   stockCoverage: number;
+  showPendingPurchases?: boolean;
 };
 
 const items = [
@@ -108,13 +109,18 @@ export default function DashboardStats({
   pendingPurchases,
   todaySales,
   todaySaleCount,
-  stockCoverage
+  stockCoverage,
+  showPendingPurchases = true
 }: Props) {
+  const visibleItems = showPendingPurchases ? items : items.filter((item) => item.label !== 'Pending purchases');
   const values = [String(totalProducts), String(lowStockCount), String(pendingPurchases), todaySales];
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      {items.map((item, index) => (
+    <div className={`grid gap-4 sm:grid-cols-2 ${showPendingPurchases ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
+      {visibleItems.map((item) => {
+        const index = items.findIndex((entry) => entry.label === item.label);
+
+        return (
         <motion.div
           key={item.label}
           initial={{ opacity: 0, y: 18 }}
@@ -137,7 +143,8 @@ export default function DashboardStats({
             <div className="mt-2 text-sm leading-6 text-stone-600">{item.helper}</div>
           </Card>
         </motion.div>
-      ))}
+        );
+      })}
     </div>
   );
 }
