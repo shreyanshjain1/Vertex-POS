@@ -81,8 +81,23 @@ export default function LowStockCard({
             );
           })
         ) : (
-          <div className="rounded-[28px] border border-dashed border-stone-300 bg-stone-50 p-5 text-sm text-stone-500">
-            No low-stock products right now.
+          <div className="rounded-[28px] border border-dashed border-stone-300 bg-stone-50 p-5">
+            <div className="text-sm font-semibold text-stone-900">No low-stock products right now.</div>
+            <div className="mt-2 text-sm text-stone-500">Stock looks healthy for the current branch. Keep receiving and inventory adjustments up to date so alerts stay useful.</div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link
+                href="/inventory"
+                className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-100"
+              >
+                Review inventory
+              </Link>
+              <Link
+                href="/purchases"
+                className="inline-flex rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:border-stone-300 hover:bg-stone-50"
+              >
+                Record purchase
+              </Link>
+            </div>
           </div>
         )}
       </div>

@@ -100,8 +100,17 @@ export default function RecentSalesCard({
             </motion.div>
           ))
         ) : (
-          <div className="rounded-[28px] border border-dashed border-stone-300 bg-stone-50 p-5 text-sm text-stone-500">
-            No sales yet.
+          <div className="rounded-[28px] border border-dashed border-stone-300 bg-stone-50 p-5">
+            <div className="text-sm font-semibold text-stone-900">No sales yet.</div>
+            <div className="mt-2 text-sm text-stone-500">Start a checkout to generate the first receipt, payment breakdown, and cashier activity trail.</div>
+            <div className="mt-4">
+              <Link
+                href="/checkout"
+                className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+              >
+                Start checkout
+              </Link>
+            </div>
           </div>
         )}
       </div>

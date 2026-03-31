@@ -118,6 +118,36 @@ export default async function DashboardPage() {
   const criticalLowStockCount = lowStockProducts.filter(
     (product) => product.stockQty <= Math.max(1, Math.floor(product.reorderPoint / 2))
   ).length;
+  const nextSteps = [
+    totalProducts === 0
+      ? {
+          href: '/products',
+          title: 'Add your first products',
+          description: 'Checkout, barcode search, and inventory alerts become useful as soon as the branch catalog is loaded.'
+        }
+      : null,
+    recentSales.length === 0
+      ? {
+          href: '/checkout',
+          title: 'Make the first sale',
+          description: 'Run a live checkout to populate receipts, sales history, cashier metrics, and daily summary alerts.'
+        }
+      : null,
+    pendingPurchases === 0
+      ? {
+          href: '/purchases',
+          title: 'Record supplier activity',
+          description: 'Purchase and receiving records improve stock coverage, valuation, and low-stock guidance.'
+        }
+      : null,
+    !shop.address || !settings?.receiptHeader
+      ? {
+          href: '/settings',
+          title: 'Finish branch settings',
+          description: 'Add receipt identity, contact details, and branch defaults so documents look ready for real customers.'
+        }
+      : null
+  ].filter((step): step is { href: string; title: string; description: string } => Boolean(step));
 
   const allowedQuickLinks =
     role === 'CASHIER'
@@ -239,6 +269,28 @@ export default async function DashboardPage() {
         todaySaleCount={todaySaleCount}
         stockCoverage={stockCoverage}
       />
+
+      {nextSteps.length ? (
+        <Card>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Guided setup</div>
+              <h2 className="mt-2 text-2xl font-black text-stone-950">What to do next</h2>
+              <p className="mt-1 text-sm text-stone-500">These shortcuts only appear while the branch still needs a few foundational records.</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-2">
+            {nextSteps.map((step) => (
+              <Link key={step.href} href={step.href} className="rounded-[26px] border border-stone-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,245,244,0.92))] p-5 transition hover:-translate-y-0.5 hover:border-emerald-200">
+                <div className="text-lg font-black text-stone-900">{step.title}</div>
+                <div className="mt-2 text-sm leading-6 text-stone-500">{step.description}</div>
+                <div className="mt-4 text-sm font-semibold text-emerald-700">Open task</div>
+              </Link>
+            ))}
+          </div>
+        </Card>
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <RecentSalesCard
