@@ -4,6 +4,10 @@ import {
   DocumentSequenceType,
   PrismaClient,
   PurchaseStatus,
+  SupplierCreditMemoStatus,
+  SupplierReturnDisposition,
+  SupplierReturnReason,
+  SupplierReturnStatus,
   ShopRole,
   ShopType,
   WorkerJobType
@@ -462,6 +466,56 @@ async function main() {
     }
   });
 
+  const supplierReturn = await prisma.supplierReturn.create({
+    data: {
+      shopId: shop.id,
+      supplierId: coffeeSupplier.id,
+      createdByUserId: manager.id,
+      approvedByUserId: manager.id,
+      status: SupplierReturnStatus.POSTED,
+      returnNumber: 'RTS-20260325-0001',
+      reasonSummary: 'Damaged pastry items from supplier delivery',
+      notes: 'Three croissant units showed packaging damage on supplier turnover.',
+      creditMemoNumber: 'CM-0001',
+      creditMemoDate: new Date(Date.now() - 1000 * 60 * 60 * 18),
+      creditAmount: 84,
+      creditMemoStatus: SupplierCreditMemoStatus.ISSUED,
+      postedAt: new Date(Date.now() - 1000 * 60 * 60 * 18),
+      items: {
+        create: [
+          {
+            productId: products[7].id,
+            productNameSnapshot: products[7].name,
+            qty: 3,
+            unitCost: 28,
+            lineTotal: 84,
+            reason: SupplierReturnReason.DAMAGED_FROM_SUPPLIER,
+            disposition: SupplierReturnDisposition.DAMAGED
+          }
+        ]
+      }
+    }
+  });
+
+  await prisma.product.update({
+    where: { id: products[7].id },
+    data: {
+      stockQty: { decrement: 3 }
+    }
+  });
+
+  await prisma.inventoryMovement.create({
+    data: {
+      shopId: shop.id,
+      productId: products[7].id,
+      type: 'SUPPLIER_RETURN_POSTED',
+      qtyChange: -3,
+      referenceId: supplierReturn.id,
+      userId: manager.id,
+      notes: 'Seed supplier return'
+    }
+  });
+
   const seededCashSession = await prisma.cashSession.create({
     data: {
       shopId: shop.id,
@@ -494,6 +548,14 @@ async function main() {
         entityType: 'PurchaseOrder',
         entityId: purchase.id,
         description: `Received purchase ${purchase.purchaseNumber}.`
+      },
+      {
+        shopId: shop.id,
+        userId: manager.id,
+        action: 'SUPPLIER_RETURN_POSTED',
+        entityType: 'SupplierReturn',
+        entityId: supplierReturn.id,
+        description: `Posted supplier return ${supplierReturn.returnNumber}.`
       },
       {
         shopId: shop.id,

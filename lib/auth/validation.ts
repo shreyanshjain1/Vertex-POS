@@ -2,6 +2,12 @@ import { z } from 'zod';
 import { PAYMENT_METHODS } from '@/lib/payments';
 import { CREATE_PURCHASE_STATUS_OPTIONS, MANUAL_PURCHASE_STATUS_OPTIONS } from '@/lib/purchases';
 import { SHOP_TYPE_OPTIONS } from '@/lib/shop-config';
+import {
+  SUPPLIER_CREDIT_MEMO_STATUS_OPTIONS,
+  SUPPLIER_RETURN_CREATE_STATUS_OPTIONS,
+  SUPPLIER_RETURN_DISPOSITION_OPTIONS,
+  SUPPLIER_RETURN_REASON_OPTIONS
+} from '@/lib/supplier-returns';
 
 const shopRoleSchema = z.enum(['ADMIN', 'MANAGER', 'CASHIER']);
 const optionalText = () => z.string().trim().optional().nullable();
@@ -159,6 +165,41 @@ export const supplierSchema = z.object({
   address: z.string().trim().max(200).optional().nullable(),
   notes: z.string().trim().max(500).optional().nullable(),
   isActive: z.coerce.boolean().optional().default(true)
+});
+
+export const supplierReturnSchema = z.object({
+  supplierId: z.string().trim().min(1),
+  status: z.enum(SUPPLIER_RETURN_CREATE_STATUS_OPTIONS).default('DRAFT'),
+  reasonSummary: z.string().trim().min(3, 'Return summary is required.').max(160),
+  notes: z.string().trim().max(500).optional().nullable(),
+  creditMemoNumber: z.string().trim().max(80).optional().nullable(),
+  creditMemoDate: z.string().trim().optional().nullable().or(z.literal('')),
+  creditAmount: z.coerce.number().min(0).max(999999.99).default(0),
+  creditMemoStatus: z.enum(SUPPLIER_CREDIT_MEMO_STATUS_OPTIONS).default('PENDING'),
+  items: z.array(z.object({
+    productId: z.string().trim().min(1),
+    qty: z.coerce.number().int().positive('Return quantity must be greater than zero.'),
+    unitCost: z.coerce.number().min(0).max(999999.99),
+    reason: z.enum(SUPPLIER_RETURN_REASON_OPTIONS),
+    disposition: z.enum(SUPPLIER_RETURN_DISPOSITION_OPTIONS)
+  })).min(1, 'Add at least one return line.')
+});
+
+export const supplierReturnPostSchema = z.object({
+  action: z.literal('POST')
+});
+
+export const supplierReturnCancelSchema = z.object({
+  action: z.literal('CANCEL')
+});
+
+export const supplierReturnCreditSchema = z.object({
+  action: z.literal('UPDATE_CREDIT'),
+  creditMemoNumber: z.string().trim().max(80).optional().nullable(),
+  creditMemoDate: z.string().trim().optional().nullable().or(z.literal('')),
+  creditAmount: z.coerce.number().min(0).max(999999.99).default(0),
+  creditMemoStatus: z.enum(SUPPLIER_CREDIT_MEMO_STATUS_OPTIONS).default('PENDING'),
+  notes: z.string().trim().max(500).optional().nullable()
 });
 
 export const salePaymentSchema = z.object({
