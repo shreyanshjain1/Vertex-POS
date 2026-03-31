@@ -102,9 +102,9 @@ export default function InventoryManager({
     <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
       <div className="space-y-6">
         <Card>
-          <h2 id="adjust-stock" className="text-xl font-black text-stone-900">Manual stock adjustment</h2>
+          <h2 id="adjust-stock" className="text-xl font-black text-stone-900">Stock corrections and write-offs</h2>
           <p className="mt-2 text-sm text-stone-500">
-            Increase or decrease stock manually with required reason codes so the movement history carries clear business meaning.
+            Use this screen only for exceptional corrections. Stock counts, supplier returns, customer return restocks, and branch transfers remain the preferred business workflows whenever they apply.
           </p>
           <div className="mt-6">
             <AdjustmentForm products={products} reasons={reasons} />
@@ -123,7 +123,7 @@ export default function InventoryManager({
       <Card>
         <h2 className="text-xl font-black text-stone-900">Inventory movement history</h2>
         <p className="mt-2 text-sm text-stone-500">
-          Track stock-in, stock-out, manual adjustments, and reason-coded movements with low-stock context.
+          Track purchases, sales, stock count variances, transfers, supplier returns, and reason-coded stock corrections with low-stock context.
         </p>
         <div className="mt-6">
           <InventoryMovementTable movements={movements} lowStockThreshold={lowStockThreshold} />

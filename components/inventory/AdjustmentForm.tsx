@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { type FormEvent, useMemo, useState } from 'react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -102,27 +103,42 @@ export default function AdjustmentForm({
       });
 
       const data = await response.json().catch(() => ({
-        error: 'Failed to save adjustment.'
+        error: 'Failed to save stock correction.'
       }));
 
       setLoading(false);
 
       if (!response.ok) {
-        setError(data.error ?? 'Failed to save adjustment.');
+        setError(data.error ?? 'Failed to save stock correction.');
         return;
       }
 
-      setSuccess('Inventory adjustment recorded successfully. Refresh the page to see the latest stock snapshot.');
+      setSuccess('Stock correction recorded successfully. Refresh the page to see the latest stock snapshot.');
       setQty('1');
       setNotes('');
     } catch {
       setLoading(false);
-      setError('Failed to save adjustment.');
+      setError('Failed to save stock correction.');
     }
   }
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
+      {!activeProducts.length ? (
+        <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-5 text-sm text-stone-600">
+          <div className="font-semibold text-stone-900">No products are ready for stock corrections yet.</div>
+          <div className="mt-2">Create products first, then use this screen only for exceptional corrections that do not belong in stock counts, supplier returns, or branch transfers.</div>
+          <div className="mt-3 flex flex-wrap gap-3">
+            <Link href="/products" className="font-semibold text-emerald-700 hover:text-emerald-800">
+              Open products
+            </Link>
+            <Link href="/stock-counts" className="font-semibold text-stone-700 hover:text-stone-900">
+              Start a stock count
+            </Link>
+          </div>
+        </div>
+      ) : null}
+
       <div>
         <label className="mb-2 block text-sm font-semibold text-stone-700">Product</label>
         <select
@@ -140,7 +156,7 @@ export default function AdjustmentForm({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <label className="mb-2 block text-sm font-semibold text-stone-700">Adjustment type</label>
+          <label className="mb-2 block text-sm font-semibold text-stone-700">Correction direction</label>
           <select
             className="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-emerald-500 focus:bg-white"
             value={adjustmentType}
@@ -152,7 +168,7 @@ export default function AdjustmentForm({
         </div>
 
         <div>
-          <label className="mb-2 block text-sm font-semibold text-stone-700">Reason code</label>
+          <label className="mb-2 block text-sm font-semibold text-stone-700">Business reason</label>
           <select
             className="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-emerald-500 focus:bg-white"
             value={reasonId}
@@ -197,6 +213,10 @@ export default function AdjustmentForm({
         </div>
       ) : null}
 
+      <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+        Use stock counts for variances, supplier returns for vendor-related removals, and branch transfers for inter-branch movement. This form is best for write-offs, internal use, and opening-balance corrections.
+      </div>
+
       {error ? (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       ) : null}
@@ -206,7 +226,7 @@ export default function AdjustmentForm({
       ) : null}
 
       <Button type="submit" disabled={loading || !activeProducts.length}>
-        {loading ? 'Saving adjustment...' : 'Save adjustment'}
+        {loading ? 'Saving stock correction...' : 'Save stock correction'}
       </Button>
     </form>
   );

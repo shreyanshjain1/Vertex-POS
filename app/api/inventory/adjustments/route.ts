@@ -69,6 +69,8 @@ export async function POST(request: Request) {
           shopId,
           productId: product.id,
           reasonId: reason.id,
+          // Keep the stored enum stable while the UI steers staff to use
+          // stock counts, transfers, and returns before falling back here.
           type: 'MANUAL_ADJUSTMENT',
           qtyChange: parsed.data.qtyChange,
           userId,
@@ -83,7 +85,7 @@ export async function POST(request: Request) {
         action: 'STOCK_ADJUSTED',
         entityType: 'Product',
         entityId: product.id,
-        description: `Adjusted stock for ${product.name} by ${parsed.data.qtyChange} with reason ${reason.label}.`,
+        description: `Recorded a stock correction for ${product.name} by ${parsed.data.qtyChange} with reason ${reason.label}.`,
         metadata: {
           previousStock: product.stockQty,
           nextStock,
@@ -99,6 +101,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
-    return apiErrorResponse(error, 'Unable to adjust inventory.');
+    return apiErrorResponse(error, 'Unable to record stock correction.');
   }
 }

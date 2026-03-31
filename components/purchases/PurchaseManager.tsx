@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
@@ -164,9 +165,9 @@ function getAvailableStatusActions(status: string) {
 function getStatusButtonLabel(status: string) {
   switch (status) {
     case 'SENT':
-      return 'Mark as sent';
+      return 'Mark as order sent';
     case 'DRAFT':
-      return 'Move to draft';
+      return 'Move back to awaiting send';
     case 'CANCELLED':
       return 'Cancel purchase';
     case 'CLOSED':
@@ -270,6 +271,11 @@ export default function PurchaseManager({
   }, [selectedProduct]);
   const selectedUnit = availableUnits.find((unit) => unit.unitOfMeasureId === selectedUnitId) ?? availableUnits[0] ?? null;
   const lineTotal = lines.reduce((sum, line) => sum + line.qty * line.unitCost, 0);
+  const canCreatePurchase = suppliers.length > 0 && products.length > 0;
+  const missingSetup = [
+    suppliers.length === 0 ? { href: '/suppliers', label: 'Add a supplier' } : null,
+    products.length === 0 ? { href: '/products', label: 'Add a product' } : null
+  ].filter((item): item is { href: string; label: string } => Boolean(item));
 
   function replacePurchase(updatedPurchase: Purchase) {
     setHistory((currentHistory) =>
@@ -393,7 +399,7 @@ export default function PurchaseManager({
         ? 'Purchase created and fully received.'
         : status === 'SENT'
           ? 'Purchase order created and marked as sent.'
-          : 'Draft purchase saved successfully.'
+          : 'Purchase saved as awaiting send.'
     );
   }
 
@@ -543,125 +549,139 @@ export default function PurchaseManager({
     <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
       <Card>
         <div id="record-purchase" className="mb-4 text-lg font-black text-stone-900">Purchase order entry</div>
-        <div className="grid gap-4">
-          <select
-            className="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm"
-            value={supplierId}
-            onChange={(event) => setSupplierId(event.target.value)}
-          >
-            {suppliers.map((supplier) => (
-              <option key={supplier.id} value={supplier.id}>
-                {supplier.name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            className="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm"
-            value={status}
-            onChange={(event) => setStatus(event.target.value as CreatePurchaseStatus)}
-          >
-            <option value="DRAFT">Save as draft</option>
-            <option value="SENT">Save as sent</option>
-            <option value="FULLY_RECEIVED">Create and fully receive</option>
-          </select>
-
-          <div className="grid gap-3 md:grid-cols-4">
-            <select
-              className="rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm"
-              value={selectedProductId}
-              onChange={(event) => {
-                setSelectedProductId(event.target.value);
-                const hit = products.find((product) => product.id === event.target.value);
-                if (hit) {
-                  setUnitCost(hit.cost);
-                  setSelectedUnitId(hit.uomConversions[0]?.unitOfMeasureId ?? hit.baseUnitOfMeasureId ?? '');
-                }
-              }}
-            >
-              {products.map((product) => (
-                <option key={product.id} value={product.id}>
-                  {product.name}
-                </option>
+        {!canCreatePurchase ? (
+          <div className="space-y-4 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-5 text-sm text-stone-600">
+            <div className="font-semibold text-stone-900">New purchase orders are unavailable until the branch has supplier and product records.</div>
+            <div>Complete the missing setup below, then return here to create operational purchase orders without relying on starter data.</div>
+            <div className="flex flex-wrap gap-3">
+              {missingSetup.map((item) => (
+                <Link key={item.href} href={item.href} className="font-semibold text-emerald-700 hover:text-emerald-800">
+                  {item.label}
+                </Link>
               ))}
-            </select>
-            <select
-              className="rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm"
-              value={selectedUnitId}
-              onChange={(event) => setSelectedUnitId(event.target.value)}
-            >
-              {availableUnits.map((unit) => (
-                <option key={unit.unitOfMeasureId} value={unit.unitOfMeasureId}>
-                  {unit.unitName}
-                </option>
-              ))}
-            </select>
-            <Input type="number" min={1} value={qty} onChange={(event) => setQty(event.target.value)} />
-            <Input type="number" step="0.01" value={unitCost} onChange={(event) => setUnitCost(event.target.value)} />
-          </div>
-
-          {selectedProduct ? (
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
-              Current stock for <span className="font-semibold text-stone-900">{selectedProduct.name}</span>: {selectedProduct.stockQty} {selectedProduct.baseUnitOfMeasure?.name.toLowerCase() ?? 'base units'}
-              <div className="mt-1 text-xs text-stone-500">
-                {summarizeConversions(
-                  selectedProduct.uomConversions.map((conversion) => ({
-                    unitName: conversion.unitOfMeasure.name,
-                    ratioToBase: conversion.ratioToBase
-                  })),
-                  selectedProduct.baseUnitOfMeasure?.name
-                )}
-              </div>
-              {selectedUnit ? (
-                <div className="mt-1 text-xs text-stone-500">
-                  Receipt preview: {qty || '0'} {selectedUnit.unitName.toLowerCase()}{Number(qty) === 1 ? '' : 's'} = {(Number(qty) || 0) * selectedUnit.ratioToBase} {selectedProduct.baseUnitOfMeasure?.name.toLowerCase() ?? 'base units'}
-                </div>
-              ) : null}
             </div>
-          ) : null}
+          </div>
+        ) : (
+          <div className="grid gap-4">
+            <select
+              className="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm"
+              value={supplierId}
+              onChange={(event) => setSupplierId(event.target.value)}
+            >
+              {suppliers.map((supplier) => (
+                <option key={supplier.id} value={supplier.id}>
+                  {supplier.name}
+                </option>
+              ))}
+            </select>
 
-          <Button type="button" variant="secondary" onClick={addLine}>Add line</Button>
-          <textarea
-            className="min-h-24 w-full rounded-2xl border border-stone-200 bg-white/88 px-4 py-3 text-sm text-stone-900 outline-none transition placeholder:text-stone-400 hover:border-stone-300 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
-            placeholder="Purchase notes"
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-          />
+            <select
+              className="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm"
+              value={status}
+              onChange={(event) => setStatus(event.target.value as CreatePurchaseStatus)}
+            >
+              <option value="DRAFT">Save as awaiting send</option>
+              <option value="SENT">Save as order sent</option>
+              <option value="FULLY_RECEIVED">Create and receive immediately</option>
+            </select>
 
-          <div className="space-y-2 rounded-2xl bg-stone-50 p-4">
-            {lines.length ? (
-              lines.map((line) => (
-                <div key={`${line.productId}-${line.unitOfMeasureId}`} className="flex items-center justify-between gap-3 text-sm text-stone-700">
-                  <span>
-                    {line.productName} | {line.qty} {line.unitName.toLowerCase()}{line.qty === 1 ? '' : 's'} x {money(line.unitCost, currencySymbol)}
-                    <span className="ml-2 text-xs text-stone-500">
-                      ({line.receivedBaseQty} base units)
-                    </span>
-                  </span>
-                  <div className="flex items-center gap-3">
-                    <span>{money(line.qty * line.unitCost, currencySymbol)}</span>
-                    <Button type="button" variant="ghost" onClick={() => removeLine(line.productId, line.unitOfMeasureId)}>
-                      Remove
-                    </Button>
-                  </div>
+            <div className="grid gap-3 md:grid-cols-4">
+              <select
+                className="rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm"
+                value={selectedProductId}
+                onChange={(event) => {
+                  setSelectedProductId(event.target.value);
+                  const hit = products.find((product) => product.id === event.target.value);
+                  if (hit) {
+                    setUnitCost(hit.cost);
+                    setSelectedUnitId(hit.uomConversions[0]?.unitOfMeasureId ?? hit.baseUnitOfMeasureId ?? '');
+                  }
+                }}
+              >
+                {products.map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="rounded-xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm"
+                value={selectedUnitId}
+                onChange={(event) => setSelectedUnitId(event.target.value)}
+              >
+                {availableUnits.map((unit) => (
+                  <option key={unit.unitOfMeasureId} value={unit.unitOfMeasureId}>
+                    {unit.unitName}
+                  </option>
+                ))}
+              </select>
+              <Input type="number" min={1} value={qty} onChange={(event) => setQty(event.target.value)} />
+              <Input type="number" step="0.01" value={unitCost} onChange={(event) => setUnitCost(event.target.value)} />
+            </div>
+
+            {selectedProduct ? (
+              <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+                Current stock for <span className="font-semibold text-stone-900">{selectedProduct.name}</span>: {selectedProduct.stockQty} {selectedProduct.baseUnitOfMeasure?.name.toLowerCase() ?? 'base units'}
+                <div className="mt-1 text-xs text-stone-500">
+                  {summarizeConversions(
+                    selectedProduct.uomConversions.map((conversion) => ({
+                      unitName: conversion.unitOfMeasure.name,
+                      ratioToBase: conversion.ratioToBase
+                    })),
+                    selectedProduct.baseUnitOfMeasure?.name
+                  )}
                 </div>
-              ))
-            ) : (
-              <div className="text-sm text-stone-500">No lines added yet. Add one or more products to build the purchase order.</div>
-            )}
+                {selectedUnit ? (
+                  <div className="mt-1 text-xs text-stone-500">
+                    Receipt preview: {qty || '0'} {selectedUnit.unitName.toLowerCase()}{Number(qty) === 1 ? '' : 's'} = {(Number(qty) || 0) * selectedUnit.ratioToBase} {selectedProduct.baseUnitOfMeasure?.name.toLowerCase() ?? 'base units'}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            <Button type="button" variant="secondary" onClick={addLine}>Add line</Button>
+            <textarea
+              className="min-h-24 w-full rounded-2xl border border-stone-200 bg-white/88 px-4 py-3 text-sm text-stone-900 outline-none transition placeholder:text-stone-400 hover:border-stone-300 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+              placeholder="Purchase notes"
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+            />
+
+            <div className="space-y-2 rounded-2xl bg-stone-50 p-4">
+              {lines.length ? (
+                lines.map((line) => (
+                  <div key={`${line.productId}-${line.unitOfMeasureId}`} className="flex items-center justify-between gap-3 text-sm text-stone-700">
+                    <span>
+                      {line.productName} | {line.qty} {line.unitName.toLowerCase()}{line.qty === 1 ? '' : 's'} x {money(line.unitCost, currencySymbol)}
+                      <span className="ml-2 text-xs text-stone-500">
+                        ({line.receivedBaseQty} base units)
+                      </span>
+                    </span>
+                    <div className="flex items-center gap-3">
+                      <span>{money(line.qty * line.unitCost, currencySymbol)}</span>
+                      <Button type="button" variant="ghost" onClick={() => removeLine(line.productId, line.unitOfMeasureId)}>
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-sm text-stone-500">No lines added yet. Add one or more products to build the purchase order.</div>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
+              Estimated total: <span className="font-semibold text-stone-950">{money(lineTotal, currencySymbol)}</span>
+            </div>
+
+            {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
+            {success ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div> : null}
+
+            <Button onClick={createPurchase} disabled={!lines.length || loading}>
+              {loading ? 'Saving purchase...' : 'Save purchase'}
+            </Button>
           </div>
-
-          <div className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
-            Estimated total: <span className="font-semibold text-stone-950">{money(lineTotal, currencySymbol)}</span>
-          </div>
-
-          {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
-          {success ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div> : null}
-
-          <Button onClick={createPurchase} disabled={!lines.length || loading}>
-            {loading ? 'Saving purchase...' : 'Save purchase'}
-          </Button>
-        </div>
+        )}
       </Card>
 
       <Card>

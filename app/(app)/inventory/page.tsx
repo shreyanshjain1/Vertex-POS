@@ -67,13 +67,20 @@ export default async function InventoryPage() {
     <div className="space-y-6">
       <AppHeader
         title="Inventory"
-        subtitle="Adjust stock manually, export the live catalog, and review the full movement history with clear status signals."
+        subtitle="Review stock health, use counts, transfers, and supplier returns for normal workflows, and reserve stock corrections for exceptional write-offs or opening-balance fixes."
         actions={
-          <Link href="/api/inventory/export">
-            <Button type="button" variant="secondary">
-              Export inventory CSV
-            </Button>
-          </Link>
+          <>
+            <Link href="/stock-counts">
+              <Button type="button" variant="secondary">
+                Open stock counts
+              </Button>
+            </Link>
+            <Link href="/api/inventory/export">
+              <Button type="button" variant="secondary">
+                Export inventory CSV
+              </Button>
+            </Link>
+          </>
         }
       />
 
