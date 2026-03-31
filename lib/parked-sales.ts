@@ -16,6 +16,7 @@ export type SerializedParkedSale = {
   id: string;
   shopId: string;
   cashierUserId: string;
+  customerId: string | null;
   cashierName: string;
   cashierEmail: string | null;
   customerName: string | null;
@@ -84,6 +85,7 @@ export function serializeParkedSale(record: ParkedSaleRecord): SerializedParkedS
     id: record.id,
     shopId: record.shopId,
     cashierUserId: record.cashierUserId,
+    customerId: record.customerId ?? null,
     cashierName:
       record.cashier?.name ??
       record.cashier?.email?.split('@')[0] ??

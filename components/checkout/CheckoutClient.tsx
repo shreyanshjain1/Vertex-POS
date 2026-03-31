@@ -6,6 +6,7 @@ import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
 import { dateTime, money } from '@/lib/format';
+import { getCustomerDisplayName } from '@/lib/customers';
 import { roundCurrency } from '@/lib/inventory';
 import {
   getPaymentSummary,
@@ -31,6 +32,19 @@ type Product = {
   category?: { id: string; name: string } | null;
 };
 type CartItem = Product & { qty: number };
+type Customer = {
+  id: string;
+  type: string;
+  firstName: string | null;
+  lastName: string | null;
+  businessName: string | null;
+  contactPerson: string | null;
+  phone: string | null;
+  email: string | null;
+  loyaltyBalance: number;
+  receivableBalance: string;
+  lastPurchaseAt: string | null;
+};
 type ScanFeedback = { tone: 'success' | 'error'; message: string } | null;
 type PaymentLine = {
   id: string;
@@ -42,6 +56,7 @@ type ParkedSale = {
   id: string;
   shopId: string;
   cashierUserId: string;
+  customerId: string | null;
   cashierName: string;
   cashierEmail: string | null;
   customerName: string | null;
@@ -86,6 +101,11 @@ function createPaymentLine(method: PaymentMethod): PaymentLine {
   return { id: crypto.randomUUID(), method, amount: '', referenceNumber: '' };
 }
 
+function toDateInputValue(value = new Date()) {
+  const offset = value.getTimezoneOffset();
+  return new Date(value.getTime() - offset * 60_000).toISOString().slice(0, 10);
+}
+
 function getOptionDisplayName(product: Pick<Product, 'name' | 'variantLabel'>) {
   return product.variantLabel ? `${product.name} - ${product.variantLabel}` : product.name;
 }
@@ -101,6 +121,7 @@ function getReservedQtyForProduct(items: CartItem[], productId: string, exceptOp
 export default function CheckoutClient({
   products,
   categories,
+  customers,
   taxRate,
   currencySymbol,
   cashierName,
@@ -109,6 +130,7 @@ export default function CheckoutClient({
 }: {
   products: Product[];
   categories: Category[];
+  customers: Customer[];
   taxRate: number;
   currencySymbol: string;
   cashierName: string;
@@ -125,8 +147,13 @@ export default function CheckoutClient({
   const [scanQuery, setScanQuery] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [discountAmount, setDiscountAmount] = useState('0');
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState('0');
+  const [isCreditSale, setIsCreditSale] = useState(false);
+  const [creditDueDate, setCreditDueDate] = useState(toDateInputValue());
   const [notes, setNotes] = useState('');
   const [payments, setPayments] = useState<PaymentLine[]>([
     createPaymentLine(canAcceptCash ? 'Cash' : 'Card')
@@ -156,11 +183,39 @@ export default function CheckoutClient({
       .slice(0, 30);
   }, [products, query, selectedCategory]);
 
+  const selectedCustomer = useMemo(
+    () => customers.find((customer) => customer.id === selectedCustomerId) ?? null,
+    [customers, selectedCustomerId]
+  );
+  const filteredCustomers = useMemo(() => {
+    const term = customerSearch.trim().toLowerCase();
+    if (!term) {
+      return customers.slice(0, 6);
+    }
+
+    return customers
+      .filter((customer) =>
+        [
+          getCustomerDisplayName(customer),
+          customer.phone ?? '',
+          customer.email ?? '',
+          customer.businessName ?? '',
+          customer.contactPerson ?? ''
+        ]
+          .join(' ')
+          .toLowerCase()
+          .includes(term)
+      )
+      .slice(0, 6);
+  }, [customerSearch, customers]);
+
   const productMap = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const itemCount = cart.reduce((sum, item) => sum + item.qty, 0);
   const subtotal = cart.reduce((sum, item) => sum + Number(item.price) * item.qty, 0);
   const taxAmount = subtotal * (taxRate / 100);
-  const discount = Number(discountAmount || 0);
+  const manualDiscount = Number(discountAmount || 0);
+  const loyaltyDiscount = Number(loyaltyPointsToRedeem || 0);
+  const discount = manualDiscount + loyaltyDiscount;
   const total = Math.max(subtotal + taxAmount - discount, 0);
 
   const paymentInputs = useMemo(
@@ -173,9 +228,37 @@ export default function CheckoutClient({
     [payments]
   );
 
-  const paymentSummary = useMemo(() => getPaymentSummary(total, paymentInputs), [paymentInputs, total]);
+  const paymentSummary = useMemo(
+    () =>
+      isCreditSale
+        ? {
+            totalPaid: 0,
+            remainingAmount: total,
+            changeDue: 0,
+            cashReceived: 0,
+            hasCashPayment: false
+          }
+        : getPaymentSummary(total, paymentInputs),
+    [isCreditSale, paymentInputs, total]
+  );
 
   const paymentError = useMemo(() => {
+    if (isCreditSale) {
+      if (!selectedCustomerId) return 'Attach a customer before posting a credit sale.';
+      if (!creditDueDate) return 'Choose a due date for the credit sale.';
+      if (Number(loyaltyPointsToRedeem) > 0 && selectedCustomer && Number(loyaltyPointsToRedeem) > selectedCustomer.loyaltyBalance) {
+        return 'Customer does not have enough loyalty points for this redemption.';
+      }
+      return '';
+    }
+
+    if (Number(loyaltyPointsToRedeem) > 0) {
+      if (!selectedCustomerId) return 'Attach a customer before redeeming loyalty points.';
+      if (selectedCustomer && Number(loyaltyPointsToRedeem) > selectedCustomer.loyaltyBalance) {
+        return 'Customer does not have enough loyalty points for this redemption.';
+      }
+    }
+
     if (!payments.length) return 'Add at least one payment line.';
     for (const payment of paymentInputs) {
       if (payment.amount <= 0) return 'Each payment line needs an amount greater than zero.';
@@ -188,7 +271,7 @@ export default function CheckoutClient({
       return 'Non-cash payments must match the sale total exactly.';
     }
     return '';
-  }, [paymentInputs, paymentSummary, payments.length, total]);
+  }, [creditDueDate, isCreditSale, loyaltyPointsToRedeem, paymentInputs, paymentSummary, payments.length, selectedCustomer, selectedCustomerId, total]);
 
   const canCompleteSale =
     cart.length > 0 &&
@@ -215,13 +298,26 @@ export default function CheckoutClient({
   function resetCheckoutState() {
     setCart([]);
     setDiscountAmount('0');
+    setCustomerSearch('');
+    setSelectedCustomerId(null);
     setCustomerName('');
     setCustomerPhone('');
+    setLoyaltyPointsToRedeem('0');
+    setIsCreditSale(false);
+    setCreditDueDate(toDateInputValue());
     setNotes('');
     setScanQuery('');
     setScanFeedback(null);
     setError('');
     resetPayments();
+  }
+
+  function selectCustomer(customer: Customer) {
+    setSelectedCustomerId(customer.id);
+    setCustomerSearch(getCustomerDisplayName(customer));
+    setCustomerName(getCustomerDisplayName(customer));
+    setCustomerPhone(customer.phone ?? '');
+    setError('');
   }
 
   function addToCart(product: Product) {
@@ -364,15 +460,20 @@ export default function CheckoutClient({
       setError('Add at least one item before holding the cart.');
       return;
     }
+    if (isCreditSale || Number(loyaltyPointsToRedeem) > 0) {
+      setError('Hold cart is only available for standard checkout carts in this pass.');
+      return;
+    }
     setHolding(true);
     try {
       const response = await fetch('/api/parked-sales', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          customerId: selectedCustomerId,
           customerName: customerName || null,
           customerPhone: customerPhone || null,
-          discountAmount: discount,
+          discountAmount: manualDiscount,
           notes: notes || null,
           items: cart.map((item) => ({ productId: item.productId, variantId: item.variantId, qty: item.qty }))
         })
@@ -417,8 +518,17 @@ export default function CheckoutClient({
           return { ...option, qty: item.qty };
         })
       );
+      setSelectedCustomerId(parkedSale.customerId ?? null);
+      setCustomerSearch(
+        parkedSale.customerId
+          ? getCustomerDisplayName(customers.find((customer) => customer.id === parkedSale.customerId) ?? {})
+          : parkedSale.customerName ?? ''
+      );
       setCustomerName(parkedSale.customerName ?? '');
       setCustomerPhone(parkedSale.customerPhone ?? '');
+      setLoyaltyPointsToRedeem('0');
+      setIsCreditSale(false);
+      setCreditDueDate(toDateInputValue());
       setNotes(parkedSale.notes ?? '');
       setDiscountAmount(parkedSale.discountAmount);
       setScanQuery('');
@@ -467,11 +577,15 @@ export default function CheckoutClient({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          customerId: selectedCustomerId,
           customerName: customerName || null,
           customerPhone: customerPhone || null,
-          discountAmount: discount,
+          loyaltyPointsToRedeem: Number(loyaltyPointsToRedeem),
+          isCreditSale,
+          creditDueDate: isCreditSale ? creditDueDate : null,
+          discountAmount: manualDiscount,
           notes: notes || null,
-          payments: payments.map((payment) => ({
+          payments: isCreditSale ? [] : payments.map((payment) => ({
             method: payment.method,
             amount: Number(payment.amount),
             referenceNumber: payment.referenceNumber || null
@@ -616,8 +730,38 @@ export default function CheckoutClient({
 
         <div className="rounded-[26px] border border-stone-200 bg-stone-50/85 p-4">
           <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Customer and payment</div>
-          <p className="mt-1 text-sm text-stone-500">Capture payment lines quickly and keep totals accurate.</p>
-          {!canAcceptCash ? <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Open a register session first to accept cash payments. Non-cash payments can still be processed safely.</div> : null}
+          <p className="mt-1 text-sm text-stone-500">Attach a customer when you need history, loyalty, or receivables.</p>
+          {!canAcceptCash && !isCreditSale ? <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Open a register session first to accept cash payments. Non-cash payments can still be processed safely.</div> : null}
+
+          <div className="mt-4 rounded-2xl border border-stone-200 bg-white p-4">
+            <div className="text-sm font-semibold text-stone-900">Customer search</div>
+            <div className="mt-3 grid gap-3">
+              <Input placeholder="Search customer by name, phone, email, or business" value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} />
+              <div className="flex flex-wrap gap-2">
+                {filteredCustomers.map((customer) => (
+                  <button key={customer.id} type="button" onClick={() => selectCustomer(customer)} className={`rounded-full border px-3 py-2 text-sm transition ${selectedCustomerId === customer.id ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-stone-200 bg-stone-50 text-stone-700 hover:border-stone-300 hover:bg-white'}`}>
+                    {getCustomerDisplayName(customer)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {selectedCustomer ? (
+              <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="font-semibold text-stone-900">{getCustomerDisplayName(selectedCustomer)}</div>
+                    <div className="text-stone-600">{selectedCustomer.phone || 'No phone'}{selectedCustomer.email ? ` / ${selectedCustomer.email}` : ''}</div>
+                    <div className="mt-1 text-xs text-stone-500">Points {selectedCustomer.loyaltyBalance} / Receivables {money(selectedCustomer.receivableBalance, currencySymbol)}</div>
+                  </div>
+                  <Button type="button" variant="ghost" onClick={() => { setSelectedCustomerId(null); setCustomerSearch(''); setCustomerName(''); setCustomerPhone(''); setLoyaltyPointsToRedeem('0'); setIsCreditSale(false); }}>
+                    Clear
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <Input placeholder="Customer name" value={customerName} onChange={(event) => setCustomerName(event.target.value)} />
             <Input placeholder="Customer phone" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} />
@@ -625,7 +769,16 @@ export default function CheckoutClient({
             <Input placeholder="Notes for this sale" value={notes} onChange={(event) => setNotes(event.target.value)} />
           </div>
 
-          <div className="mt-4 space-y-3">
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <Input type="number" min={0} placeholder="Redeem loyalty points" value={loyaltyPointsToRedeem} onChange={(event) => setLoyaltyPointsToRedeem(event.target.value)} />
+            <label className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
+              <input type="checkbox" checked={isCreditSale} onChange={(event) => setIsCreditSale(event.target.checked)} />
+              Post as customer credit sale
+            </label>
+            <Input type="date" value={creditDueDate} onChange={(event) => setCreditDueDate(event.target.value)} disabled={!isCreditSale} />
+          </div>
+
+          {!isCreditSale ? <div className="mt-4 space-y-3">
             {payments.map((payment) => {
               const exactAmount = getExactAmountForLine(payment.id);
               const quickAmounts = getQuickCashAmounts(exactAmount).filter((amount) => amount !== exactAmount);
@@ -644,7 +797,11 @@ export default function CheckoutClient({
               );
             })}
             <Button type="button" variant="secondary" onClick={addPaymentLine}>Add payment line</Button>
-          </div>
+          </div> : (
+            <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+              This sale will be posted to customer receivables and collected later from the customer ledger.
+            </div>
+          )}
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-3"><div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Paid total</div><div className="mt-1 text-2xl font-black text-stone-950">{money(paymentSummary.totalPaid, currencySymbol)}</div></div>
@@ -657,8 +814,9 @@ export default function CheckoutClient({
         <div className="rounded-[26px] border border-stone-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(245,245,244,0.96))] p-5 text-sm">
           <div className="flex justify-between"><span>Subtotal</span><span>{money(subtotal, currencySymbol)}</span></div>
           <div className="mt-2 flex justify-between"><span>Tax ({taxRate}%)</span><span>{money(taxAmount, currencySymbol)}</span></div>
-          <div className="mt-2 flex justify-between"><span>Discount</span><span>-{money(discount, currencySymbol)}</span></div>
-          <div className="mt-2 flex justify-between"><span>Paid</span><span>{money(paymentSummary.totalPaid, currencySymbol)}</span></div>
+          <div className="mt-2 flex justify-between"><span>Manual discount</span><span>-{money(manualDiscount, currencySymbol)}</span></div>
+          <div className="mt-2 flex justify-between"><span>Loyalty discount</span><span>-{money(loyaltyDiscount, currencySymbol)}</span></div>
+          <div className="mt-2 flex justify-between"><span>{isCreditSale ? 'Receivable' : 'Paid'}</span><span>{money(isCreditSale ? total : paymentSummary.totalPaid, currencySymbol)}</span></div>
           <div className="mt-2 flex justify-between"><span>Change</span><span>{money(paymentSummary.changeDue, currencySymbol)}</span></div>
           <div className="mt-3 flex justify-between border-t border-stone-200 pt-3 text-lg font-black text-stone-900"><span>Total</span><span>{money(total, currencySymbol)}</span></div>
           <div className="mt-4 rounded-[22px] border border-stone-200 bg-white px-4 py-3 text-sm text-stone-600">{cart.length ? paymentError || `${itemCount} item(s) across ${cart.length} line(s) are ready for validation and receipt printing.` : 'Add at least one product before finalizing the sale.'}</div>

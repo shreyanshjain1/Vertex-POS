@@ -9,6 +9,7 @@ import {
   getParkedSaleExpiresAt,
   serializeParkedSale
 } from '@/lib/parked-sales';
+import { getCustomerDisplayName } from '@/lib/customers';
 import { collapseSaleItems, normalizeText } from '@/lib/inventory';
 import { buildVariantLabel } from '@/lib/product-merchandising';
 import { prisma } from '@/lib/prisma';
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
 
     await cleanupExpiredParkedSales(prisma, shopId);
 
-    const [settings, products] = await Promise.all([
+    const [settings, products, customer] = await Promise.all([
       prisma.shopSetting.findUnique({
         where: { shopId },
         select: { taxRate: true }
@@ -43,8 +44,24 @@ export async function POST(request: Request) {
         include: {
           variants: true
         }
-      })
+      }),
+      parsed.data.customerId
+        ? prisma.customer.findFirst({
+            where: {
+              id: parsed.data.customerId,
+              shopId,
+              isActive: true
+            }
+          })
+        : Promise.resolve(null)
     ]);
+
+    if (parsed.data.customerId && !customer) {
+      return NextResponse.json(
+        { error: 'Selected customer was not found or is archived.' },
+        { status: 404 }
+      );
+    }
 
     const productMap = new Map(products.map((product) => [product.id, product]));
 
@@ -82,8 +99,9 @@ export async function POST(request: Request) {
         data: {
           shopId,
           cashierUserId: userId,
-          customerName: normalizeText(parsed.data.customerName),
-          customerPhone: normalizeText(parsed.data.customerPhone),
+          customerId: customer?.id ?? null,
+          customerName: normalizeText(parsed.data.customerName) ?? (customer ? getCustomerDisplayName(customer) : null),
+          customerPhone: normalizeText(parsed.data.customerPhone) ?? normalizeText(customer?.phone),
           notes: normalizeText(parsed.data.notes),
           subtotal: totals.subtotal,
           taxAmount: totals.taxAmount,

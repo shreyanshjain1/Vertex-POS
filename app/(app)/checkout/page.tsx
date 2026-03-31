@@ -28,12 +28,26 @@ type CheckoutProduct = {
   } | null;
 };
 
+type CheckoutCustomer = {
+  id: string;
+  type: string;
+  firstName: string | null;
+  lastName: string | null;
+  businessName: string | null;
+  contactPerson: string | null;
+  phone: string | null;
+  email: string | null;
+  loyaltyBalance: number;
+  receivableBalance: string;
+  lastPurchaseAt: string | null;
+};
+
 export default async function CheckoutPage() {
   const { shopId, session, role, userId } = await getActiveShopContext();
 
   await cleanupExpiredParkedSales(prisma, shopId);
 
-  const [products, categories, settings, activeCashSession, parkedSales] = await Promise.all([
+  const [products, categories, customers, settings, activeCashSession, parkedSales] = await Promise.all([
     prisma.product.findMany({
       where: { shopId, isActive: true },
       orderBy: { name: 'asc' },
@@ -60,6 +74,47 @@ export default async function CheckoutPage() {
       select: {
         id: true,
         name: true
+      }
+    }),
+    prisma.customer.findMany({
+      where: { shopId, isActive: true },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+      select: {
+        id: true,
+        type: true,
+        firstName: true,
+        lastName: true,
+        businessName: true,
+        contactPerson: true,
+        phone: true,
+        email: true,
+        loyaltyLedger: {
+          select: {
+            balanceAfter: true
+          },
+          orderBy: [{ createdAt: 'desc' }],
+          take: 1
+        },
+        creditLedgers: {
+          where: {
+            status: {
+              not: 'VOIDED'
+            }
+          },
+          select: {
+            balance: true
+          }
+        },
+        sales: {
+          where: {
+            status: 'COMPLETED'
+          },
+          select: {
+            createdAt: true
+          },
+          orderBy: [{ createdAt: 'desc' }],
+          take: 1
+        }
       }
     }),
     prisma.shopSetting.findUnique({
@@ -144,6 +199,21 @@ export default async function CheckoutPage() {
           }];
         })}
         categories={categories}
+        customers={customers.map<CheckoutCustomer>((customer) => ({
+          id: customer.id,
+          type: customer.type,
+          firstName: customer.firstName,
+          lastName: customer.lastName,
+          businessName: customer.businessName,
+          contactPerson: customer.contactPerson,
+          phone: customer.phone,
+          email: customer.email,
+          loyaltyBalance: customer.loyaltyLedger[0]?.balanceAfter ?? 0,
+          receivableBalance: customer.creditLedgers
+            .reduce((sum, ledger) => sum + Number(ledger.balance.toString()), 0)
+            .toString(),
+          lastPurchaseAt: customer.sales[0]?.createdAt.toISOString() ?? null
+        }))}
         taxRate={Number(settings?.taxRate ?? 12)}
         currencySymbol={settings?.currencySymbol ?? '₱'}
         cashierName={session.user.name ?? 'Cashier'}

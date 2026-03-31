@@ -4,6 +4,12 @@ import { saleSchema } from '@/lib/auth/validation';
 import { requireRole } from '@/lib/authz';
 import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
+import { getCustomerLoyaltyBalance } from '@/lib/customer-operations';
+import {
+  calculateLoyaltyDiscount,
+  calculatePointsEarned,
+  getCustomerDisplayName
+} from '@/lib/customers';
 import { getNextDocumentNumber } from '@/lib/document-sequence';
 import { collapseSaleItems, normalizeText, roundCurrency } from '@/lib/inventory';
 import {
@@ -13,6 +19,19 @@ import {
 import { buildVariantLabel } from '@/lib/product-merchandising';
 import { prisma } from '@/lib/prisma';
 import { CASH_PAYMENT_METHOD, getActiveCashSession } from '@/lib/register';
+
+function parseOptionalDateInput(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed;
+}
 
 function serializeSale<T extends { createdAt: Date; subtotal: { toString(): string }; taxAmount: { toString(): string }; discountAmount: { toString(): string }; totalAmount: { toString(): string }; changeDue: { toString(): string } }>(
   sale: T
@@ -70,8 +89,19 @@ export async function POST(request: Request) {
       amount: Number(payment.amount),
       referenceNumber: payment.referenceNumber ?? null
     }));
+    const isCreditSale = parsed.data.isCreditSale;
+    const creditDueDate = parseOptionalDateInput(parsed.data.creditDueDate);
+    const loyaltyPointsToRedeem = parsed.data.loyaltyPointsToRedeem ?? 0;
+    const loyaltyDiscountAmount = calculateLoyaltyDiscount(loyaltyPointsToRedeem);
 
-    const hasCashPayment = rawPayments.some((payment) => payment.method === CASH_PAYMENT_METHOD);
+    if (isCreditSale && !creditDueDate) {
+      return NextResponse.json(
+        { error: 'Enter a valid credit due date.' },
+        { status: 400 }
+      );
+    }
+
+    const hasCashPayment = !isCreditSale && rawPayments.some((payment) => payment.method === CASH_PAYMENT_METHOD);
 
     if (hasCashPayment) {
       const activeCashSession = await getActiveCashSession(prisma, shopId, userId);
@@ -84,7 +114,7 @@ export async function POST(request: Request) {
     }
 
     const items = collapseSaleItems(parsed.data.items);
-    const [settings, products] = await Promise.all([
+    const [settings, products, customer] = await Promise.all([
       prisma.shopSetting.findUnique({ where: { shopId } }),
       prisma.product.findMany({
         where: {
@@ -94,8 +124,24 @@ export async function POST(request: Request) {
         include: {
           variants: true
         }
-      })
+      }),
+      parsed.data.customerId
+        ? prisma.customer.findFirst({
+            where: {
+              id: parsed.data.customerId,
+              shopId,
+              isActive: true
+            }
+          })
+        : Promise.resolve(null)
     ]);
+
+    if (parsed.data.customerId && !customer) {
+      return NextResponse.json(
+        { error: 'Selected customer was not found or is archived.' },
+        { status: 404 }
+      );
+    }
 
     const productMap = new Map(products.map((product) => [product.id, product]));
     const productQtyTotals = new Map<string, number>();
@@ -158,7 +204,8 @@ export async function POST(request: Request) {
       saleLines.reduce((sum, line) => sum + line.lineTotal, 0)
     );
     const taxAmount = roundCurrency(subtotal * (Number(settings?.taxRate ?? 0) / 100));
-    const discountAmount = roundCurrency(Number(parsed.data.discountAmount ?? 0));
+    const manualDiscountAmount = roundCurrency(Number(parsed.data.discountAmount ?? 0));
+    const discountAmount = roundCurrency(manualDiscountAmount + loyaltyDiscountAmount);
 
     if (discountAmount > subtotal + taxAmount) {
       return NextResponse.json(
@@ -168,7 +215,19 @@ export async function POST(request: Request) {
     }
 
     const totalAmount = roundCurrency(subtotal + taxAmount - discountAmount);
-    const paymentValidation = validatePaymentsForSale(totalAmount, rawPayments);
+    const paymentValidation = isCreditSale
+      ? {
+          ok: true as const,
+          payments: [],
+          summary: {
+            totalPaid: 0,
+            remainingAmount: totalAmount,
+            changeDue: 0,
+            cashReceived: 0,
+            hasCashPayment: false
+          }
+        }
+      : validatePaymentsForSale(totalAmount, rawPayments);
 
     if (!paymentValidation.ok) {
       return NextResponse.json(
@@ -177,9 +236,18 @@ export async function POST(request: Request) {
       );
     }
 
-    const paymentMethodSummary = getSalePaymentSummaryLabel(paymentValidation.payments);
+    const paymentMethodSummary = isCreditSale
+      ? 'Customer Credit'
+      : getSalePaymentSummaryLabel(paymentValidation.payments);
+    const pointsEarned = customer ? calculatePointsEarned(totalAmount) : 0;
 
     const sale = await prisma.$transaction(async (tx) => {
+      const currentLoyaltyBalance = customer ? await getCustomerLoyaltyBalance(tx, customer.id) : 0;
+
+      if (loyaltyPointsToRedeem > currentLoyaltyBalance) {
+        throw new Error('LOYALTY_BALANCE_EXCEEDED');
+      }
+
       const saleNumber = await getNextDocumentNumber(tx, {
         shopId,
         type: DocumentSequenceType.SALE,
@@ -195,16 +263,21 @@ export async function POST(request: Request) {
         data: {
           shopId,
           cashierUserId: userId,
+          customerId: customer?.id ?? null,
           saleNumber,
           receiptNumber,
-          customerName: normalizeText(parsed.data.customerName),
-          customerPhone: normalizeText(parsed.data.customerPhone),
+          customerName: normalizeText(parsed.data.customerName) ?? (customer ? getCustomerDisplayName(customer) : null),
+          customerPhone: normalizeText(parsed.data.customerPhone) ?? normalizeText(customer?.phone),
           subtotal,
           taxAmount,
           discountAmount,
           totalAmount,
           changeDue: paymentValidation.summary.changeDue,
           paymentMethod: paymentMethodSummary,
+          isCreditSale,
+          loyaltyPointsEarned: pointsEarned,
+          loyaltyPointsRedeemed: loyaltyPointsToRedeem,
+          loyaltyDiscountAmount,
           notes: normalizeText(parsed.data.notes),
           cashierName: session.user.name || session.user.email || 'Cashier',
           items: {
@@ -220,16 +293,66 @@ export async function POST(request: Request) {
               lineTotal: line.lineTotal
             }))
           },
-          payments: {
-            create: paymentValidation.payments.map((payment) => ({
-              method: payment.method,
-              amount: payment.amount,
-              referenceNumber: normalizeText(payment.referenceNumber)
-            }))
-          }
+          payments: paymentValidation.payments.length
+            ? {
+                create: paymentValidation.payments.map((payment) => ({
+                  method: payment.method,
+                  amount: payment.amount,
+                  referenceNumber: normalizeText(payment.referenceNumber)
+                }))
+              }
+            : undefined
         },
         include: { items: true }
       });
+
+      if (customer) {
+        let nextBalance = currentLoyaltyBalance;
+
+        if (loyaltyPointsToRedeem > 0) {
+          nextBalance -= loyaltyPointsToRedeem;
+          await tx.customerLoyaltyLedger.create({
+            data: {
+              shopId,
+              customerId: customer.id,
+              saleId: saleRecord.id,
+              type: 'REDEEMED',
+              points: loyaltyPointsToRedeem,
+              balanceAfter: nextBalance,
+              note: `Redeemed for sale ${saleRecord.saleNumber}.`
+            }
+          });
+        }
+
+        if (pointsEarned > 0) {
+          nextBalance += pointsEarned;
+          await tx.customerLoyaltyLedger.create({
+            data: {
+              shopId,
+              customerId: customer.id,
+              saleId: saleRecord.id,
+              type: 'EARNED',
+              points: pointsEarned,
+              balanceAfter: nextBalance,
+              note: `Earned from sale ${saleRecord.saleNumber}.`
+            }
+          });
+        }
+
+        if (isCreditSale && creditDueDate) {
+          await tx.customerCreditLedger.create({
+            data: {
+              shopId,
+              customerId: customer.id,
+              saleId: saleRecord.id,
+              dueDate: creditDueDate,
+              originalAmount: totalAmount,
+              balance: totalAmount,
+              status: creditDueDate < new Date() ? 'OVERDUE' : 'OPEN'
+            }
+          });
+        }
+      }
 
       for (const [productId, qty] of productQtyTotals) {
         const product = productMap.get(productId)!;
@@ -264,10 +387,16 @@ export async function POST(request: Request) {
         entityId: saleRecord.id,
         description: `Completed sale ${saleRecord.saleNumber}.`,
         metadata: {
+          customerId: customer?.id ?? null,
+          customerName: customer ? getCustomerDisplayName(customer) : normalizeText(parsed.data.customerName),
           itemCount: saleLines.reduce((sum, line) => sum + line.qty, 0),
           variantLineCount: saleLines.filter((line) => line.variant).length,
           paymentMethod: paymentMethodSummary,
           paymentCount: paymentValidation.payments.length,
+          isCreditSale,
+          creditDueDate: creditDueDate?.toISOString() ?? null,
+          loyaltyPointsRedeemed: loyaltyPointsToRedeem,
+          loyaltyPointsEarned: pointsEarned,
           totalAmount,
           totalPaid: paymentValidation.summary.totalPaid,
           changeDue: paymentValidation.summary.changeDue
@@ -289,8 +418,15 @@ export async function POST(request: Request) {
         }
       },
       { status: 201 }
-    );
-  } catch (error) {
-    return apiErrorResponse(error, 'Unable to complete sale.');
-  }
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message === 'LOYALTY_BALANCE_EXCEEDED') {
+        return NextResponse.json(
+          { error: 'Customer does not have enough loyalty points for this redemption.' },
+          { status: 400 }
+        );
+      }
+
+      return apiErrorResponse(error, 'Unable to complete sale.');
+    }
 }
