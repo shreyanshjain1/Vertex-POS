@@ -28,6 +28,8 @@ type ReceiptSale = {
   receiptNumber: string;
   paymentMethod: string;
   cashierName: string | null;
+  customerEmail?: string | null;
+  customerBusinessName?: string | null;
   customerName: string | null;
   customerPhone: string | null;
   isCreditSale: boolean;
@@ -55,6 +57,16 @@ type ReceiptShop = {
   email: string | null;
 };
 
+function buildBarcodePattern(value: string) {
+  return Array.from(value).map((character, index) => {
+    const width = (character.charCodeAt(0) % 3) + 1;
+    return {
+      id: `${character}-${index}`,
+      width
+    };
+  });
+}
+
 export default function ThermalReceipt({
   sale,
   shop,
@@ -74,6 +86,7 @@ export default function ThermalReceipt({
 }) {
   const paperWidth = receiptWidth === '58mm' ? '58mm' : '80mm';
   const compact = paperWidth === '58mm';
+  const barcodePattern = buildBarcodePattern(sale.receiptNumber);
 
   useEffect(() => {
     if (!autoprint) return;
@@ -145,7 +158,9 @@ export default function ThermalReceipt({
           <div className="flex justify-between gap-3"><span>Cashier</span><span className="text-right">{sale.cashierName ?? 'Cashier'}</span></div>
           <div className="flex justify-between gap-3"><span>Payment</span><span className="text-right">{sale.paymentMethod}</span></div>
           <div className="flex justify-between gap-3"><span>Customer</span><span className="text-right">{sale.customerName ?? 'Walk-in'}</span></div>
+          {sale.customerBusinessName ? <div className="flex justify-between gap-3"><span>Business</span><span className="text-right">{sale.customerBusinessName}</span></div> : null}
           {sale.customerPhone ? <div className="flex justify-between gap-3"><span>Phone</span><span className="text-right">{sale.customerPhone}</span></div> : null}
+          {sale.customerEmail ? <div className="flex justify-between gap-3"><span>Email</span><span className="text-right">{sale.customerEmail}</span></div> : null}
           {sale.isCreditSale && sale.creditDueDate ? <div className="flex justify-between gap-3"><span>Due</span><span className="text-right">{shortDate(sale.creditDueDate)}</span></div> : null}
         </div>
 
@@ -193,6 +208,20 @@ export default function ThermalReceipt({
           {Number(sale.changeDue) > 0 ? <div className="flex justify-between font-semibold text-emerald-700"><span>Change due</span><span>{money(sale.changeDue, currencySymbol)}</span></div> : null}
         </div>
 
+        <div className={`border-b border-dashed border-stone-300 py-4 text-center ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
+          <div className="font-semibold text-stone-900">Receipt identifier</div>
+          <div className="mt-3 flex h-12 items-end justify-center gap-px rounded-xl border border-stone-200 bg-stone-50 px-3 py-2">
+            {barcodePattern.map((bar) => (
+              <span
+                key={bar.id}
+                className="inline-block rounded-sm bg-stone-900"
+                style={{ width: `${bar.width}px`, height: `${bar.width === 3 ? 28 : bar.width === 2 ? 22 : 16}px` }}
+              />
+            ))}
+          </div>
+          <div className="mt-2 font-mono tracking-[0.32em] text-stone-700">{sale.receiptNumber}</div>
+        </div>
+
         {sale.notes ? (
           <div className={`border-b border-dashed border-stone-300 py-4 ${compact ? 'text-[10px]' : 'text-[11px]'} text-stone-600`}>
             <div className="font-semibold text-stone-900">Notes</div>
@@ -201,7 +230,8 @@ export default function ThermalReceipt({
         ) : null}
 
         <div className={`pt-4 text-center ${compact ? 'text-[10px]' : 'text-[11px]'} text-stone-600`}>
-          {receiptFooter || 'Thank you for your purchase.'}
+          <div className="font-semibold text-stone-900">Return policy / footer</div>
+          <div className="mt-2">{receiptFooter || 'Thank you for your purchase.'}</div>
         </div>
       </div>
     </div>

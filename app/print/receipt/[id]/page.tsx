@@ -19,6 +19,12 @@ export default async function PrintReceiptPage({
       where: { id, shopId },
       include: {
         items: true,
+        customer: {
+          select: {
+            email: true,
+            businessName: true
+          }
+        },
         customerCreditLedger: true,
         payments: {
           orderBy: { createdAt: 'asc' }
@@ -80,6 +86,8 @@ export default async function PrintReceiptPage({
           receiptNumber: sale.receiptNumber,
           paymentMethod: sale.paymentMethod,
           cashierName: sale.cashierName,
+          customerEmail: sale.customer?.email ?? null,
+          customerBusinessName: sale.customer?.businessName ?? null,
           customerName: sale.customerName,
           customerPhone: sale.customerPhone,
           isCreditSale: sale.isCreditSale,

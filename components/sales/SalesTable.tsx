@@ -82,7 +82,7 @@ export default function SalesTable({
                         View
                       </Link>
                       <Link href={`/sales/${sale.id}/receipt`} className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-600 hover:text-stone-900">
-                        Receipt
+                        Reprint
                       </Link>
                       {canRefundSales ? (
                         <Link href={`/sales/${sale.id}/refund`} className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-600 hover:text-stone-900">
@@ -102,7 +102,12 @@ export default function SalesTable({
           </table>
         </div>
 
-        {!sales.length ? <div className="border-t border-stone-200 bg-stone-50 py-8 text-center text-sm text-stone-500">No sales yet.</div> : null}
+        {!sales.length ? (
+          <div className="border-t border-stone-200 bg-stone-50 px-6 py-8 text-center text-sm text-stone-500">
+            <div className="font-semibold text-stone-900">No sales yet.</div>
+            <div className="mt-2">Start a checkout to generate the first receipt, then reprints and refund history will appear here automatically.</div>
+          </div>
+        ) : null}
       </div>
     </Card>
   );

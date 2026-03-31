@@ -52,7 +52,7 @@ export default async function SaleDetailPage({
           <Button type="button" variant="secondary">Open receipt</Button>
         </Link>
         <Link href={`/print/receipt/${sale.id}?autoprint=1`}>
-          <Button type="button" variant="secondary">Print receipt</Button>
+          <Button type="button" variant="secondary">Reprint receipt</Button>
         </Link>
         <Link href="/returns">
           <Button type="button" variant="ghost">Returns history</Button>
