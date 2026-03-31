@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { PAYMENT_METHODS } from '@/lib/payments';
+import { CREATE_PURCHASE_STATUS_OPTIONS, MANUAL_PURCHASE_STATUS_OPTIONS } from '@/lib/purchases';
 import { SHOP_TYPE_OPTIONS } from '@/lib/shop-config';
 
 const shopRoleSchema = z.enum(['ADMIN', 'MANAGER', 'CASHIER']);
@@ -225,7 +226,7 @@ export const parkedSaleCreateSchema = z.object({
 
 export const purchaseSchema = z.object({
   supplierId: z.string().trim().min(1),
-  status: z.enum(['DRAFT', 'RECEIVED', 'CANCELLED']).default('DRAFT'),
+  status: z.enum(CREATE_PURCHASE_STATUS_OPTIONS).default('DRAFT'),
   notes: z.string().trim().max(300).optional().nullable(),
   items: z.array(z.object({
     productId: z.string().trim().min(1),
@@ -233,6 +234,39 @@ export const purchaseSchema = z.object({
     qty: z.coerce.number().int().positive(),
     unitCost: z.coerce.number().min(0)
   })).min(1)
+});
+
+export const purchaseStatusUpdateSchema = z.object({
+  action: z.literal('UPDATE_STATUS'),
+  status: z.enum(MANUAL_PURCHASE_STATUS_OPTIONS),
+  notes: z.string().trim().max(300).optional().nullable()
+});
+
+export const purchaseReceiptSchema = z.object({
+  action: z.literal('RECEIVE'),
+  receivedAt: z.string().trim().optional().nullable().or(z.literal('')),
+  notes: z.string().trim().max(300).optional().nullable(),
+  items: z.array(z.object({
+    purchaseItemId: z.string().trim().min(1),
+    qtyReceived: z.coerce.number().int().positive('Received quantity must be greater than zero.')
+  })).min(1, 'Add at least one received item.')
+});
+
+export const supplierInvoiceSchema = z.object({
+  action: z.literal('UPSERT_INVOICE'),
+  invoiceNumber: z.string().trim().min(1, 'Invoice number is required.').max(80),
+  invoiceDate: z.string().trim().min(1, 'Invoice date is required.'),
+  dueDate: z.string().trim().min(1, 'Due date is required.'),
+  totalAmount: z.coerce.number().positive('Invoice total must be greater than zero.').max(999999.99),
+  notes: z.string().trim().max(500).optional().nullable()
+});
+
+export const supplierPaymentSchema = z.object({
+  action: z.literal('RECORD_PAYMENT'),
+  method: z.enum(PAYMENT_METHODS),
+  amount: z.coerce.number().positive('Payment amount must be greater than zero.').max(999999.99),
+  referenceNumber: z.string().trim().max(80).optional().nullable(),
+  paidAt: z.string().trim().min(1, 'Payment date is required.')
 });
 
 export const settingSchema = z.object({
