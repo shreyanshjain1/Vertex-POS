@@ -22,7 +22,7 @@ export default async function CashierReportsPage({
     <div className="space-y-6">
       <AppHeader
         title="Cashier Reports"
-        subtitle="Review sales performance by cashier and keep refunds and voids visible as operational exceptions."
+        subtitle="Review revenue handled, basket behavior, refund and void activity, and drawer sessions in one operational cashier view."
       />
 
       <ReportsNav />
@@ -39,40 +39,86 @@ export default async function CashierReportsPage({
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card>
-          <div className="text-sm text-stone-500">Cashier sales</div>
+          <div className="text-sm text-stone-500">Revenue handled</div>
           <div className="mt-2 text-3xl font-black text-stone-900">{money(report.summary.totalRevenue, options.currencySymbol)}</div>
         </Card>
         <Card>
-          <div className="text-sm text-stone-500">Transactions</div>
+          <div className="text-sm text-stone-500">Sales count</div>
           <div className="mt-2 text-3xl font-black text-stone-900">{compactNumber(report.summary.totalTransactions)}</div>
         </Card>
         <Card>
-          <div className="text-sm text-stone-500">Refund activity</div>
-          <div className="mt-2 text-3xl font-black text-amber-700">{money(report.summary.refundTotal, options.currencySymbol)}</div>
+          <div className="text-sm text-stone-500">Refund count</div>
+          <div className="mt-2 text-3xl font-black text-amber-700">{compactNumber(report.summary.refundCount)}</div>
+          <div className="mt-2 text-sm text-stone-500">{money(report.summary.refundTotal, options.currencySymbol)}</div>
         </Card>
         <Card>
-          <div className="text-sm text-stone-500">Void activity</div>
-          <div className="mt-2 text-3xl font-black text-red-700">{money(report.summary.voidTotal, options.currencySymbol)}</div>
+          <div className="text-sm text-stone-500">Void count</div>
+          <div className="mt-2 text-3xl font-black text-red-700">{compactNumber(report.summary.voidCount)}</div>
+          <div className="mt-2 text-sm text-stone-500">{money(report.summary.voidTotal, options.currencySymbol)}</div>
         </Card>
       </div>
 
       <Card>
-        <h2 className="text-xl font-black text-stone-900">Top cashiers</h2>
+        <h2 className="text-xl font-black text-stone-900">Cashier performance</h2>
         <div className="mt-4 space-y-3">
           {report.topCashiers.length ? report.topCashiers.map((entry) => (
             <div key={entry.cashierId} className="rounded-2xl border border-stone-200 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="font-semibold text-stone-900">{entry.cashierName}</div>
-                  <div className="text-sm text-stone-500">{entry.transactions} transaction(s)</div>
+                  <div className="text-sm text-stone-500">
+                    {entry.salesCount} sale(s) / {entry.shiftCount} shift(s)
+                  </div>
+                  <div className="text-xs text-stone-500">
+                    Refunds {entry.refundCount} / Voids {entry.voidCount}
+                  </div>
                 </div>
                 <div className="text-right">
-                  <div className="font-black text-stone-900">{money(entry.revenue, options.currencySymbol)}</div>
-                  <div className="text-sm text-stone-500">Avg {money(entry.averageTicket, options.currencySymbol)}</div>
+                  <div className="font-black text-stone-900">{money(entry.revenueHandled, options.currencySymbol)}</div>
+                  <div className="text-sm text-stone-500">
+                    Avg basket {entry.averageBasketSize.toFixed(1)} item(s)
+                  </div>
+                  <div className="text-xs text-stone-500">
+                    Avg ticket {money(entry.averageTicket, options.currencySymbol)}
+                  </div>
+                  {entry.shiftCount ? (
+                    <div className="text-xs text-stone-500">
+                      Shift actual {money(entry.shiftActual, options.currencySymbol)} / variance {money(entry.shiftVariance, options.currencySymbol)}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>
           )) : <div className="text-sm text-stone-500">No cashier sales matched that range.</div>}
+        </div>
+      </Card>
+
+      <Card>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-xl font-black text-stone-900">Shift totals</h2>
+          <div className="text-sm text-stone-500">{report.summary.shiftCount} session(s)</div>
+        </div>
+        <div className="mt-4 space-y-3">
+          {report.shiftSessions.length ? report.shiftSessions.map((entry) => (
+            <div key={entry.id} className="rounded-2xl border border-stone-200 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-semibold text-stone-900">{entry.cashierName}</div>
+                  <div className="text-sm text-stone-500">
+                    Opened {dateTime(entry.openedAt)}{entry.closedAt ? ` / Closed ${dateTime(entry.closedAt)}` : ' / Still open'}
+                  </div>
+                  <div className="text-xs text-stone-500">Status {entry.status}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm text-stone-500">Expected {money(entry.closingExpected, options.currencySymbol)}</div>
+                  <div className="font-black text-stone-900">Actual {money(entry.closingActual, options.currencySymbol)}</div>
+                  <div className={`text-xs ${entry.variance < 0 ? 'text-red-700' : 'text-stone-500'}`}>
+                    Variance {money(entry.variance, options.currencySymbol)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )) : <div className="text-sm text-stone-500">No cash sessions opened in the selected range.</div>}
         </div>
       </Card>
 
