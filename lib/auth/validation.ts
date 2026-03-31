@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { PAYMENT_METHODS } from '@/lib/payments';
+import { PERMISSION_KEYS } from '@/lib/permissions';
 import { CREATE_PURCHASE_STATUS_OPTIONS, MANUAL_PURCHASE_STATUS_OPTIONS } from '@/lib/purchases';
 import { SHOP_TYPE_OPTIONS } from '@/lib/shop-config';
 import {
@@ -18,6 +19,7 @@ import {
 } from '@/lib/customers';
 
 const shopRoleSchema = z.enum(['ADMIN', 'MANAGER', 'CASHIER']);
+const permissionSchema = z.enum(PERMISSION_KEYS);
 const optionalText = () => z.string().trim().optional().nullable();
 const shopTypeSchema = z.enum(SHOP_TYPE_OPTIONS.map((option) => option.value) as [string, ...string[]]);
 const paymentMethodSchema = z.enum(PAYMENT_METHODS);
@@ -463,7 +465,8 @@ export const staffCreateSchema = z.object({
 export const staffUpdateSchema = z.object({
   role: shopRoleSchema,
   shopId: z.string().trim().min(1),
-  isActive: z.coerce.boolean()
+  isActive: z.coerce.boolean(),
+  customPermissions: z.array(permissionSchema).optional().default([])
 });
 
 export const staffPinSchema = z.object({

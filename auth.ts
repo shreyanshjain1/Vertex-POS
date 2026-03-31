@@ -6,6 +6,9 @@ import { loginSchema } from '@/lib/auth/validation';
 import { verifyPassword } from '@/lib/auth/password';
 import { ShopRole } from '@prisma/client';
 
+const MAX_FAILED_LOGIN_ATTEMPTS = 5;
+const LOGIN_LOCKOUT_MINUTES = 15;
+
 function normalizeRole(value: unknown): ShopRole {
   if (value === 'ADMIN' || value === 'MANAGER' || value === 'CASHIER') {
     return value;
@@ -53,14 +56,46 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return null;
         }
 
+        if (user.lockedUntil && user.lockedUntil > new Date()) {
+          await logAuthAudit({
+            action: 'LOGIN_BLOCKED_LOCKED',
+            userId: user.id,
+            email: user.email,
+            ...metadata,
+            metadata: {
+              lockedUntil: user.lockedUntil.toISOString()
+            }
+          }).catch(() => null);
+
+          return null;
+        }
+
         const valid = await verifyPassword(parsed.data.password, user.passwordHash);
         if (!valid) {
+          const nextFailedAttempts = user.failedLoginAttempts + 1;
+          const nextLockedUntil =
+            nextFailedAttempts >= MAX_FAILED_LOGIN_ATTEMPTS
+              ? new Date(Date.now() + LOGIN_LOCKOUT_MINUTES * 60 * 1000)
+              : null;
+
+          await prisma.user.update({
+            where: { id: user.id },
+            data: {
+              failedLoginAttempts: nextFailedAttempts,
+              lockedUntil: nextLockedUntil
+            }
+          });
+
           await logAuthAudit({
             action: 'LOGIN_FAILURE',
             userId: user.id,
             email: user.email,
             ...metadata,
-            metadata: { reason: 'INVALID_PASSWORD' }
+            metadata: {
+              reason: 'INVALID_PASSWORD',
+              failedLoginAttempts: nextFailedAttempts,
+              lockedUntil: nextLockedUntil?.toISOString() ?? null
+            }
           }).catch(() => null);
 
           return null;
@@ -80,6 +115,39 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return null;
         }
 
+        if (!user.emailVerifiedAt) {
+          await logAuthAudit({
+            action: 'LOGIN_BLOCKED_UNVERIFIED',
+            userId: user.id,
+            shopId: primary.shopId,
+            email: user.email,
+            ...metadata
+          }).catch(() => null);
+
+          return null;
+        }
+
+        if (user.forcePasswordReset) {
+          await logAuthAudit({
+            action: 'LOGIN_BLOCKED_PASSWORD_RESET_REQUIRED',
+            userId: user.id,
+            shopId: primary.shopId,
+            email: user.email,
+            ...metadata
+          }).catch(() => null);
+
+          return null;
+        }
+
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            failedLoginAttempts: 0,
+            lockedUntil: null,
+            lastLoginAt: new Date()
+          }
+        });
+
         await logAuthAudit({
           action: 'LOGIN_SUCCESS',
           userId: user.id,
@@ -98,6 +166,33 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
     })
   ],
+  events: {
+    async signOut(message) {
+      if (!('token' in message)) {
+        return;
+      }
+
+      const userId = typeof message.token?.sub === 'string' ? message.token.sub : null;
+      if (!userId) {
+        return;
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          email: true,
+          defaultShopId: true
+        }
+      });
+
+      await logAuthAudit({
+        action: 'LOGOUT',
+        userId,
+        shopId: user?.defaultShopId ?? null,
+        email: user?.email ?? null
+      }).catch(() => null);
+    }
+  },
   callbacks: {
     async authorized({ auth, request }) {
       const pathname = request.nextUrl.pathname;
@@ -105,6 +200,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         pathname === '/' ||
         pathname === '/login' ||
         pathname === '/signup' ||
+        pathname === '/verify-email' ||
+        pathname === '/reset-password' ||
         pathname.startsWith('/api/auth');
       return isPublicRoute ? true : !!auth;
     },

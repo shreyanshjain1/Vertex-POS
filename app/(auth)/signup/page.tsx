@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Input from '@/components/ui/Input';
 import Button from '@/components/ui/Button';
@@ -10,6 +9,9 @@ export default function SignupPage() {
   const router = useRouter();
   const [form, setForm] = useState({ name: '', email: '', password: '', confirmPassword: '' });
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [verificationUrl, setVerificationUrl] = useState('');
+  const [verificationExpiresAt, setVerificationExpiresAt] = useState('');
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -30,15 +32,10 @@ export default function SignupPage() {
       return;
     }
 
-    const result = await signIn('credentials', { email: form.email, password: form.password, redirect: false });
     setLoading(false);
-    if (result?.error) {
-      setError('Account created. Please sign in manually.');
-      return;
-    }
-
-    router.push('/onboard');
-    router.refresh();
+    setSuccess('Account created. Verify the email address before signing in.');
+    setVerificationUrl(data.verificationUrl ?? '');
+    setVerificationExpiresAt(data.expiresAt ?? '');
   }
 
   return (
@@ -57,8 +54,19 @@ export default function SignupPage() {
             <div><label className="mb-2 block text-sm font-semibold text-stone-800">Password</label><Input type="password" value={form.password} onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))} required /></div>
             <div><label className="mb-2 block text-sm font-semibold text-stone-800">Confirm password</label><Input type="password" value={form.confirmPassword} onChange={(e) => setForm((p) => ({ ...p, confirmPassword: e.target.value }))} required /></div>
             {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
+            {success ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div> : null}
+            {verificationUrl ? (
+              <div className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
+                <div className="font-semibold text-stone-900">Verification link</div>
+                <div className="mt-2 break-all">{verificationUrl}</div>
+                {verificationExpiresAt ? (
+                  <div className="mt-2 text-xs text-stone-500">Expires {new Date(verificationExpiresAt).toLocaleString()}</div>
+                ) : null}
+              </div>
+            ) : null}
             <Button type="submit" className="w-full" disabled={loading}>{loading ? 'Creating account...' : 'Create account'}</Button>
           </form>
+          <p className="mt-6 text-center text-sm text-stone-600">Already verified? <button type="button" onClick={() => router.push('/login')} className="font-semibold text-emerald-600 hover:text-emerald-700">Go to sign in</button></p>
         </div>
       </div>
     </main>
