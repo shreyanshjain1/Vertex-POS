@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import { requireRole } from '@/lib/authz';
+import { requirePermission } from '@/lib/authz';
 import { apiErrorResponse } from '@/lib/api';
 import { getReportsOverviewData } from '@/lib/reporting';
 
 export async function GET() {
   try {
-    const { shopId } = await requireRole('ADMIN');
+    const { shopId } = await requirePermission('VIEW_REPORTS');
     const today = new Date();
     const from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29, 0, 0, 0, 0);
     const to = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);

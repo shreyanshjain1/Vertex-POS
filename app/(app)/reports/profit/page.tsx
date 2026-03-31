@@ -2,7 +2,7 @@ import AppHeader from '@/components/layout/AppHeader';
 import ReportFilters from '@/components/reports/ReportFilters';
 import ReportsNav from '@/components/reports/ReportsNav';
 import Card from '@/components/ui/Card';
-import { requirePageRole } from '@/lib/authz';
+import { requirePagePermission } from '@/lib/authz';
 import { money, shortDate } from '@/lib/format';
 import { getProfitReportData, getReportFilterOptions, parseReportFilters } from '@/lib/reporting';
 
@@ -11,7 +11,7 @@ export default async function ProfitReportsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { shopId } = await requirePageRole('ADMIN');
+  const { shopId } = await requirePagePermission('VIEW_REPORTS');
   const filters = await parseReportFilters(searchParams);
   const [options, report] = await Promise.all([
     getReportFilterOptions(shopId),
