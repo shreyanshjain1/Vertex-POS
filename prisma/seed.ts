@@ -56,6 +56,7 @@ async function main() {
   const shop = await prisma.shop.create({
     data: {
       name: 'Paws & Beans Demo',
+      legalBusinessName: 'Paws and Beans Retail Ventures Inc.',
       slug: 'paws-and-beans-demo',
       posType: ShopType.FOOD_BEVERAGE,
       phone: '09171234567',
@@ -69,12 +70,20 @@ async function main() {
     data: {
       shopId: shop.id,
       currencyCode: 'PHP',
+      timezone: 'Asia/Manila',
+      taxMode: 'EXCLUSIVE',
       currencySymbol: '₱',
       taxRate: 12,
+      defaultPaymentMethods: ['Cash', 'Card', 'E-Wallet'],
       receiptHeader: 'Paws & Beans Demo',
       receiptFooter: 'Thank you for visiting Paws & Beans. See you again soon!',
       receiptWidth: '80mm',
+      printerName: 'Front Counter Thermal Printer',
+      printerConnection: 'USB',
+      barcodeScannerNotes: 'Scan the product barcode or SKU and press Enter at checkout.',
       lowStockThreshold: 8,
+      openingFloatRequired: true,
+      openingFloatAmount: 500,
       batchTrackingEnabled: true,
       expiryTrackingEnabled: true,
       fefoEnabled: true,
@@ -130,6 +139,81 @@ async function main() {
     await prisma.user.update({
       where: { id: userId },
       data: { defaultShopId: shop.id }
+    });
+  }
+
+  const branchShop = await prisma.shop.create({
+    data: {
+      name: 'Paws & Beans East Branch',
+      legalBusinessName: 'Paws and Beans Retail Ventures Inc.',
+      slug: 'paws-and-beans-east-branch',
+      posType: ShopType.FOOD_BEVERAGE,
+      phone: '09171234568',
+      email: 'east@pawsandbeans.local',
+      address: 'Marikina City, Metro Manila',
+      ownerId: owner.id
+    }
+  });
+
+  await prisma.shopSetting.create({
+    data: {
+      shopId: branchShop.id,
+      currencyCode: 'PHP',
+      currencySymbol: '₱',
+      timezone: 'Asia/Manila',
+      taxMode: 'EXCLUSIVE',
+      taxRate: 12,
+      defaultPaymentMethods: ['Cash', 'Card'],
+      receiptHeader: 'Paws & Beans East Branch',
+      receiptFooter: 'Thank you for visiting our east branch.',
+      receiptWidth: '80mm',
+      printerName: 'East Branch Counter Printer',
+      printerConnection: 'NETWORK',
+      barcodeScannerNotes: 'Use the wireless scanner cradle at the front counter.',
+      lowStockThreshold: 6,
+      openingFloatRequired: true,
+      openingFloatAmount: 300,
+      batchTrackingEnabled: true,
+      expiryTrackingEnabled: true,
+      fefoEnabled: true,
+      expiryAlertDays: 7,
+      salePrefix: 'SAL',
+      receiptPrefix: 'RCP',
+      purchasePrefix: 'PO'
+    }
+  });
+
+  await prisma.inventoryReason.createMany({
+    data: INVENTORY_REASON_PRESETS.map((reason) => ({
+      shopId: branchShop.id,
+      code: reason.code,
+      label: reason.label,
+      isActive: true
+    }))
+  });
+
+  await prisma.unitOfMeasure.createMany({
+    data: DEFAULT_UNITS_OF_MEASURE.map((unit) => ({
+      shopId: branchShop.id,
+      code: unit.code,
+      name: unit.name,
+      isBase: unit.isBase,
+      isActive: true
+    }))
+  });
+
+  for (const [userId, role] of [
+    [owner.id, ShopRole.ADMIN],
+    [manager.id, ShopRole.MANAGER]
+  ] as const) {
+    await prisma.userShop.create({
+      data: {
+        userId,
+        shopId: branchShop.id,
+        role,
+        isActive: true,
+        assignedAt: new Date()
+      }
     });
   }
 
@@ -401,6 +485,67 @@ async function main() {
         }
       });
     }
+  }
+
+  const branchPieceUnit = await prisma.unitOfMeasure.findFirstOrThrow({
+    where: {
+      shopId: branchShop.id,
+      code: 'PIECE'
+    }
+  });
+
+  const branchCoffee = await prisma.category.create({
+    data: { shopId: branchShop.id, name: 'Coffee', slug: 'coffee' }
+  });
+  const branchPetCare = await prisma.category.create({
+    data: { shopId: branchShop.id, name: 'Pet Care Retail', slug: 'pet-care-retail' }
+  });
+
+  const branchEspresso = await prisma.product.create({
+    data: {
+      shopId: branchShop.id,
+      categoryId: branchCoffee.id,
+      baseUnitOfMeasureId: branchPieceUnit.id,
+      sku: 'COF-001',
+      barcode: '480100100001',
+      name: 'Espresso',
+      description: 'Single shot espresso',
+      cost: 28,
+      price: 90,
+      stockQty: 18,
+      reorderPoint: 6
+    }
+  });
+
+  const branchPetShampoo = await prisma.product.create({
+    data: {
+      shopId: branchShop.id,
+      categoryId: branchPetCare.id,
+      baseUnitOfMeasureId: branchPieceUnit.id,
+      sku: 'PET-001',
+      barcode: '480100100018',
+      name: 'Pet Shampoo 250ml',
+      description: 'Retail pet shampoo',
+      cost: 120,
+      price: 220,
+      stockQty: 4,
+      reorderPoint: 4,
+      trackBatches: true,
+      trackExpiry: true
+    }
+  });
+
+  for (const branchProduct of [branchEspresso, branchPetShampoo]) {
+    await prisma.inventoryMovement.create({
+      data: {
+        shopId: branchShop.id,
+        productId: branchProduct.id,
+        type: 'OPENING_STOCK',
+        qtyChange: branchProduct.stockQty,
+        userId: owner.id,
+        notes: 'Seed opening stock for branch'
+      }
+    });
   }
 
   const purchase = await prisma.purchaseOrder.create({
@@ -895,6 +1040,69 @@ async function main() {
     }
   });
 
+  const stockTransfer = await prisma.stockTransfer.create({
+    data: {
+      fromShopId: shop.id,
+      toShopId: branchShop.id,
+      createdByUserId: manager.id,
+      receivedByUserId: manager.id,
+      transferNumber: 'TRF-20260330-0001',
+      status: 'RECEIVED',
+      notes: 'Rebalanced espresso inventory to the east branch after a strong morning rush.',
+      sentAt: new Date(Date.now() - 1000 * 60 * 60 * 12),
+      receivedAt: new Date(Date.now() - 1000 * 60 * 60 * 10),
+      items: {
+        create: [
+          {
+            fromProductId: products[0].id,
+            toProductId: branchEspresso.id,
+            productNameSnapshot: products[0].name,
+            destinationProductNameSnapshot: branchEspresso.name,
+            qty: 4
+          }
+        ]
+      }
+    }
+  });
+
+  await prisma.product.update({
+    where: { id: products[0].id },
+    data: {
+      stockQty: { decrement: 4 }
+    }
+  });
+
+  await prisma.inventoryMovement.create({
+    data: {
+      shopId: shop.id,
+      productId: products[0].id,
+      type: 'TRANSFER_OUT',
+      qtyChange: -4,
+      referenceId: stockTransfer.id,
+      userId: manager.id,
+      notes: 'Seed branch transfer out'
+    }
+  });
+
+  await prisma.product.update({
+    where: { id: branchEspresso.id },
+    data: {
+      stockQty: { increment: 4 }
+    }
+  });
+
+  await prisma.inventoryMovement.create({
+    data: {
+      shopId: branchShop.id,
+      productId: branchEspresso.id,
+      type: 'TRANSFER_IN',
+      qtyChange: 4,
+      referenceId: stockTransfer.id,
+      userId: manager.id,
+      notes: 'Seed branch transfer in'
+    }
+  });
+
   const seededCashSession = await prisma.cashSession.create({
     data: {
       shopId: shop.id,
@@ -938,6 +1146,14 @@ async function main() {
       },
       {
         shopId: shop.id,
+        userId: manager.id,
+        action: 'STOCK_TRANSFER_SENT',
+        entityType: 'StockTransfer',
+        entityId: stockTransfer.id,
+        description: `Sent stock transfer ${stockTransfer.transferNumber}.`
+      },
+      {
+        shopId: shop.id,
         userId: cashier.id,
         action: 'REGISTER_CLOSED',
         entityType: 'CashSession',
@@ -977,7 +1193,9 @@ async function main() {
     data: [
       { shopId: shop.id, type: DocumentSequenceType.SALE, dateKey: '20260325', value: 0 },
       { shopId: shop.id, type: DocumentSequenceType.RECEIPT, dateKey: '20260325', value: 0 },
-      { shopId: shop.id, type: DocumentSequenceType.PURCHASE, dateKey: '20260325', value: 1 }
+      { shopId: shop.id, type: DocumentSequenceType.PURCHASE, dateKey: '20260325', value: 1 },
+      { shopId: shop.id, type: DocumentSequenceType.TRANSFER, dateKey: '20260330', value: 1 },
+      { shopId: branchShop.id, type: DocumentSequenceType.TRANSFER, dateKey: '20260330', value: 0 }
     ]
   });
 
