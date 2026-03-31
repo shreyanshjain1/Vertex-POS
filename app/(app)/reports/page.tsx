@@ -13,7 +13,7 @@ export default async function ReportsPage() {
   const weekStart = new Date(todayStart);
   weekStart.setDate(todayStart.getDate() - 6);
 
-  const [daily, dailyRefunds, weekly, weeklyRefunds, monthly, monthlyRefunds, topProducts, lowStock, purchaseSummary] = await Promise.all([
+  const [daily, dailyRefunds, weekly, weeklyRefunds, monthly, monthlyRefunds, topProducts, lowStock, purchaseReceipts] = await Promise.all([
     prisma.sale.aggregate({
       where: { shopId, status: 'COMPLETED', createdAt: { gte: todayStart } },
       _sum: { totalAmount: true },
@@ -57,10 +57,21 @@ export default async function ReportsPage() {
       orderBy: { stockQty: 'asc' },
       take: 8
     }),
-    prisma.purchaseOrder.aggregate({
-      where: { shopId, status: 'RECEIVED', createdAt: { gte: monthStart } },
-      _sum: { totalAmount: true },
-      _count: true
+    prisma.purchaseReceipt.findMany({
+      where: { shopId, receivedAt: { gte: monthStart } },
+      select: {
+        purchaseId: true,
+        items: {
+          select: {
+            qtyReceived: true,
+            purchaseItem: {
+              select: {
+                unitCost: true
+              }
+            }
+          }
+        }
+      }
     })
   ]);
 
@@ -68,6 +79,16 @@ export default async function ReportsPage() {
   const dailyNet = Number(daily._sum.totalAmount ?? 0) - Number(dailyRefunds._sum.totalAmount ?? 0);
   const weeklyNet = Number(weekly._sum.totalAmount ?? 0) - Number(weeklyRefunds._sum.totalAmount ?? 0);
   const monthlyNet = Number(monthly._sum.totalAmount ?? 0) - Number(monthlyRefunds._sum.totalAmount ?? 0);
+  const purchaseSpend = purchaseReceipts.reduce(
+    (sum, receipt) =>
+      sum +
+      receipt.items.reduce(
+        (receiptSum, item) => receiptSum + item.qtyReceived * Number(item.purchaseItem.unitCost.toString()),
+        0
+      ),
+    0
+  );
+  const purchaseCount = new Set(purchaseReceipts.map((receipt) => receipt.purchaseId)).size;
 
   return (
     <div className="space-y-6">
@@ -81,7 +102,7 @@ export default async function ReportsPage() {
           ['Today', money(dailyNet, currency), `${daily._count} completed sale(s)`],
           ['Last 7 days', money(weeklyNet, currency), `${weekly._count} completed sale(s)`],
           ['This month', money(monthlyNet, currency), `${monthly._count} completed sale(s)`],
-          ['Purchases received', money(purchaseSummary._sum.totalAmount?.toString() ?? '0', currency), `${purchaseSummary._count} received purchase(s)`]
+          ['Purchases received', money(purchaseSpend, currency), `${purchaseCount} purchase(s) with receipt activity`]
         ].map(([title, value, meta]) => (
           <Card key={title}>
             <div className="text-sm text-stone-500">{title}</div>

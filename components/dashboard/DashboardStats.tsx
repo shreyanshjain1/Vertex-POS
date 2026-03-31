@@ -38,9 +38,9 @@ const items = [
   },
   {
     label: 'Pending purchases',
-    helper: 'Draft purchase orders still waiting to be received.',
+    helper: 'Open purchase orders still moving through procurement.',
     meta: (_stockCoverage: number, _lowStockCount: number, pendingPurchases: number) =>
-      pendingPurchases === 0 ? 'Receiving queue is clear' : `${pendingPurchases} draft purchase(s)`,
+      pendingPurchases === 0 ? 'Receiving queue is clear' : `${pendingPurchases} open purchase(s)`,
     icon: 'purchases',
     tone: {
       shell: 'border-sky-200/80 bg-[linear-gradient(135deg,rgba(14,165,233,0.16),rgba(255,255,255,0.95))]',

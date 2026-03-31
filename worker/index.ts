@@ -77,25 +77,47 @@ async function dailySummary(jobId: string, shopId: string) {
   start.setHours(0, 0, 0, 0);
   const settings = await prisma.shopSetting.findUnique({ where: { shopId } });
 
-  const [sales, purchases] = await Promise.all([
+  const [sales, purchaseReceipts] = await Promise.all([
     prisma.sale.aggregate({
       where: { shopId, status: 'COMPLETED', createdAt: { gte: start } },
       _count: true,
       _sum: { totalAmount: true }
     }),
-    prisma.purchaseOrder.aggregate({
-      where: { shopId, status: 'RECEIVED', createdAt: { gte: start } },
-      _count: true,
-      _sum: { totalAmount: true }
+    prisma.purchaseReceipt.findMany({
+      where: { shopId, receivedAt: { gte: start } },
+      select: {
+        purchaseId: true,
+        items: {
+          select: {
+            qtyReceived: true,
+            purchaseItem: {
+              select: {
+                unitCost: true
+              }
+            }
+          }
+        }
+      }
     })
   ]);
 
-  const currency = settings?.currencySymbol ?? '₱';
+  const purchaseSpend = purchaseReceipts.reduce(
+    (sum, receipt) =>
+      sum +
+      receipt.items.reduce(
+        (receiptSum, item) => receiptSum + item.qtyReceived * Number(item.purchaseItem.unitCost.toString()),
+        0
+      ),
+    0
+  );
+  const purchaseCount = new Set(purchaseReceipts.map((receipt) => receipt.purchaseId)).size;
+  const currency = settings?.currencySymbol ?? 'PHP ';
+
   await createNotificationOncePerDay({
     shopId,
     type: NotificationType.DAILY_SUMMARY,
     title: 'Daily summary generated',
-    message: `Sales today: ${sales._count} transaction(s), revenue ${currency}${Number(sales._sum.totalAmount ?? 0).toFixed(2)}. Purchases received: ${purchases._count}, spend ${currency}${Number(purchases._sum.totalAmount ?? 0).toFixed(2)}.`
+    message: `Sales today: ${sales._count} transaction(s), revenue ${currency}${Number(sales._sum.totalAmount ?? 0).toFixed(2)}. Purchases received: ${purchaseCount}, spend ${currency}${purchaseSpend.toFixed(2)}.`
   });
 
   await prisma.activityLog.create({

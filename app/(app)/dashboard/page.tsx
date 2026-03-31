@@ -83,7 +83,10 @@ export default async function DashboardPage() {
       _sum: { totalAmount: true }
     }),
     prisma.purchaseOrder.count({
-      where: { shopId, status: 'DRAFT' }
+      where: {
+        shopId,
+        status: { in: ['DRAFT', 'SENT', 'PARTIALLY_RECEIVED'] }
+      }
     }),
     prisma.inventoryMovement.findMany({
       where: { shopId },
@@ -164,7 +167,7 @@ export default async function DashboardPage() {
               <div className="rounded-[28px] border border-white/80 bg-white/82 p-4 backdrop-blur">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Pending purchases</div>
                 <div className="mt-2 text-2xl font-black text-stone-950">{pendingPurchases}</div>
-                <div className="mt-1 text-sm text-stone-500">Draft purchase order(s) still waiting to be received.</div>
+                <div className="mt-1 text-sm text-stone-500">Open purchase orders still moving through sending or receiving.</div>
               </div>
             </div>
           </div>
@@ -200,7 +203,7 @@ export default async function DashboardPage() {
                   <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Receiving queue</div>
                   <div className="mt-2 text-2xl font-black text-stone-950">{pendingPurchases}</div>
                   <div className="mt-2 text-sm text-stone-500">
-                    {pendingPurchases > 0 ? 'Draft purchases are waiting for stock receipt.' : 'No draft purchases are waiting.'}
+                    {pendingPurchases > 0 ? 'Purchase orders are waiting for more supplier action.' : 'No open purchase orders are waiting.'}
                   </div>
                 </div>
               </div>
