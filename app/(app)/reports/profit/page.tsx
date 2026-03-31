@@ -3,7 +3,7 @@ import ReportFilters from '@/components/reports/ReportFilters';
 import ReportsNav from '@/components/reports/ReportsNav';
 import Card from '@/components/ui/Card';
 import { requirePageRole } from '@/lib/authz';
-import { money } from '@/lib/format';
+import { money, shortDate } from '@/lib/format';
 import { getProfitReportData, getReportFilterOptions, parseReportFilters } from '@/lib/reporting';
 
 export default async function ProfitReportsPage({
@@ -22,7 +22,7 @@ export default async function ProfitReportsPage({
     <div className="space-y-6">
       <AppHeader
         title="Profit Reports"
-        subtitle="Estimated gross profit uses the current product cost basis because historical cost-at-sale snapshots are not yet stored."
+        subtitle="Gross profit uses the best available cost basis per sale date: matching cost history when available, then the earliest prior or current product cost when a direct sale snapshot does not exist."
       />
 
       <ReportsNav />
@@ -41,7 +41,7 @@ export default async function ProfitReportsPage({
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card>
-          <div className="text-sm text-stone-500">Net sales basis</div>
+          <div className="text-sm text-stone-500">Net revenue basis</div>
           <div className="mt-2 text-3xl font-black text-stone-900">{money(report.summary.revenue, options.currencySymbol)}</div>
         </Card>
         <Card>
@@ -103,24 +103,79 @@ export default async function ProfitReportsPage({
       </div>
 
       <Card>
-        <h2 className="text-xl font-black text-stone-900">Top profitable items</h2>
+        <h2 className="text-xl font-black text-stone-900">Profit per sale</h2>
         <div className="mt-4 space-y-3">
-          {report.topProfitableItems.length ? report.topProfitableItems.map((entry) => (
-            <div key={entry.productId} className="rounded-2xl border border-stone-200 p-4">
+          {report.profitPerSale.length ? report.profitPerSale.map((entry) => (
+            <div key={entry.saleId} className="rounded-2xl border border-stone-200 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <div className="font-semibold text-stone-900">{entry.name}</div>
-                  <div className="text-sm text-stone-500">{entry.categoryName} / {entry.qty} unit(s)</div>
+                  <div className="font-semibold text-stone-900">{entry.saleNumber}</div>
+                  <div className="text-sm text-stone-500">
+                    Sale date {shortDate(entry.saleDate)} / Net {entry.qty} unit(s)
+                  </div>
+                  {entry.returnCount ? (
+                    <div className="text-xs text-amber-700">{entry.returnCount} return adjustment(s) affected this sale in the selected period.</div>
+                  ) : null}
                 </div>
                 <div className="text-right">
                   <div className="font-black text-emerald-700">{money(entry.profit, options.currencySymbol)}</div>
-                  <div className="text-sm text-stone-500">Revenue {money(entry.revenue, options.currencySymbol)}</div>
+                  <div className="text-sm text-stone-500">
+                    Revenue {money(entry.revenue, options.currencySymbol)} / Margin {entry.marginPercent.toFixed(2)}%
+                  </div>
                 </div>
               </div>
             </div>
-          )) : <div className="text-sm text-stone-500">No profitable item data matched the current filters.</div>}
+          )) : <div className="text-sm text-stone-500">No sale profitability data matched the current filters.</div>}
         </div>
       </Card>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <Card>
+          <h2 className="text-xl font-black text-stone-900">Profit per category</h2>
+          <div className="mt-4 space-y-3">
+            {report.profitPerCategory.length ? report.profitPerCategory.map((entry) => (
+              <div key={entry.name} className="rounded-2xl border border-stone-200 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-semibold text-stone-900">{entry.name}</div>
+                    <div className="text-sm text-stone-500">
+                      Revenue {money(entry.revenue, options.currencySymbol)} / Cost {money(entry.cost, options.currencySymbol)}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className={`font-black ${entry.profit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                      {money(entry.profit, options.currencySymbol)}
+                    </div>
+                    <div className="text-sm text-stone-500">{entry.marginPercent.toFixed(2)}% margin</div>
+                  </div>
+                </div>
+              </div>
+            )) : <div className="text-sm text-stone-500">No category profitability data matched the current filters.</div>}
+          </div>
+        </Card>
+
+        <Card>
+          <h2 className="text-xl font-black text-stone-900">Profit per item</h2>
+          <div className="mt-4 space-y-3">
+            {report.profitPerItem.length ? report.profitPerItem.map((entry) => (
+              <div key={entry.productId} className="rounded-2xl border border-stone-200 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-semibold text-stone-900">{entry.name}</div>
+                    <div className="text-sm text-stone-500">{entry.categoryName} / Net {entry.qty} unit(s)</div>
+                  </div>
+                  <div className="text-right">
+                    <div className={`font-black ${entry.profit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                      {money(entry.profit, options.currencySymbol)}
+                    </div>
+                    <div className="text-sm text-stone-500">{entry.marginPercent.toFixed(2)}% margin</div>
+                  </div>
+                </div>
+              </div>
+            )) : <div className="text-sm text-stone-500">No item profitability data matched the current filters.</div>}
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }
