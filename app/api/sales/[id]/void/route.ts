@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { saleVoidSchema } from '@/lib/auth/validation';
-import { requireRole } from '@/lib/authz';
+import { requirePermission } from '@/lib/authz';
 import { apiErrorResponse } from '@/lib/api';
 import {
   createVoidSaleAdjustment,
@@ -14,7 +14,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const { shopId, userId, session } = await requireRole('CASHIER');
+    const { shopId, userId, session } = await requirePermission('VOID_SALES');
     const body = await request.json();
     const parsed = saleVoidSchema.safeParse(body);
 

@@ -5,9 +5,9 @@ import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import { getActiveShopContext } from '@/lib/auth/get-active-shop';
+import { getCustomerDisplayName } from '@/lib/customers';
 import { dateTime, money } from '@/lib/format';
 import { prisma } from '@/lib/prisma';
-import { getCustomerDisplayName } from '@/lib/customers';
 import { getSaleRefundState, saleDetailInclude } from '@/lib/sale-adjustments';
 
 export default async function SaleDetailPage({
@@ -15,7 +15,7 @@ export default async function SaleDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { shopId, shop } = await getActiveShopContext();
+  const { shopId, shop, permissions } = await getActiveShopContext();
   const { id } = await params;
 
   const [sale, settings] = await Promise.all([
@@ -32,8 +32,10 @@ export default async function SaleDetailPage({
     return notFound();
   }
 
-  const currencySymbol = settings?.currencySymbol ?? 'â‚±';
+  const currencySymbol = settings?.currencySymbol ?? '₱';
   const refundState = getSaleRefundState(sale);
+  const canRefundSales = permissions.REFUND_SALES;
+  const canVoidSales = permissions.VOID_SALES;
 
   return (
     <div className="space-y-6">
@@ -41,10 +43,10 @@ export default async function SaleDetailPage({
 
       <div className="flex flex-wrap gap-3">
         <Link href={`/sales/${sale.id}/refund`}>
-          <Button type="button" disabled={!refundState.canRefund}>Refund / Exchange</Button>
+          <Button type="button" disabled={!canRefundSales || !refundState.canRefund}>Refund / Exchange</Button>
         </Link>
         <Link href={`/sales/${sale.id}/void`}>
-          <Button type="button" variant="secondary" disabled={!refundState.canVoid}>Void sale</Button>
+          <Button type="button" variant="secondary" disabled={!canVoidSales || !refundState.canVoid}>Void sale</Button>
         </Link>
         <Link href={`/print/receipt/${sale.id}`}>
           <Button type="button" variant="secondary">Open receipt</Button>
@@ -122,14 +124,18 @@ export default async function SaleDetailPage({
           <div className="mt-6 rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-4 text-sm text-stone-600">
             <div>
               {refundState.canVoid
-                ? 'This sale is still eligible for a full void.'
+                ? canVoidSales
+                  ? 'This sale is still eligible for a full void.'
+                  : 'This sale could still be voided, but your account does not have void permission.'
                 : sale.isCreditSale
                   ? 'Credit sales are locked from refund/void adjustments in this pass so receivables stay consistent.'
                   : 'Full void is no longer available because the sale already has adjustments or has already been voided.'}
             </div>
             <div className="mt-2">
               {refundState.canRefund
-                ? 'Refund and exchange actions are still available for remaining quantities.'
+                ? canRefundSales
+                  ? 'Refund and exchange actions are still available for remaining quantities.'
+                  : 'Refundable quantity remains, but your account does not have refund permission.'
                 : sale.isCreditSale
                   ? 'Refund and exchange actions are disabled for credit sales in this pass.'
                   : 'No refundable quantity is left on this sale.'}

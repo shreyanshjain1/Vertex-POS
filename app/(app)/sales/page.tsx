@@ -4,7 +4,7 @@ import { getActiveShopContext } from '@/lib/auth/get-active-shop';
 import { prisma } from '@/lib/prisma';
 
 export default async function SalesPage() {
-  const { shopId } = await getActiveShopContext();
+  const { shopId, permissions } = await getActiveShopContext();
   const [sales, settings] = await Promise.all([
     prisma.sale.findMany({
       where: { shopId },
@@ -27,6 +27,8 @@ export default async function SalesPage() {
           createdAt: sale.createdAt.toISOString()
         }))}
         currencySymbol={settings?.currencySymbol ?? '₱'}
+        canRefundSales={permissions.REFUND_SALES}
+        canVoidSales={permissions.VOID_SALES}
       />
     </div>
   );

@@ -18,10 +18,14 @@ type Sale = {
 
 export default function SalesTable({
   sales,
-  currencySymbol
+  currencySymbol,
+  canRefundSales,
+  canVoidSales
 }: {
   sales: Sale[];
   currencySymbol: string;
+  canRefundSales: boolean;
+  canVoidSales: boolean;
 }) {
   return (
     <Card>
@@ -80,12 +84,16 @@ export default function SalesTable({
                       <Link href={`/sales/${sale.id}/receipt`} className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-600 hover:text-stone-900">
                         Receipt
                       </Link>
-                      <Link href={`/sales/${sale.id}/refund`} className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-600 hover:text-stone-900">
-                        Refund
-                      </Link>
-                      <Link href={`/sales/${sale.id}/void`} className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-600 hover:text-stone-900">
-                        Void
-                      </Link>
+                      {canRefundSales ? (
+                        <Link href={`/sales/${sale.id}/refund`} className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-600 hover:text-stone-900">
+                          Refund
+                        </Link>
+                      ) : null}
+                      {canVoidSales ? (
+                        <Link href={`/sales/${sale.id}/void`} className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-600 hover:text-stone-900">
+                          Void
+                        </Link>
+                      ) : null}
                     </div>
                   </td>
                 </tr>

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { saleRefundSchema } from '@/lib/auth/validation';
-import { requireRole } from '@/lib/authz';
+import { requirePermission } from '@/lib/authz';
 import { apiErrorResponse } from '@/lib/api';
 import {
   createRefundSaleAdjustment,
@@ -14,7 +14,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const { shopId, userId, session } = await requireRole('CASHIER');
+    const { shopId, userId, session } = await requirePermission('REFUND_SALES');
     const body = await request.json();
     const parsed = saleRefundSchema.safeParse(body);
 
