@@ -230,7 +230,7 @@ export default function StockTransferManager({
     setHistory((current) => [data.stockTransfer, ...current]);
     setLines([]);
     setNotes('');
-    setSuccess('Stock transfer saved as draft.');
+    setSuccess('Stock transfer saved and marked as pending dispatch.');
   }
 
   async function updateTransfer(transferId: string, action: 'SEND' | 'RECEIVE' | 'CANCEL') {
@@ -410,7 +410,7 @@ export default function StockTransferManager({
                     ) : null}
                     {isSourceBranch && transfer.status === 'DRAFT' ? (
                       <Button type="button" variant="danger" onClick={() => updateTransfer(transfer.id, 'CANCEL')} disabled={busyTransferId === transfer.id}>
-                        Cancel draft
+                        Cancel transfer
                       </Button>
                     ) : null}
                     {isDestinationBranch && transfer.status === 'IN_TRANSIT' ? (

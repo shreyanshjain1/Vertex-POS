@@ -1,6 +1,7 @@
 'use client';
 
 import Badge from '@/components/ui/Badge';
+import { getInventoryMovementTypeLabel } from '@/lib/business-labels';
 import { dateTime } from '@/lib/format';
 
 type Movement = {
@@ -69,7 +70,7 @@ export default function InventoryMovementTable({
               <td className="px-3 py-3 text-stone-600">{dateTime(movement.createdAt)}</td>
               <td className="px-3 py-3 font-medium text-stone-900">{movement.product.name}</td>
               <td className="px-3 py-3">
-                <Badge tone={toneForType(movement.type)}>{movement.type.replaceAll('_', ' ')}</Badge>
+                <Badge tone={toneForType(movement.type)}>{getInventoryMovementTypeLabel(movement.type)}</Badge>
               </td>
               <td className="px-3 py-3 text-stone-600">
                 {movement.reasonLabel ? (

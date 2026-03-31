@@ -1,5 +1,6 @@
 import Badge from '@/components/ui/Badge';
 import Card from '@/components/ui/Card';
+import { getRegisterSessionStatusLabel } from '@/lib/business-labels';
 import { dateTime, money, shortDate } from '@/lib/format';
 import { SerializedCashSession } from '@/lib/serializers/register';
 
@@ -96,15 +97,15 @@ export default function RegisterHistoryTable({
                     <td className="px-4 py-4 text-stone-600">{dateTime(session.openedAt)}</td>
                     <td className="px-4 py-4 text-stone-600">{session.closedAt ? dateTime(session.closedAt) : 'Still open'}</td>
                     <td className="px-4 py-4 font-semibold text-stone-900">{money(session.openingFloat, currencySymbol)}</td>
-                    <td className="px-4 py-4 text-stone-700">{session.closingExpected ? money(session.closingExpected, currencySymbol) : 'Pending'}</td>
-                    <td className="px-4 py-4 text-stone-700">{session.closingActual ? money(session.closingActual, currencySymbol) : 'Pending'}</td>
+                    <td className="px-4 py-4 text-stone-700">{session.closingExpected ? money(session.closingExpected, currencySymbol) : 'Awaiting closeout'}</td>
+                    <td className="px-4 py-4 text-stone-700">{session.closingActual ? money(session.closingActual, currencySymbol) : 'Awaiting count'}</td>
                     <td className="px-4 py-4">
                       <Badge tone={varianceTone(session.variance)}>
-                        {session.variance ? money(session.variance, currencySymbol) : 'Pending'}
+                        {session.variance ? money(session.variance, currencySymbol) : 'Awaiting closeout'}
                       </Badge>
                     </td>
                     <td className="px-4 py-4">
-                      <Badge tone={statusTone(session.status)}>{session.status.replaceAll('_', ' ')}</Badge>
+                      <Badge tone={statusTone(session.status)}>{getRegisterSessionStatusLabel(session.status)}</Badge>
                     </td>
                   </tr>
                 ))}

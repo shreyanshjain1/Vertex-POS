@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
+import { getSaleStatusLabel } from '@/lib/business-labels';
 import { dateTime, money } from '@/lib/format';
 
 type Sale = {
@@ -66,7 +67,7 @@ export default function SalesTable({
                     <div className="mt-1 text-xs text-stone-500">{sale.receiptNumber}</div>
                   </td>
                   <td className="px-4 py-4">
-                    <Badge tone={sale.status === 'VOIDED' ? 'red' : 'emerald'}>{sale.status}</Badge>
+                    <Badge tone={sale.status === 'VOIDED' ? 'red' : 'emerald'}>{getSaleStatusLabel(sale.status)}</Badge>
                   </td>
                   <td className="px-4 py-4">{sale.customerName ?? 'Walk-in customer'}</td>
                   <td className="px-4 py-4">

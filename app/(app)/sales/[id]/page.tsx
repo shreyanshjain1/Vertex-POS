@@ -4,6 +4,7 @@ import AppHeader from '@/components/layout/AppHeader';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
+import { getAdjustmentTypeLabel, getSaleStatusLabel } from '@/lib/business-labels';
 import { getActiveShopContext } from '@/lib/auth/get-active-shop';
 import { getCustomerDisplayName } from '@/lib/customers';
 import { dateTime, money } from '@/lib/format';
@@ -104,7 +105,7 @@ export default async function SaleDetailPage({
             {sale.customer?.email ? <div>Email: <span className="font-semibold text-stone-900">{sale.customer.email}</span></div> : null}
             <div>Customer type: <span className="font-semibold text-stone-900">{sale.customer?.type ?? 'WALK_IN'}</span></div>
             <div>Notes: <span className="font-semibold text-stone-900">{sale.notes ?? 'N/A'}</span></div>
-            <div>Status: <span className="font-semibold text-stone-900">{sale.status}</span></div>
+            <div>Status: <span className="font-semibold text-stone-900">{getSaleStatusLabel(sale.status)}</span></div>
             <div>Credit sale: <span className="font-semibold text-stone-900">{sale.isCreditSale ? 'Yes' : 'No'}</span></div>
             {sale.loyaltyPointsEarned > 0 || sale.loyaltyPointsRedeemed > 0 ? (
               <div>
@@ -163,7 +164,7 @@ export default async function SaleDetailPage({
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone={adjustment.type === 'VOID' ? 'red' : adjustment.type === 'EXCHANGE' ? 'blue' : 'amber'}>
-                      {adjustment.type}
+                      {getAdjustmentTypeLabel(adjustment.type)}
                     </Badge>
                     <span className="text-sm font-semibold text-stone-900">{adjustment.adjustmentNumber}</span>
                   </div>

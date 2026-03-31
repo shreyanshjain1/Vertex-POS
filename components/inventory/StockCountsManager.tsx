@@ -7,6 +7,7 @@ import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
+import { getStockCountStatusLabel } from '@/lib/business-labels';
 import { dateTime, shortDate } from '@/lib/format';
 
 type StockCountSummary = {
@@ -210,7 +211,7 @@ export default function StockCountsManager({
                         <div className="font-semibold text-stone-900">{count.referenceNumber}</div>
                         <div className="mt-1 text-sm text-stone-600">{count.title ?? 'Untitled stock count'}</div>
                         <div className="mt-2 flex flex-wrap gap-2">
-                          <Badge tone={toneForStatus(count.status)}>{count.status.replaceAll('_', ' ')}</Badge>
+                          <Badge tone={toneForStatus(count.status)}>{getStockCountStatusLabel(count.status)}</Badge>
                           {count.isBlind ? <Badge tone="stone">Blind</Badge> : null}
                         </div>
                       </td>

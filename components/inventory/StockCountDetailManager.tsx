@@ -7,6 +7,7 @@ import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
+import { getStockCountStatusLabel } from '@/lib/business-labels';
 import { dateTime, shortDate } from '@/lib/format';
 
 type StockCountStatus = 'DRAFT' | 'IN_PROGRESS' | 'SUBMITTED' | 'APPROVED' | 'POSTED' | 'CANCELLED';
@@ -252,7 +253,7 @@ export default function StockCountDetailManager({
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Badge tone={toneForStatus(stockCount.status)}>{stockCount.status.replaceAll('_', ' ')}</Badge>
+              <Badge tone={toneForStatus(stockCount.status)}>{getStockCountStatusLabel(stockCount.status)}</Badge>
               {stockCount.isBlind ? <Badge tone="stone">Blind</Badge> : null}
             </div>
           </div>
