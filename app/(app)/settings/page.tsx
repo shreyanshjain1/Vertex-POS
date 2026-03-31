@@ -19,7 +19,7 @@ export default async function SettingsPage() {
     <div className="space-y-6">
       <AppHeader
         title="Settings"
-        subtitle="Manage branch identity, legal business details, checkout defaults, printer setup, numbering prefixes, and low-stock controls."
+        subtitle="Manage branch identity, receipt setup, tax behavior, inventory defaults, payment defaults, and document numbering from one practical admin screen."
       />
       <SettingsForm
         initialValues={{
@@ -43,6 +43,10 @@ export default async function SettingsPage() {
           barcodeScannerNotes: settings?.barcodeScannerNotes ?? '',
           lowStockEnabled: settings?.lowStockEnabled ?? true,
           lowStockThreshold: settings?.lowStockThreshold ?? 5,
+          batchTrackingEnabled: settings?.batchTrackingEnabled ?? false,
+          expiryTrackingEnabled: settings?.expiryTrackingEnabled ?? false,
+          fefoEnabled: settings?.fefoEnabled ?? false,
+          expiryAlertDays: settings?.expiryAlertDays ?? 30,
           openingFloatRequired: settings?.openingFloatRequired ?? true,
           openingFloatAmount: settings?.openingFloatAmount?.toString() ?? '0',
           salePrefix: settings?.salePrefix ?? 'SAL',

@@ -38,6 +38,10 @@ type Props = {
     barcodeScannerNotes: string;
     lowStockEnabled: boolean;
     lowStockThreshold: number;
+    batchTrackingEnabled: boolean;
+    expiryTrackingEnabled: boolean;
+    fefoEnabled: boolean;
+    expiryAlertDays: number;
     openingFloatRequired: boolean;
     openingFloatAmount: string;
     salePrefix: string;
@@ -255,6 +259,41 @@ export default function SettingsForm({ initialValues }: Props) {
         </div>
       </Section>
 
+      <Section title="Inventory defaults" description="These defaults support low-stock warnings, expiry discipline, and how the branch wants stock rotated operationally.">
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
+            <input
+              type="checkbox"
+              checked={form.batchTrackingEnabled}
+              onChange={(event) => setForm((current) => ({ ...current, batchTrackingEnabled: event.target.checked }))}
+            />
+            Enable batch / lot tracking by default
+          </label>
+          <label className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
+            <input
+              type="checkbox"
+              checked={form.expiryTrackingEnabled}
+              onChange={(event) => setForm((current) => ({ ...current, expiryTrackingEnabled: event.target.checked }))}
+            />
+            Enable expiry tracking by default
+          </label>
+          <label className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
+            <input
+              type="checkbox"
+              checked={form.fefoEnabled}
+              onChange={(event) => setForm((current) => ({ ...current, fefoEnabled: event.target.checked }))}
+            />
+            Prefer FEFO rotation for expiring stock
+          </label>
+          <Input
+            type="number"
+            placeholder="Expiry alert days"
+            value={String(form.expiryAlertDays)}
+            onChange={(event) => setForm((current) => ({ ...current, expiryAlertDays: Number(event.target.value) }))}
+          />
+        </div>
+      </Section>
+
       <Section title="Receipt and hardware" description="Keep thermal receipt output practical and record the branch's printer or scanner notes without overbuilding hardware integrations.">
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
@@ -314,7 +353,7 @@ export default function SettingsForm({ initialValues }: Props) {
         </div>
       </Section>
 
-      <Section title="Numbering prefixes" description="These prefixes are used when generating sale, receipt, and purchase document numbers.">
+      <Section title="Document numbering" description="Use short prefixes so sale, receipt, and purchase or invoice references stay branch-specific and easy to read.">
         <div className="grid gap-4 md:grid-cols-3">
           <Input
             placeholder="Sale prefix"

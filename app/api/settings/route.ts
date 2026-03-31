@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { settingSchema } from '@/lib/auth/validation';
 import { requireRole } from '@/lib/authz';
 import { apiErrorResponse } from '@/lib/api';
@@ -6,6 +7,13 @@ import { logActivity } from '@/lib/activity';
 import { normalizeText } from '@/lib/inventory';
 import { prisma } from '@/lib/prisma';
 import { sanitizeDefaultPaymentMethods } from '@/lib/shop-settings';
+
+const expandedSettingSchema = settingSchema.extend({
+  batchTrackingEnabled: z.coerce.boolean().default(false),
+  expiryTrackingEnabled: z.coerce.boolean().default(false),
+  fefoEnabled: z.coerce.boolean().default(false),
+  expiryAlertDays: z.coerce.number().int().min(0).max(365).default(30)
+});
 
 export async function GET() {
   try {
@@ -25,7 +33,7 @@ export async function PUT(request: Request) {
   try {
     const { shopId, userId } = await requireRole('MANAGER');
     const body = await request.json();
-    const parsed = settingSchema.safeParse(body);
+    const parsed = expandedSettingSchema.safeParse(body);
 
     if (!parsed.success) {
       return NextResponse.json(
@@ -64,6 +72,10 @@ export async function PUT(request: Request) {
           barcodeScannerNotes: normalizeText(parsed.data.barcodeScannerNotes),
           lowStockEnabled: parsed.data.lowStockEnabled,
           lowStockThreshold: parsed.data.lowStockThreshold,
+          batchTrackingEnabled: parsed.data.batchTrackingEnabled,
+          expiryTrackingEnabled: parsed.data.expiryTrackingEnabled,
+          fefoEnabled: parsed.data.fefoEnabled,
+          expiryAlertDays: parsed.data.expiryAlertDays,
           openingFloatRequired: parsed.data.openingFloatRequired,
           openingFloatAmount: parsed.data.openingFloatAmount,
           salePrefix: parsed.data.salePrefix.trim().toUpperCase(),
@@ -86,6 +98,10 @@ export async function PUT(request: Request) {
           barcodeScannerNotes: normalizeText(parsed.data.barcodeScannerNotes),
           lowStockEnabled: parsed.data.lowStockEnabled,
           lowStockThreshold: parsed.data.lowStockThreshold,
+          batchTrackingEnabled: parsed.data.batchTrackingEnabled,
+          expiryTrackingEnabled: parsed.data.expiryTrackingEnabled,
+          fefoEnabled: parsed.data.fefoEnabled,
+          expiryAlertDays: parsed.data.expiryAlertDays,
           openingFloatRequired: parsed.data.openingFloatRequired,
           openingFloatAmount: parsed.data.openingFloatAmount,
           salePrefix: parsed.data.salePrefix.trim().toUpperCase(),
