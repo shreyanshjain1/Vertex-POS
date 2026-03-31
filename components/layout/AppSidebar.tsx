@@ -179,9 +179,9 @@ const sections: Array<{ title: string; links: NavLink[] }> = [
       {
         href: '/reports',
         label: 'Reports',
-        description: 'Revenue, trends, and product performance.',
+        description: 'Owner reporting for sales, stock, profit, and cashier controls.',
         icon: 'reports',
-        minRole: 'MANAGER'
+        minRole: 'ADMIN'
       },
       {
         href: '/settings',
