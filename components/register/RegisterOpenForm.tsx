@@ -10,12 +10,16 @@ import { SerializedCashSession } from '@/lib/serializers/register';
 
 export default function RegisterOpenForm({
   currencySymbol,
-  activeSession
+  activeSession,
+  openingFloatRequired,
+  openingFloatAmount
 }: {
   currencySymbol: string;
   activeSession: SerializedCashSession | null;
+  openingFloatRequired: boolean;
+  openingFloatAmount: string;
 }) {
-  const [openingFloat, setOpeningFloat] = useState('0.00');
+  const [openingFloat, setOpeningFloat] = useState(openingFloatAmount);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -103,11 +107,19 @@ export default function RegisterOpenForm({
         </div>
 
         <div className="rounded-[24px] border border-stone-200 bg-stone-50 px-4 py-4 text-sm leading-6 text-stone-600">
-          One cashier can only have one active register session in a shop at a time.
+          {openingFloatRequired
+            ? `This branch requires at least ${money(openingFloatAmount, currencySymbol)} before a drawer session can start.`
+            : 'One cashier can only have one active register session in a shop at a time.'}
         </div>
       </div>
 
       <form onSubmit={openRegister} className="mt-6 space-y-6">
+        {openingFloatRequired ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Opening float requirement: {money(openingFloatAmount, currencySymbol)} minimum for each new drawer session in this branch.
+          </div>
+        ) : null}
+
         <div className="rounded-[26px] border border-stone-200 bg-stone-50/80 p-4 sm:p-5">
           <div className="mb-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Opening details</div>
           <div className="grid gap-4 md:grid-cols-2">
@@ -119,6 +131,7 @@ export default function RegisterOpenForm({
                 step="0.01"
                 value={openingFloat}
                 onChange={(event) => setOpeningFloat(event.target.value)}
+                placeholder={openingFloatAmount}
                 required
               />
             </div>

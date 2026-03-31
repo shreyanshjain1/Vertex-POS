@@ -19,6 +19,7 @@ import {
 import { buildVariantLabel } from '@/lib/product-merchandising';
 import { prisma } from '@/lib/prisma';
 import { CASH_PAYMENT_METHOD, getActiveCashSession } from '@/lib/register';
+import { calculateTaxBreakdown } from '@/lib/shop-settings';
 
 function parseOptionalDateInput(value?: string | null) {
   if (!value) {
@@ -203,18 +204,24 @@ export async function POST(request: Request) {
     const subtotal = roundCurrency(
       saleLines.reduce((sum, line) => sum + line.lineTotal, 0)
     );
-    const taxAmount = roundCurrency(subtotal * (Number(settings?.taxRate ?? 0) / 100));
     const manualDiscountAmount = roundCurrency(Number(parsed.data.discountAmount ?? 0));
     const discountAmount = roundCurrency(manualDiscountAmount + loyaltyDiscountAmount);
+    const taxBreakdown = calculateTaxBreakdown({
+      subtotal,
+      discountAmount,
+      taxRate: Number(settings?.taxRate ?? 0),
+      taxMode: settings?.taxMode ?? 'EXCLUSIVE'
+    });
 
-    if (discountAmount > subtotal + taxAmount) {
+    if (discountAmount > subtotal + taxBreakdown.taxAmount) {
       return NextResponse.json(
         { error: 'Discount cannot exceed the sale total.' },
         { status: 400 }
       );
     }
 
-    const totalAmount = roundCurrency(subtotal + taxAmount - discountAmount);
+    const taxAmount = taxBreakdown.taxAmount;
+    const totalAmount = taxBreakdown.totalAmount;
     const paymentValidation = isCreditSale
       ? {
           ok: true as const,

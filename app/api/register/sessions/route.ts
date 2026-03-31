@@ -30,6 +30,26 @@ export async function POST(request: Request) {
       );
     }
 
+    const settings = await prisma.shopSetting.findUnique({
+      where: { shopId },
+      select: {
+        openingFloatRequired: true,
+        openingFloatAmount: true
+      }
+    });
+
+    if (
+      settings?.openingFloatRequired &&
+      Number(parsed.data.openingFloat) < Number(settings.openingFloatAmount.toString())
+    ) {
+      return NextResponse.json(
+        {
+          error: `Opening float must be at least ${settings.openingFloatAmount.toString()} for this branch.`
+        },
+        { status: 400 }
+      );
+    }
+
     const createdSession = await prisma.$transaction(async (tx) => {
       const cashSession = await tx.cashSession.create({
         data: {

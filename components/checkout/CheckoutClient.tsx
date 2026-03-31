@@ -15,6 +15,7 @@ import {
   PaymentMethod,
   requiresReferenceNumber
 } from '@/lib/payments';
+import { calculateTaxBreakdown, sanitizeDefaultPaymentMethods, type TaxModeValue } from '@/lib/shop-settings';
 
 type Category = { id: string; name: string };
 type Product = {
@@ -101,6 +102,16 @@ function createPaymentLine(method: PaymentMethod): PaymentLine {
   return { id: crypto.randomUUID(), method, amount: '', referenceNumber: '' };
 }
 
+function buildInitialPaymentLines(defaultPaymentMethods: PaymentMethod[], canAcceptCash: boolean) {
+  const preferredMethods = sanitizeDefaultPaymentMethods(defaultPaymentMethods).filter(
+    (method) => canAcceptCash || method !== 'Cash'
+  );
+
+  return preferredMethods.length
+    ? preferredMethods.map(createPaymentLine)
+    : [createPaymentLine(canAcceptCash ? 'Cash' : 'Card')];
+}
+
 function toDateInputValue(value = new Date()) {
   const offset = value.getTimezoneOffset();
   return new Date(value.getTime() - offset * 60_000).toISOString().slice(0, 10);
@@ -123,7 +134,10 @@ export default function CheckoutClient({
   categories,
   customers,
   taxRate,
+  taxMode,
   currencySymbol,
+  defaultPaymentMethods,
+  barcodeScannerNotes,
   cashierName,
   hasActiveCashSession,
   initialParkedSales
@@ -132,7 +146,10 @@ export default function CheckoutClient({
   categories: Category[];
   customers: Customer[];
   taxRate: number;
+  taxMode: TaxModeValue;
   currencySymbol: string;
+  defaultPaymentMethods: PaymentMethod[];
+  barcodeScannerNotes: string;
   cashierName: string;
   hasActiveCashSession: boolean;
   initialParkedSales: ParkedSale[];
@@ -155,9 +172,9 @@ export default function CheckoutClient({
   const [isCreditSale, setIsCreditSale] = useState(false);
   const [creditDueDate, setCreditDueDate] = useState(toDateInputValue());
   const [notes, setNotes] = useState('');
-  const [payments, setPayments] = useState<PaymentLine[]>([
-    createPaymentLine(canAcceptCash ? 'Cash' : 'Card')
-  ]);
+  const [payments, setPayments] = useState<PaymentLine[]>(
+    buildInitialPaymentLines(defaultPaymentMethods, canAcceptCash)
+  );
   const [parkedSales, setParkedSales] = useState<ParkedSale[]>(initialParkedSales);
   const [error, setError] = useState('');
   const [scanFeedback, setScanFeedback] = useState<ScanFeedback>(null);
@@ -212,11 +229,17 @@ export default function CheckoutClient({
   const productMap = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const itemCount = cart.reduce((sum, item) => sum + item.qty, 0);
   const subtotal = cart.reduce((sum, item) => sum + Number(item.price) * item.qty, 0);
-  const taxAmount = subtotal * (taxRate / 100);
   const manualDiscount = Number(discountAmount || 0);
   const loyaltyDiscount = Number(loyaltyPointsToRedeem || 0);
   const discount = manualDiscount + loyaltyDiscount;
-  const total = Math.max(subtotal + taxAmount - discount, 0);
+  const taxPreview = calculateTaxBreakdown({
+    subtotal,
+    discountAmount: discount,
+    taxRate,
+    taxMode
+  });
+  const taxAmount = taxPreview.taxAmount;
+  const total = taxPreview.totalAmount;
 
   const paymentInputs = useMemo(
     () =>
@@ -292,7 +315,7 @@ export default function CheckoutClient({
   }
 
   function resetPayments() {
-    setPayments([createPaymentLine(canAcceptCash ? 'Cash' : 'Card')]);
+    setPayments(buildInitialPaymentLines(defaultPaymentMethods, canAcceptCash));
   }
 
   function resetCheckoutState() {
@@ -661,6 +684,12 @@ export default function CheckoutClient({
             </form>
             <Input placeholder="Search by product, variant, SKU, barcode..." value={query} onChange={(event) => setQuery(event.target.value)} />
           </div>
+
+          {barcodeScannerNotes ? (
+            <div className="mt-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+              {barcodeScannerNotes}
+            </div>
+          ) : null}
 
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={() => setSelectedCategory('')} className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${!selectedCategory ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300 hover:bg-stone-50'}`}>All</button>

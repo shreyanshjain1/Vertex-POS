@@ -9,6 +9,7 @@ import {
 import { buildVariantLabel } from '@/lib/product-merchandising';
 import { prisma } from '@/lib/prisma';
 import { getActiveCashSession } from '@/lib/register';
+import { sanitizeDefaultPaymentMethods } from '@/lib/shop-settings';
 
 type CheckoutProduct = {
   id: string;
@@ -215,7 +216,10 @@ export default async function CheckoutPage() {
           lastPurchaseAt: customer.sales[0]?.createdAt.toISOString() ?? null
         }))}
         taxRate={Number(settings?.taxRate ?? 12)}
+        taxMode={settings?.taxMode ?? 'EXCLUSIVE'}
         currencySymbol={settings?.currencySymbol ?? '₱'}
+        defaultPaymentMethods={sanitizeDefaultPaymentMethods(settings?.defaultPaymentMethods)}
+        barcodeScannerNotes={settings?.barcodeScannerNotes ?? ''}
         cashierName={session.user.name ?? 'Cashier'}
         hasActiveCashSession={Boolean(activeCashSession)}
         initialParkedSales={parkedSales.map(serializeParkedSale)}

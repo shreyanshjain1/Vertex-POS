@@ -19,8 +19,10 @@ export default async function RegisterOpenPage() {
         subtitle="Start a cash drawer session with an opening float before accepting cash payments."
       />
       <RegisterOpenForm
-        currencySymbol={settings?.currencySymbol ?? 'â‚±'}
+        currencySymbol={settings?.currencySymbol ?? '₱'}
         activeSession={activeSession ? serializeCashSession(activeSession) : null}
+        openingFloatRequired={settings?.openingFloatRequired ?? true}
+        openingFloatAmount={settings?.openingFloatAmount?.toString() ?? '0'}
       />
     </div>
   );
