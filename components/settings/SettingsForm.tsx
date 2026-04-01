@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
@@ -32,12 +33,16 @@ type Props = {
     receiptHeader: string | null;
     receiptFooter: string | null;
     receiptWidth: ReceiptWidth;
+    receiptShowBrandMark: boolean;
+    printerSafeMode: boolean;
     defaultPaymentMethods: PaymentMethod[];
     printerName: string;
     printerConnection: PrinterConnectionValue;
+    cashDrawerKickEnabled: boolean;
     barcodeScannerNotes: string;
     lowStockEnabled: boolean;
     lowStockThreshold: number;
+    reorderSafetyStock: number;
     offlineStockStrict: boolean;
     offlineStockMaxAgeMinutes: number;
     batchTrackingEnabled: boolean;
@@ -100,6 +105,7 @@ export default function SettingsForm({ initialValues }: Props) {
         ...form,
         taxRate: Number(form.taxRate),
         lowStockThreshold: Number(form.lowStockThreshold),
+        reorderSafetyStock: Number(form.reorderSafetyStock),
         offlineStockMaxAgeMinutes: Number(form.offlineStockMaxAgeMinutes),
         openingFloatAmount: Number(form.openingFloatAmount)
       })
@@ -278,6 +284,15 @@ export default function SettingsForm({ initialValues }: Props) {
 
       <Section title="Inventory defaults" description="These defaults support low-stock warnings, expiry discipline, and how the branch wants stock rotated operationally.">
         <div className="grid gap-4 md:grid-cols-2">
+          <Input
+            type="number"
+            placeholder="Default safety stock"
+            value={String(form.reorderSafetyStock)}
+            onChange={(event) => setForm((current) => ({ ...current, reorderSafetyStock: Number(event.target.value) }))}
+          />
+          <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+            Smart reorder suggestions use this branch default together with recent sales velocity, supplier lead time, and current stock before creating draft purchase orders.
+          </div>
           <label className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
             <input
               type="checkbox"
@@ -342,11 +357,35 @@ export default function SettingsForm({ initialValues }: Props) {
               ))}
             </select>
           </div>
+          <label className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
+            <input
+              type="checkbox"
+              checked={form.receiptShowBrandMark}
+              onChange={(event) => setForm((current) => ({ ...current, receiptShowBrandMark: event.target.checked }))}
+            />
+            Show the branch brand mark on thermal receipts
+          </label>
+          <label className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
+            <input
+              type="checkbox"
+              checked={form.printerSafeMode}
+              onChange={(event) => setForm((current) => ({ ...current, printerSafeMode: event.target.checked }))}
+            />
+            Use printer-safe / ESC-POS-friendly formatting
+          </label>
           <Input
             placeholder="Printer name or queue"
             value={form.printerName}
             onChange={(event) => setForm((current) => ({ ...current, printerName: event.target.value }))}
           />
+          <label className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
+            <input
+              type="checkbox"
+              checked={form.cashDrawerKickEnabled}
+              onChange={(event) => setForm((current) => ({ ...current, cashDrawerKickEnabled: event.target.checked }))}
+            />
+            Show the browser cash-drawer placeholder trigger on print pages
+          </label>
           <Input
             placeholder="Receipt header"
             value={form.receiptHeader ?? ''}
@@ -362,10 +401,25 @@ export default function SettingsForm({ initialValues }: Props) {
           <div className="md:col-span-2">
             <textarea
               className="min-h-24 w-full rounded-2xl border border-stone-200 bg-white/88 px-4 py-3 text-sm text-stone-900 outline-none transition placeholder:text-stone-400 hover:border-stone-300 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
-              placeholder="Barcode scanner notes or cashier guidance"
+              placeholder="Barcode scanner notes, printer notes, or cashier guidance"
               value={form.barcodeScannerNotes}
               onChange={(event) => setForm((current) => ({ ...current, barcodeScannerNotes: event.target.value }))}
             />
+          </div>
+          <div className="md:col-span-2 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-4 text-sm text-stone-600">
+            <div className="font-semibold text-stone-900">Printer test and drawer integration point</div>
+            <div className="mt-2">
+              Open a live thermal test page to verify 58mm or 80mm spacing, compact printer-safe output, receipt barcode clarity, and the cash-drawer placeholder event before deploying to a register.
+            </div>
+            <div className="mt-4">
+              <Link
+                href="/print/receipt/test?autoprint=1"
+                target="_blank"
+                className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+              >
+                Open print test page
+              </Link>
+            </div>
           </div>
         </div>
       </Section>

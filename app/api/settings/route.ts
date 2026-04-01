@@ -6,7 +6,10 @@ import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
 import { normalizeText } from '@/lib/inventory';
 import { prisma } from '@/lib/prisma';
-import { sanitizeDefaultPaymentMethods } from '@/lib/shop-settings';
+import {
+  sanitizeDefaultPaymentMethods,
+  sanitizeReorderSafetyStock
+} from '@/lib/shop-settings';
 
 const expandedSettingSchema = settingSchema.extend({
   batchTrackingEnabled: z.coerce.boolean().default(false),
@@ -67,11 +70,15 @@ export async function PUT(request: Request) {
           receiptHeader: normalizeText(parsed.data.receiptHeader),
           receiptFooter: normalizeText(parsed.data.receiptFooter),
           receiptWidth: parsed.data.receiptWidth,
+          receiptShowBrandMark: parsed.data.receiptShowBrandMark,
+          printerSafeMode: parsed.data.printerSafeMode,
           printerName: normalizeText(parsed.data.printerName),
           printerConnection: parsed.data.printerConnection,
+          cashDrawerKickEnabled: parsed.data.cashDrawerKickEnabled,
           barcodeScannerNotes: normalizeText(parsed.data.barcodeScannerNotes),
           lowStockEnabled: parsed.data.lowStockEnabled,
           lowStockThreshold: parsed.data.lowStockThreshold,
+          reorderSafetyStock: sanitizeReorderSafetyStock(parsed.data.reorderSafetyStock),
           offlineStockStrict: parsed.data.offlineStockStrict,
           offlineStockMaxAgeMinutes: parsed.data.offlineStockMaxAgeMinutes,
           batchTrackingEnabled: parsed.data.batchTrackingEnabled,
@@ -95,11 +102,15 @@ export async function PUT(request: Request) {
           receiptHeader: normalizeText(parsed.data.receiptHeader),
           receiptFooter: normalizeText(parsed.data.receiptFooter),
           receiptWidth: parsed.data.receiptWidth,
+          receiptShowBrandMark: parsed.data.receiptShowBrandMark,
+          printerSafeMode: parsed.data.printerSafeMode,
           printerName: normalizeText(parsed.data.printerName),
           printerConnection: parsed.data.printerConnection,
+          cashDrawerKickEnabled: parsed.data.cashDrawerKickEnabled,
           barcodeScannerNotes: normalizeText(parsed.data.barcodeScannerNotes),
           lowStockEnabled: parsed.data.lowStockEnabled,
           lowStockThreshold: parsed.data.lowStockThreshold,
+          reorderSafetyStock: sanitizeReorderSafetyStock(parsed.data.reorderSafetyStock),
           offlineStockStrict: parsed.data.offlineStockStrict,
           offlineStockMaxAgeMinutes: parsed.data.offlineStockMaxAgeMinutes,
           batchTrackingEnabled: parsed.data.batchTrackingEnabled,
