@@ -23,6 +23,10 @@ The codebase is structured as a production-minded full-stack application with se
 - Barcode-first checkout with product search by name, SKU, and barcode
 - Split payments and sale payment breakdowns
 - Parked/held sales with resume and cancel flows
+- Offline-ready checkout with local cart draft persistence
+- Local pending-sales queue with reconnect sync and idempotent replay through `clientRequestId`
+- Unsynced sales status, offline receipt preview/printing, and cashier conflict recovery for queued sales
+- Branch stale-stock warning / lock controls for offline selling
 - Printable sales receipts and refund/adjustment receipts
 - Reprint flow from sales history and sale detail
 - Refund, exchange, and void workflows with approval controls
@@ -57,7 +61,11 @@ The codebase is structured as a production-minded full-stack application with se
 ### Register and Cash Session Operations
 
 - Register open flow with opening float controls
-- Register close flow with expected cash, actual cash, and variance tracking
+- Register close flow with denomination counting, expected cash, actual cash, and over/short variance tracking
+- Payout, cash drop, and petty cash recording tied to the active cash session
+- Cash movement timeline showing opening float, cash sales, refunds, non-sale movements, and closing count
+- Manager review / approval after closeout and manager-only shift reopen with audit trail notes
+- Printable Z-read / end-of-shift summary for closed register sessions
 - Register history and cashier shift/session reporting
 - Override close flow for higher-authority users
 
@@ -101,13 +109,14 @@ The codebase is structured as a production-minded full-stack application with se
 - Command palette
 - Guided first-run and empty-state UX across key modules
 - Receipt header/footer, printer-related settings, scanner notes, and operational defaults in settings
+- Offline stock max-age and strict-lock settings for branches that need tighter offline checkout safeguards
 
 ## Screens / Modules
 
 Key app modules currently present in the repository:
 
 - `/dashboard` — branch dashboard, alerts, quick actions, and operational prompts
-- `/checkout` — cashier checkout, barcode flow, held sales, and receipt generation
+- `/checkout` — cashier checkout, barcode flow, held sales, offline queue/sync, conflict review, and receipt generation
 - `/sales` — sales history, sale detail, refund, void, and reprint flows
 - `/returns` — return and adjustment history
 - `/products` — products, variants, images, pricing/cost history, and labels
@@ -119,7 +128,8 @@ Key app modules currently present in the repository:
 - `/customers` — customer directory, loyalty, credit balances, and receivable payments
 - `/transfers` — branch transfer creation, dispatch, and receiving
 - `/reports` — sales, inventory, profit, and cashier reports
-- `/register/open`, `/register/close`, `/register/history` — cash drawer/session workflows
+- `/register/open`, `/register/close`, `/register/history` — cash drawer/session workflows, reconciliation, review, and reopen controls
+- `/print/register-z-read/[id]` — printable register Z-read / end-of-shift summary
 - `/staff` — staff directory, permissions, and security controls
 - `/activity` — operational activity and audit visibility
 - `/settings` — branch identity, tax, receipt, numbering, payment, and inventory defaults
@@ -155,6 +165,7 @@ The Prisma schema already models a fairly complete retail operations domain, inc
 - sale payments
 - sale adjustments and refund payments
 - cash sessions
+- cash movements
 - parked sales
 - inventory movements and inventory reasons
 - stock counts
@@ -211,6 +222,8 @@ For deployed environments:
 ```bash
 npm run prisma:deploy
 ```
+
+The latest migration adds register reconciliation fields, cash movement tracking, sale replay idempotency, and offline checkout stock-safety settings.
 
 ### 5. Seed sample data (optional, useful for local evaluation)
 
@@ -289,9 +302,19 @@ Permissions are also enforced beyond role names for actions such as reports, ref
 
 - Printable sales receipts
 - Printable refund/adjustment receipts
+- Printable register Z-read closeout summaries
+- Offline receipt preview/print support for queued sales before sync completes
 - Receipt reprint flow from sales history and sale detail
 - Configurable receipt header/footer and width settings
 - Barcode label printing for products and variants
+
+## Offline Checkout Notes
+
+- Offline checkout is intentionally scoped to the checkout flow and uses browser `localStorage` for draft carts and the queued-sales replay store.
+- No service worker or full PWA install is required for this pass.
+- The branch settings screen exposes `offlineStockStrict` and `offlineStockMaxAgeMinutes` so managers can choose whether stale stock blocks offline selling or only warns.
+- Queued sales replay through the normal `/api/sales` route with `clientRequestId` idempotency so reconnect sync does not create duplicate sales.
+- If queued replay hits insufficient stock, price changes, or archived products, checkout surfaces the queue item for cashier review and can pull it back into live checkout using the current catalog state.
 
 ## Reporting Summary
 
