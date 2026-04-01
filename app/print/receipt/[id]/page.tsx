@@ -51,14 +51,14 @@ export default async function PrintReceiptPage({
     : sale.isCreditSale
       ? []
       : [
-        {
-          id: `legacy-${sale.id}`,
-          method: sale.paymentMethod,
-          amount: sale.totalAmount.toString(),
-          referenceNumber: null,
-          createdAt: sale.createdAt.toISOString()
-        }
-      ];
+          {
+            id: `legacy-${sale.id}`,
+            method: sale.paymentMethod,
+            amount: sale.totalAmount.toString(),
+            referenceNumber: null,
+            createdAt: sale.createdAt.toISOString()
+          }
+        ];
 
   const totalPaid = payments.reduce((sum, payment) => sum + Number(payment.amount), 0);
   const cashReceived = payments
@@ -70,10 +70,13 @@ export default async function PrintReceiptPage({
     <main className="min-h-screen bg-stone-50 p-6">
       <ThermalReceipt
         autoprint={query.autoprint === '1'}
-        currencySymbol={settings?.currencySymbol ?? '₱'}
+        currencySymbol={settings?.currencySymbol ?? 'PHP '}
         receiptHeader={settings?.receiptHeader}
         receiptFooter={settings?.receiptFooter}
         receiptWidth={settings?.receiptWidth === '58mm' ? '58mm' : '80mm'}
+        receiptShowBrandMark={settings?.receiptShowBrandMark ?? false}
+        printerSafeMode={settings?.printerSafeMode ?? true}
+        cashDrawerKickEnabled={settings?.cashDrawerKickEnabled ?? false}
         shop={{
           name: shop.name,
           address: shop.address,
