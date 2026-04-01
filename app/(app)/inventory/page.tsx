@@ -4,6 +4,7 @@ import InventoryManager from '@/components/inventory/InventoryManager';
 import Button from '@/components/ui/Button';
 import { requirePagePermission } from '@/lib/authz';
 import { ensureInventoryReasons } from '@/lib/inventory-reasons';
+import { getSmartReorderSuggestions } from '@/lib/owner-analytics';
 import { prisma } from '@/lib/prisma';
 import { ensureUnitsOfMeasure } from '@/lib/uom';
 
@@ -12,7 +13,7 @@ export default async function InventoryPage() {
   const reasons = await ensureInventoryReasons(shopId);
   await ensureUnitsOfMeasure(shopId);
 
-  const [settings, products, movements, batches] = await Promise.all([
+  const [settings, products, movements, batches, reorderSuggestions] = await Promise.all([
     prisma.shopSetting.findUnique({ where: { shopId } }),
     prisma.product.findMany({
       where: { shopId },
@@ -60,7 +61,8 @@ export default async function InventoryPage() {
       },
       orderBy: [{ expiryDate: 'asc' }, { receivedAt: 'desc' }],
       take: 120
-    })
+    }),
+    getSmartReorderSuggestions(shopId)
   ]);
 
   return (
@@ -155,6 +157,8 @@ export default async function InventoryPage() {
           }
         }))}
         lowStockThreshold={settings?.lowStockThreshold ?? 5}
+        currencySymbol={settings?.currencySymbol ?? 'PHP '}
+        reorderSuggestions={reorderSuggestions}
         inventoryFeatures={{
           batchTrackingEnabled: settings?.batchTrackingEnabled ?? false,
           expiryTrackingEnabled: settings?.expiryTrackingEnabled ?? false,
