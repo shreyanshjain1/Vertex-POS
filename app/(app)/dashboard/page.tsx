@@ -1,11 +1,13 @@
 import Link from 'next/link';
 import DashboardStats from '@/components/dashboard/DashboardStats';
 import LowStockCard from '@/components/dashboard/LowStockCard';
+import OwnerAnalyticsPanel from '@/components/dashboard/OwnerAnalyticsPanel';
 import RecentSalesCard from '@/components/dashboard/RecentSalesCard';
 import Card from '@/components/ui/Card';
 import { getInventoryMovementTypeLabel } from '@/lib/business-labels';
 import { getActiveShopContext } from '@/lib/auth/get-active-shop';
 import { dateTime, money, shortDate } from '@/lib/format';
+import { getOwnerAnalyticsData } from '@/lib/owner-analytics';
 import { prisma } from '@/lib/prisma';
 import {
   lowStockCardProductSelect,
@@ -40,7 +42,8 @@ export default async function DashboardPage() {
     weeklyRefunds,
     pendingPurchases,
     recentMovements,
-    recentAuthEvents
+    recentAuthEvents,
+    ownerAnalytics
   ] = await Promise.all([
     prisma.product.count({ where: { shopId, isActive: true } }),
     prisma.product.count({
@@ -112,7 +115,8 @@ export default async function DashboardPage() {
       where: { userId },
       orderBy: { createdAt: 'desc' },
       take: 6
-    })
+    }),
+    showBackOfficeInsights ? getOwnerAnalyticsData(shopId) : Promise.resolve(null)
   ]);
 
   const currency = settings?.currencySymbol ?? '₱';
@@ -280,6 +284,10 @@ export default async function DashboardPage() {
         stockCoverage={stockCoverage}
         showPendingPurchases={showBackOfficeInsights}
       />
+
+      {showBackOfficeInsights && ownerAnalytics ? (
+        <OwnerAnalyticsPanel analytics={ownerAnalytics} />
+      ) : null}
 
       {nextSteps.length ? (
         <Card>
