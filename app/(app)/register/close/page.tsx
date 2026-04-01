@@ -2,8 +2,11 @@ import AppHeader from '@/components/layout/AppHeader';
 import RegisterCloseManager from '@/components/register/RegisterCloseManager';
 import { hasRole, requirePageRole } from '@/lib/authz';
 import { prisma } from '@/lib/prisma';
-import { computeClosingExpectedCash, getActiveCashSessionsForShop } from '@/lib/register';
-import { serializeCashSession } from '@/lib/serializers/register';
+import { buildCashSessionSummary, getActiveCashSessionsForShop } from '@/lib/register';
+import {
+  serializeCashSession,
+  serializeRegisterSessionSummary
+} from '@/lib/serializers/register';
 
 export default async function RegisterClosePage() {
   const { shopId, userId, role } = await requirePageRole('CASHIER');
@@ -17,11 +20,18 @@ export default async function RegisterClosePage() {
     : openSessions.filter((session) => session.userId === userId);
 
   const sessions = await Promise.all(
-    visibleSessions.map(async (session) => ({
-      ...serializeCashSession(session),
-      expectedCash: String(await computeClosingExpectedCash(prisma, session, new Date())),
-      canOverride: session.userId !== userId
-    }))
+    visibleSessions.map(async (session) => {
+      const summary = await buildCashSessionSummary(prisma, session, new Date());
+
+      return {
+        ...serializeCashSession(session),
+        expectedCash: summary.expectedCash.toFixed(2),
+        canOverride: session.userId !== userId,
+        canReview: hasRole(role, 'MANAGER'),
+        canReopen: hasRole(role, 'MANAGER'),
+        summary: serializeRegisterSessionSummary(summary)
+      };
+    })
   );
 
   return (

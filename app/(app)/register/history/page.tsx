@@ -20,6 +20,27 @@ export default async function RegisterHistoryPage() {
             name: true,
             email: true
           }
+        },
+        closedByUser: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        reviewedByUser: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        reopenedByUser: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
         }
       },
       orderBy: { openedAt: 'desc' },
@@ -31,11 +52,12 @@ export default async function RegisterHistoryPage() {
     <div className="space-y-6">
       <AppHeader
         title="Register history"
-        subtitle="Review open and closed drawer sessions, cash expectations, counted totals, and over or short outcomes."
+        subtitle="Review open and closed drawer sessions, approve cashier closeouts, reopen shifts with a reason, and print Z-read summaries."
       />
       <RegisterHistoryTable
         sessions={sessions.map(serializeCashSession)}
-        currencySymbol={settings?.currencySymbol ?? 'â‚±'}
+        currencySymbol={settings?.currencySymbol ?? 'PHP '}
+        canManageSessions={hasRole(role, 'MANAGER')}
       />
     </div>
   );
