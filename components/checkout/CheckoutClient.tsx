@@ -1,19 +1,37 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { type FormEvent, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import ThermalReceipt from '@/components/receipts/ThermalReceipt';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
-import { dateTime, money } from '@/lib/format';
 import { getCustomerDisplayName } from '@/lib/customers';
+import { dateTime, money } from '@/lib/format';
 import { roundCurrency } from '@/lib/inventory';
+import {
+  buildOfflineCheckoutDraftStorageKey,
+  buildOfflineSalesQueueStorageKey,
+  createOfflineClientRequestId,
+  createOfflineReceiptNumber,
+  getStockSnapshotAgeMinutes,
+  readLocalStorageValue,
+  removeLocalStorageValue,
+  writeLocalStorageValue,
+  type OfflineCheckoutDraft,
+  type OfflineQueuedSale,
+  type OfflineQueuedSaleItem,
+  type OfflineReceiptSale
+} from '@/lib/offline-checkout';
 import {
   getPaymentSummary,
   getQuickCashAmounts,
+  getSalePaymentSummaryLabel,
+  normalizePaymentInput,
   PAYMENT_METHODS,
-  PaymentMethod,
+  type PaymentMethod,
   requiresReferenceNumber
 } from '@/lib/payments';
 import { calculateTaxBreakdown, sanitizeDefaultPaymentMethods, type TaxModeValue } from '@/lib/shop-settings';
@@ -130,6 +148,147 @@ function getReservedQtyForProduct(items: CartItem[], productId: string, exceptOp
   }, 0);
 }
 
+function getQueuedSaleStatusLabel(status: OfflineQueuedSale['status']) {
+  switch (status) {
+    case 'SYNCING':
+      return 'Syncing';
+    case 'CONFLICT':
+      return 'Needs review';
+    case 'ERROR':
+      return 'Retry needed';
+    default:
+      return 'Queued';
+  }
+}
+
+function getQueuedSaleStatusTone(status: OfflineQueuedSale['status']) {
+  switch (status) {
+    case 'SYNCING':
+      return 'border-sky-200 bg-sky-50 text-sky-700';
+    case 'CONFLICT':
+      return 'border-amber-200 bg-amber-50 text-amber-700';
+    case 'ERROR':
+      return 'border-red-200 bg-red-50 text-red-700';
+    default:
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  }
+}
+
+function getQueueItemOptionId(item: Pick<OfflineQueuedSaleItem, 'productId' | 'variantId'>) {
+  return item.variantId ?? item.productId;
+}
+
+function hasMeaningfulDraft(input: OfflineCheckoutDraft) {
+  return (
+    input.cart.length > 0 ||
+    input.notes.trim().length > 0 ||
+    input.customerName.trim().length > 0 ||
+    input.customerPhone.trim().length > 0 ||
+    input.customerSearch.trim().length > 0 ||
+    input.selectedCustomerId !== null ||
+    Number(input.discountAmount || 0) > 0 ||
+    Number(input.loyaltyPointsToRedeem || 0) > 0 ||
+    input.isCreditSale ||
+    input.payments.some((payment) => payment.amount.trim().length > 0 || payment.referenceNumber.trim().length > 0)
+  );
+}
+
+function buildInitialCheckoutPersistenceState({
+  draftStorageKey,
+  queueStorageKey,
+  products,
+  defaultPaymentMethods,
+  canAcceptCash
+}: {
+  draftStorageKey: string;
+  queueStorageKey: string;
+  products: Product[];
+  defaultPaymentMethods: PaymentMethod[];
+  canAcceptCash: boolean;
+}) {
+  const productMap = new Map(products.map((product) => [product.id, product]));
+  const fallbackPayments = buildInitialPaymentLines(defaultPaymentMethods, canAcceptCash);
+  const restored = {
+    queuedSales: readLocalStorageValue<OfflineQueuedSale[]>(queueStorageKey, []),
+    selectedCategory: '',
+    query: '',
+    cart: [] as CartItem[],
+    discountAmount: '0',
+    customerSearch: '',
+    selectedCustomerId: null as string | null,
+    customerName: '',
+    customerPhone: '',
+    loyaltyPointsToRedeem: '0',
+    isCreditSale: false,
+    creditDueDate: toDateInputValue(),
+    notes: '',
+    payments: fallbackPayments,
+    message: ''
+  };
+
+  const draft = readLocalStorageValue<OfflineCheckoutDraft | null>(draftStorageKey, null);
+  if (draft?.version !== 1) {
+    return restored;
+  }
+
+  const restoredCart: CartItem[] = [];
+  const restoreNotes: string[] = [];
+
+  for (const entry of draft.cart) {
+    const product = productMap.get(entry.optionId);
+    if (!product) {
+      restoreNotes.push('One saved cart line was skipped because the product is no longer available.');
+      continue;
+    }
+
+    const reservedQty = getReservedQtyForProduct(restoredCart, product.productId);
+    const availableQty = Math.max(product.stockQty - reservedQty, 0);
+    const nextQty = Math.min(entry.qty, availableQty);
+
+    if (nextQty <= 0) {
+      restoreNotes.push(`${product.name} was skipped because current stock is no longer available.`);
+      continue;
+    }
+
+    if (nextQty < entry.qty) {
+      restoreNotes.push(`${product.name} was reduced to ${nextQty} based on current stock.`);
+    }
+
+    restoredCart.push({ ...product, qty: nextQty });
+  }
+
+  restored.selectedCategory = draft.selectedCategory;
+  restored.query = draft.query;
+  restored.cart = restoredCart;
+  restored.discountAmount = draft.discountAmount;
+  restored.customerSearch = draft.customerSearch;
+  restored.selectedCustomerId = draft.selectedCustomerId;
+  restored.customerName = draft.customerName;
+  restored.customerPhone = draft.customerPhone;
+  restored.loyaltyPointsToRedeem = draft.loyaltyPointsToRedeem;
+  restored.isCreditSale = draft.isCreditSale;
+  restored.creditDueDate = draft.creditDueDate || toDateInputValue();
+  restored.notes = draft.notes;
+  restored.payments = draft.payments.length
+    ? draft.payments.map((payment) => ({
+        id: payment.id || crypto.randomUUID(),
+        method: payment.method,
+        amount: payment.amount,
+        referenceNumber: payment.referenceNumber
+      }))
+    : fallbackPayments;
+
+  if (restoredCart.length) {
+    restored.message = 'Restored the last checkout draft from this terminal.';
+  }
+
+  if (restoreNotes.length) {
+    restored.message = `${restored.message} ${restoreNotes.join(' ')}`.trim();
+  }
+
+  return restored;
+}
+
 export default function CheckoutClient({
   products,
   categories,
@@ -141,6 +300,16 @@ export default function CheckoutClient({
   barcodeScannerNotes,
   cashierName,
   hasActiveCashSession,
+  activeCashSessionId,
+  shopId,
+  userId,
+  offlineStockStrict,
+  offlineStockMaxAgeMinutes,
+  stockSnapshotCapturedAt,
+  shop,
+  receiptHeader,
+  receiptFooter,
+  receiptWidth,
   initialParkedSales
 }: {
   products: Product[];
@@ -153,33 +322,79 @@ export default function CheckoutClient({
   barcodeScannerNotes: string;
   cashierName: string;
   hasActiveCashSession: boolean;
+  activeCashSessionId: string | null;
+  shopId: string;
+  userId: string;
+  offlineStockStrict: boolean;
+  offlineStockMaxAgeMinutes: number;
+  stockSnapshotCapturedAt: string;
+  shop: {
+    name: string;
+    address: string | null;
+    phone: string | null;
+    email: string | null;
+  };
+  receiptHeader: string | null;
+  receiptFooter: string | null;
+  receiptWidth: '58mm' | '80mm';
   initialParkedSales: ParkedSale[];
 }) {
   const router = useRouter();
   const scanInputRef = useRef<HTMLInputElement>(null);
   const cartRef = useRef<CartItem[]>([]);
+  const queuedSalesRef = useRef<OfflineQueuedSale[]>([]);
+  const syncInFlightRef = useRef(false);
+  const retryTimerRef = useRef<number | null>(null);
   const canAcceptCash = hasActiveCashSession;
-
-  const [selectedCategory, setSelectedCategory] = useState('');
-  const [query, setQuery] = useState('');
-  const [scanQuery, setScanQuery] = useState('');
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [discountAmount, setDiscountAmount] = useState('0');
-  const [customerSearch, setCustomerSearch] = useState('');
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
-  const [customerName, setCustomerName] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
-  const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState('0');
-  const [isCreditSale, setIsCreditSale] = useState(false);
-  const [creditDueDate, setCreditDueDate] = useState(toDateInputValue());
-  const [notes, setNotes] = useState('');
-  const [payments, setPayments] = useState<PaymentLine[]>(
-    buildInitialPaymentLines(defaultPaymentMethods, canAcceptCash)
+  const draftStorageKey = useMemo(
+    () => buildOfflineCheckoutDraftStorageKey(shopId, userId),
+    [shopId, userId]
   );
+  const queueStorageKey = useMemo(
+    () => buildOfflineSalesQueueStorageKey(shopId, userId),
+    [shopId, userId]
+  );
+  const [initialLocalState] = useState(() =>
+    buildInitialCheckoutPersistenceState({
+      draftStorageKey,
+      queueStorageKey,
+      products,
+      defaultPaymentMethods,
+      canAcceptCash
+    })
+  );
+
+  const [selectedCategory, setSelectedCategory] = useState(initialLocalState.selectedCategory);
+  const [query, setQuery] = useState(initialLocalState.query);
+  const [scanQuery, setScanQuery] = useState('');
+  const [cart, setCart] = useState<CartItem[]>(initialLocalState.cart);
+  const [discountAmount, setDiscountAmount] = useState(initialLocalState.discountAmount);
+  const [customerSearch, setCustomerSearch] = useState(initialLocalState.customerSearch);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(initialLocalState.selectedCustomerId);
+  const [customerName, setCustomerName] = useState(initialLocalState.customerName);
+  const [customerPhone, setCustomerPhone] = useState(initialLocalState.customerPhone);
+  const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState(initialLocalState.loyaltyPointsToRedeem);
+  const [isCreditSale, setIsCreditSale] = useState(initialLocalState.isCreditSale);
+  const [creditDueDate, setCreditDueDate] = useState(initialLocalState.creditDueDate);
+  const [notes, setNotes] = useState(initialLocalState.notes);
+  const [payments, setPayments] = useState<PaymentLine[]>(initialLocalState.payments);
   const [parkedSales, setParkedSales] = useState<ParkedSale[]>(initialParkedSales);
+  const [queuedSales, setQueuedSales] = useState<OfflineQueuedSale[]>(initialLocalState.queuedSales);
+  const [activeReceiptId, setActiveReceiptId] = useState<string | null>(null);
+  const [lastSyncedSale, setLastSyncedSale] = useState<{
+    id: string;
+    saleNumber: string;
+    receiptNumber: string;
+    localReceiptNumber: string;
+  } | null>(null);
+  const [isOnline, setIsOnline] = useState(() =>
+    typeof navigator === 'undefined' ? true : navigator.onLine
+  );
+  const [syncingQueue, setSyncingQueue] = useState(false);
+  const [clock, setClock] = useState(() => Date.now());
   const [error, setError] = useState('');
   const [scanFeedback, setScanFeedback] = useState<ScanFeedback>(null);
-  const [parkedFeedback, setParkedFeedback] = useState('');
+  const [parkedFeedback, setParkedFeedback] = useState(initialLocalState.message);
   const [loading, setLoading] = useState(false);
   const [holding, setHolding] = useState(false);
   const [resumeLoadingId, setResumeLoadingId] = useState<string | null>(null);
@@ -245,11 +460,13 @@ export default function CheckoutClient({
 
   const paymentInputs = useMemo(
     () =>
-      payments.map((payment) => ({
-        method: payment.method,
-        amount: roundCurrency(toNumber(payment.amount)),
-        referenceNumber: payment.referenceNumber.trim() || null
-      })),
+      payments.map((payment) =>
+        normalizePaymentInput({
+          method: payment.method,
+          amount: toNumber(payment.amount),
+          referenceNumber: payment.referenceNumber.trim() || null
+        })
+      ),
     [payments]
   );
 
@@ -271,7 +488,11 @@ export default function CheckoutClient({
     if (isCreditSale) {
       if (!selectedCustomerId) return 'Attach a customer before posting a credit sale.';
       if (!creditDueDate) return 'Choose a due date for the credit sale.';
-      if (Number(loyaltyPointsToRedeem) > 0 && selectedCustomer && Number(loyaltyPointsToRedeem) > selectedCustomer.loyaltyBalance) {
+      if (
+        Number(loyaltyPointsToRedeem) > 0 &&
+        selectedCustomer &&
+        Number(loyaltyPointsToRedeem) > selectedCustomer.loyaltyBalance
+      ) {
         return 'Customer does not have enough loyalty points for this redemption.';
       }
       return '';
@@ -296,18 +517,50 @@ export default function CheckoutClient({
       return 'Non-cash payments must match the sale total exactly.';
     }
     return '';
-  }, [creditDueDate, isCreditSale, loyaltyPointsToRedeem, paymentInputs, paymentSummary, payments.length, selectedCustomer, selectedCustomerId, total]);
+  }, [
+    creditDueDate,
+    isCreditSale,
+    loyaltyPointsToRedeem,
+    paymentInputs,
+    paymentSummary,
+    payments.length,
+    selectedCustomer,
+    selectedCustomerId,
+    total
+  ]);
 
+  const stockSnapshotAgeMinutes = getStockSnapshotAgeMinutes(stockSnapshotCapturedAt, clock);
+  const isStockSnapshotStale = stockSnapshotAgeMinutes > offlineStockMaxAgeMinutes;
+  const offlineCheckoutBlocked = !isOnline && offlineStockStrict && isStockSnapshotStale;
   const canCompleteSale =
     cart.length > 0 &&
     !loading &&
     discount >= 0 &&
     discount <= subtotal + taxAmount &&
-    !paymentError;
+    !paymentError &&
+    !offlineCheckoutBlocked;
+
+  const pendingQueuedSales = queuedSales.filter((sale) => sale.status === 'PENDING');
+  const conflictedQueuedSales = queuedSales.filter((sale) => sale.status === 'CONFLICT');
+  const failedQueuedSales = queuedSales.filter((sale) => sale.status === 'ERROR');
+  const resolvedActiveReceiptId =
+    activeReceiptId && queuedSales.some((sale) => sale.id === activeReceiptId)
+      ? activeReceiptId
+      : queuedSales[0]?.id ?? null;
+  const activeReceiptSale = queuedSales.find((sale) => sale.id === resolvedActiveReceiptId) ?? null;
 
   useEffect(() => {
     cartRef.current = cart;
   }, [cart]);
+
+  useEffect(() => {
+    queuedSalesRef.current = queuedSales;
+  }, [queuedSales]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   function focusScanInput(selectText = false) {
     const input = scanInputRef.current;
@@ -482,6 +735,340 @@ export default function CheckoutClient({
     updatePaymentLine(lineId, { amount: amount.toFixed(2) });
   }
 
+  function buildSalePayload(clientRequestId: string, occurredAt: string, includePriceSnapshot: boolean) {
+    return {
+      clientRequestId,
+      occurredAt,
+      cashSessionId: activeCashSessionId,
+      customerId: selectedCustomerId,
+      customerName: customerName || null,
+      customerPhone: customerPhone || null,
+      loyaltyPointsToRedeem: Number(loyaltyPointsToRedeem),
+      isCreditSale,
+      creditDueDate: isCreditSale ? creditDueDate : null,
+      discountAmount: manualDiscount,
+      notes: notes || null,
+      payments: isCreditSale
+        ? []
+        : paymentInputs.map((payment) => ({
+            method: payment.method,
+            amount: payment.amount,
+            referenceNumber: payment.referenceNumber ?? null
+          })),
+      items: cart.map((item) => ({
+        optionId: item.id,
+        productId: item.productId,
+        variantId: item.variantId,
+        productName: item.name,
+        variantLabel: item.variantLabel,
+        qty: item.qty,
+        priceSnapshot: includePriceSnapshot ? roundCurrency(Number(item.price)) : null
+      }))
+    };
+  }
+
+  function buildOfflineReceipt(
+    clientRequestId: string,
+    localReceiptNumber: string,
+    occurredAt: string
+  ): OfflineReceiptSale {
+    const normalizedPayments = isCreditSale
+      ? []
+      : paymentInputs.map((payment, index) => ({
+          id: payments[index]?.id ?? `${clientRequestId}-${index}`,
+          method: payment.method,
+          amount: payment.amount.toFixed(2),
+          referenceNumber: payment.referenceNumber ?? null,
+          createdAt: occurredAt
+        }));
+
+    return {
+      id: clientRequestId,
+      saleNumber: localReceiptNumber,
+      receiptNumber: localReceiptNumber,
+      paymentMethod: isCreditSale ? 'Customer Credit' : getSalePaymentSummaryLabel(normalizedPayments),
+      cashierName,
+      customerEmail: selectedCustomer?.email ?? null,
+      customerBusinessName: selectedCustomer?.businessName ?? null,
+      customerName: customerName || selectedCustomer?.businessName || selectedCustomer?.firstName || null,
+      customerPhone: customerPhone || selectedCustomer?.phone || null,
+      isCreditSale,
+      creditDueDate: isCreditSale ? creditDueDate : null,
+      loyaltyPointsEarned: 0,
+      loyaltyPointsRedeemed: Number(loyaltyPointsToRedeem),
+      loyaltyDiscountAmount: loyaltyDiscount.toFixed(2),
+      subtotal: subtotal.toFixed(2),
+      taxAmount: taxAmount.toFixed(2),
+      discountAmount: discount.toFixed(2),
+      totalAmount: total.toFixed(2),
+      totalPaid: (isCreditSale ? 0 : paymentSummary.totalPaid).toFixed(2),
+      cashReceived: (isCreditSale ? 0 : paymentSummary.cashReceived).toFixed(2),
+      changeDue: paymentSummary.changeDue.toFixed(2),
+      notes,
+      createdAt: occurredAt,
+      payments: normalizedPayments,
+      items: cart.map((item) => ({
+        id: item.id,
+        productName: item.variantLabel ? `${item.name} (${item.variantLabel})` : item.name,
+        qty: item.qty,
+        unitPrice: Number(item.price).toFixed(2),
+        lineTotal: roundCurrency(Number(item.price) * item.qty).toFixed(2)
+      }))
+    };
+  }
+
+  function scheduleQueueSync(delayMs = 4_000) {
+    if (typeof window === 'undefined' || !window.navigator.onLine) {
+      return;
+    }
+
+    if (retryTimerRef.current !== null) {
+      window.clearTimeout(retryTimerRef.current);
+    }
+
+    retryTimerRef.current = window.setTimeout(() => {
+      void syncQueuedSalesNow();
+    }, delayMs);
+  }
+
+  function queueSaleForLater(clientRequestId: string, occurredAt: string, reason: string) {
+    const localReceiptNumber = createOfflineReceiptNumber(new Date(occurredAt));
+    const queuedSale: OfflineQueuedSale = {
+      id: clientRequestId,
+      shopId,
+      userId,
+      localReceiptNumber,
+      queuedAt: new Date().toISOString(),
+      status: 'PENDING',
+      payload: buildSalePayload(clientRequestId, occurredAt, true),
+      receipt: buildOfflineReceipt(clientRequestId, localReceiptNumber, occurredAt),
+      conflicts: [],
+      lastError: null
+    };
+
+    setQueuedSales((current) => [queuedSale, ...current.filter((entry) => entry.id !== queuedSale.id)]);
+    setActiveReceiptId(queuedSale.id);
+    setLastSyncedSale(null);
+    resetCheckoutState();
+    setParkedFeedback(reason);
+    focusScanInput();
+    scheduleQueueSync();
+  }
+
+  async function syncQueuedSalesNow() {
+    if (syncInFlightRef.current) {
+      return;
+    }
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return;
+    }
+
+    const candidates = queuedSalesRef.current.filter(
+      (sale) => sale.status === 'PENDING' || sale.status === 'ERROR'
+    );
+
+    if (!candidates.length) {
+      return;
+    }
+
+    syncInFlightRef.current = true;
+    setSyncingQueue(true);
+
+    for (const queuedSale of candidates) {
+      setQueuedSales((current) =>
+        current.map((entry) =>
+          entry.id === queuedSale.id
+            ? { ...entry, status: 'SYNCING', lastError: null }
+            : entry
+        )
+      );
+
+      try {
+        const response = await fetch('/api/sales', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...queuedSale.payload,
+            items: queuedSale.payload.items.map((item) => ({
+              productId: item.productId,
+              variantId: item.variantId,
+              qty: item.qty,
+              priceSnapshot: item.priceSnapshot
+            }))
+          })
+        });
+        const data = await response.json().catch(() => ({ error: 'Unable to sync queued sale.' }));
+
+        if (response.ok && data?.sale) {
+          setQueuedSales((current) => current.filter((entry) => entry.id !== queuedSale.id));
+          setLastSyncedSale({
+            id: data.sale.id,
+            saleNumber: data.sale.saleNumber,
+            receiptNumber: data.sale.receiptNumber,
+            localReceiptNumber: queuedSale.localReceiptNumber
+          });
+          setParkedFeedback(
+            `Queued sale ${queuedSale.localReceiptNumber} synced as receipt ${data.sale.receiptNumber}.`
+          );
+          router.refresh();
+          continue;
+        }
+
+        if (response.status === 409 && data?.code === 'OFFLINE_SYNC_CONFLICT' && Array.isArray(data.conflicts)) {
+          setQueuedSales((current) =>
+            current.map((entry) =>
+              entry.id === queuedSale.id
+                ? {
+                    ...entry,
+                    status: 'CONFLICT',
+                    conflicts: data.conflicts,
+                    lastError: data.error ?? 'Queued sale needs cashier review before sync can continue.'
+                  }
+                : entry
+            )
+          );
+          continue;
+        }
+
+        setQueuedSales((current) =>
+          current.map((entry) =>
+            entry.id === queuedSale.id
+              ? {
+                  ...entry,
+                  status: 'ERROR',
+                  conflicts: [],
+                  lastError: data?.error ?? 'Unable to sync queued sale.'
+                }
+              : entry
+          )
+        );
+      } catch {
+        setQueuedSales((current) =>
+          current.map((entry) =>
+            entry.id === queuedSale.id
+              ? {
+                  ...entry,
+                  status: 'ERROR',
+                  lastError: 'Connection dropped before the queued sale could sync.'
+                }
+              : entry
+          )
+        );
+        break;
+      }
+    }
+
+    syncInFlightRef.current = false;
+    setSyncingQueue(false);
+  }
+
+  const syncQueuedSalesEffect = useEffectEvent(async () => {
+    await syncQueuedSalesNow();
+  });
+  const handleOnlineEffect = useEffectEvent(() => {
+    setIsOnline(true);
+    setParkedFeedback('Connection restored. Syncing queued sales now.');
+    void syncQueuedSalesNow();
+  });
+
+  useEffect(() => {
+    const draft: OfflineCheckoutDraft = {
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      selectedCategory,
+      query,
+      cart: cart.map((item) => ({
+        optionId: item.id,
+        qty: item.qty
+      })),
+      discountAmount,
+      customerSearch,
+      selectedCustomerId,
+      customerName,
+      customerPhone,
+      loyaltyPointsToRedeem,
+      isCreditSale,
+      creditDueDate,
+      notes,
+      payments: payments.map((payment) => ({
+        id: payment.id,
+        method: payment.method,
+        amount: payment.amount,
+        referenceNumber: payment.referenceNumber
+      }))
+    };
+
+    if (hasMeaningfulDraft(draft)) {
+      writeLocalStorageValue(draftStorageKey, draft);
+      return;
+    }
+
+    removeLocalStorageValue(draftStorageKey);
+  }, [
+    cart,
+    creditDueDate,
+    customerName,
+    customerPhone,
+    customerSearch,
+    discountAmount,
+    draftStorageKey,
+    isCreditSale,
+    loyaltyPointsToRedeem,
+    notes,
+    payments,
+    query,
+    selectedCategory,
+    selectedCustomerId
+  ]);
+
+  useEffect(() => {
+    if (queuedSales.length) {
+      writeLocalStorageValue(queueStorageKey, queuedSales);
+      return;
+    }
+
+    removeLocalStorageValue(queueStorageKey);
+  }, [queueStorageKey, queuedSales]);
+
+  useEffect(() => {
+    function handleOnline() {
+      handleOnlineEffect();
+    }
+
+    function handleOffline() {
+      setIsOnline(false);
+    }
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isOnline) {
+      return;
+    }
+
+    if (!queuedSales.some((sale) => sale.status === 'PENDING' || sale.status === 'ERROR')) {
+      return;
+    }
+
+    void syncQueuedSalesEffect();
+  }, [isOnline, queuedSales]);
+
+  useEffect(() => {
+    return () => {
+      if (retryTimerRef.current !== null) {
+        window.clearTimeout(retryTimerRef.current);
+      }
+    };
+  }, []);
+
   async function holdCart() {
     setError('');
     setParkedFeedback('');
@@ -593,6 +1180,86 @@ export default function CheckoutClient({
     }
   }
 
+  function restoreQueuedSaleToCheckout(queuedSale: OfflineQueuedSale) {
+    if (cart.length && !window.confirm('Load this queued sale into checkout and replace the current cart?')) {
+      return;
+    }
+
+    const restoredCart: CartItem[] = [];
+    const restoreNotes: string[] = [];
+
+    for (const item of queuedSale.payload.items) {
+      const option = productMap.get(getQueueItemOptionId(item));
+      if (!option) {
+        restoreNotes.push(`${item.productName} was removed from the branch catalog and was skipped.`);
+        continue;
+      }
+
+      const reservedQty = getReservedQtyForProduct(restoredCart, option.productId);
+      const availableQty = Math.max(option.stockQty - reservedQty, 0);
+      const resolvedQty = Math.min(item.qty, availableQty);
+
+      if (resolvedQty <= 0) {
+        restoreNotes.push(`${option.name} is now out of stock and was removed from this recovery cart.`);
+        continue;
+      }
+
+      if (resolvedQty < item.qty) {
+        restoreNotes.push(`${option.name} was reduced from ${item.qty} to ${resolvedQty} based on current stock.`);
+      }
+
+      restoredCart.push({ ...option, qty: resolvedQty });
+    }
+
+    if (!restoredCart.length) {
+      setError('No sellable items remain in this queued sale. Remove it from the queue after reviewing the conflict notes.');
+      return;
+    }
+
+    setCart(restoredCart);
+    setSelectedCustomerId(queuedSale.payload.customerId);
+    setCustomerSearch(
+      queuedSale.payload.customerId
+        ? getCustomerDisplayName(customers.find((customer) => customer.id === queuedSale.payload.customerId) ?? {})
+        : queuedSale.payload.customerName ?? ''
+    );
+    setCustomerName(queuedSale.payload.customerName ?? '');
+    setCustomerPhone(queuedSale.payload.customerPhone ?? '');
+    setLoyaltyPointsToRedeem(String(queuedSale.payload.loyaltyPointsToRedeem));
+    setIsCreditSale(queuedSale.payload.isCreditSale);
+    setCreditDueDate(queuedSale.payload.creditDueDate ?? toDateInputValue());
+    setNotes(queuedSale.payload.notes ?? '');
+    setDiscountAmount(String(queuedSale.payload.discountAmount));
+    setPayments(
+      queuedSale.payload.isCreditSale
+        ? buildInitialPaymentLines(defaultPaymentMethods, canAcceptCash)
+        : queuedSale.payload.payments.map((payment) => ({
+            id: crypto.randomUUID(),
+            method: payment.method,
+            amount: payment.amount.toFixed(2),
+            referenceNumber: payment.referenceNumber ?? ''
+          }))
+    );
+    setQueuedSales((current) => current.filter((entry) => entry.id !== queuedSale.id));
+    setScanFeedback(null);
+    setError('');
+    setParkedFeedback(
+      restoreNotes.length
+        ? `Queued sale moved back into checkout. ${restoreNotes.join(' ')}`
+        : 'Queued sale moved back into checkout for cashier review.'
+    );
+    focusScanInput();
+  }
+
+  function removeQueuedSale(queuedSale: OfflineQueuedSale) {
+    if (!window.confirm('Remove this queued sale from local offline storage?')) {
+      return;
+    }
+
+    setQueuedSales((current) => current.filter((entry) => entry.id !== queuedSale.id));
+    setParkedFeedback(`Removed queued sale ${queuedSale.localReceiptNumber} from local storage.`);
+  }
+
   async function completeSale() {
     setError('');
     setParkedFeedback('');
@@ -600,26 +1267,38 @@ export default function CheckoutClient({
     if (discount < 0) return setError('Discount amount cannot be negative.');
     if (discount > subtotal + taxAmount) return setError('Discount cannot exceed the sale total.');
     if (paymentError) return setError(paymentError);
+    if (offlineCheckoutBlocked) {
+      setError(
+        `Offline checkout is blocked because the branch stock snapshot is ${Math.ceil(stockSnapshotAgeMinutes)} minutes old. Refresh the branch while online before selling offline again.`
+      );
+      return;
+    }
+
+    const occurredAt = new Date().toISOString();
+    const clientRequestId = createOfflineClientRequestId(shopId, userId, new Date(occurredAt));
+    const livePayload = buildSalePayload(clientRequestId, occurredAt, false);
+
+    if (!isOnline) {
+      queueSaleForLater(
+        clientRequestId,
+        occurredAt,
+        `Offline mode detected. Sale ${clientRequestId.slice(-8)} was queued locally and a temporary receipt is ready to print.`
+      );
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await fetch('/api/sales', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customerId: selectedCustomerId,
-          customerName: customerName || null,
-          customerPhone: customerPhone || null,
-          loyaltyPointsToRedeem: Number(loyaltyPointsToRedeem),
-          isCreditSale,
-          creditDueDate: isCreditSale ? creditDueDate : null,
-          discountAmount: manualDiscount,
-          notes: notes || null,
-          payments: isCreditSale ? [] : payments.map((payment) => ({
-            method: payment.method,
-            amount: Number(payment.amount),
-            referenceNumber: payment.referenceNumber || null
-          })),
-          items: cart.map((item) => ({ productId: item.productId, variantId: item.variantId, qty: item.qty }))
+          ...livePayload,
+          items: livePayload.items.map((item) => ({
+            productId: item.productId,
+            variantId: item.variantId,
+            qty: item.qty
+          }))
         })
       });
       const data = await response.json().catch(() => ({ error: 'Failed to create sale.' }));
@@ -633,7 +1312,11 @@ export default function CheckoutClient({
       router.refresh();
     } catch {
       setLoading(false);
-      setError('Failed to create sale.');
+      queueSaleForLater(
+        clientRequestId,
+        occurredAt,
+        'Sale submission failed because the network dropped. The sale was queued locally and will sync automatically when the connection returns.'
+      );
     }
   }
 
@@ -668,285 +1351,487 @@ export default function CheckoutClient({
   }, [canCompleteSale, cart.length]);
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
-      <Card className="space-y-5 overflow-hidden">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div className="space-y-6">
+      <Card>
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">Scanner-first checkout</div>
-            <h2 className="mt-2 text-2xl font-black text-stone-900">Find products</h2>
-            <p className="mt-1 text-sm text-stone-500">Scan a barcode or type a SKU to add fast, then fall back to manual search or browsing when needed.</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${
+                  isOnline ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'
+                }`}
+              >
+                {isOnline ? 'Online' : 'Offline'}
+              </span>
+              <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-600">
+                {queuedSales.length} unsynced sale(s)
+              </span>
+              {conflictedQueuedSales.length ? (
+                <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+                  {conflictedQueuedSales.length} conflict(s)
+                </span>
+              ) : null}
+            </div>
+            <h2 className="mt-3 text-2xl font-black text-stone-950">Offline-ready checkout</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">
+              Cart drafts persist locally, offline-completed sales queue for replay, and queued receipts stay printable until the branch reconnects.
+            </p>
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:w-auto">
-            <div className="rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-3"><div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Visible</div><div className="mt-1 text-xl font-black text-stone-950">{filtered.length}</div></div>
-            <div className="rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-3"><div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Cart lines</div><div className="mt-1 text-xl font-black text-stone-950">{cart.length}</div></div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Queued</div>
+              <div className="mt-1 text-2xl font-black text-stone-950">{queuedSales.length}</div>
+            </div>
+            <div className="rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Pending sync</div>
+              <div className="mt-1 text-2xl font-black text-sky-700">{pendingQueuedSales.length + failedQueuedSales.length}</div>
+            </div>
+            <div className="rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Stock age</div>
+              <div className={`mt-1 text-2xl font-black ${isStockSnapshotStale ? 'text-amber-700' : 'text-emerald-700'}`}>
+                {Number.isFinite(stockSnapshotAgeMinutes) ? `${Math.ceil(stockSnapshotAgeMinutes)}m` : 'Unknown'}
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="rounded-[24px] border border-stone-200 bg-stone-50/80 p-4">
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,320px)_1fr]">
-            <form onSubmit={handleScanSubmit} className="flex gap-3">
-              <Input ref={scanInputRef} placeholder="Scan barcode or enter SKU" value={scanQuery} onChange={(event) => setScanQuery(event.target.value)} autoCapitalize="off" autoCorrect="off" spellCheck={false} />
-              <Button type="submit" variant="secondary" className="shrink-0">Add</Button>
-            </form>
-            <Input placeholder="Search by product, variant, SKU, barcode..." value={query} onChange={(event) => setQuery(event.target.value)} />
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-500">
-            <span className="rounded-full border border-stone-200 bg-white px-3 py-1">Enter adds scanned item</span>
-            <span className="rounded-full border border-stone-200 bg-white px-3 py-1">`F2` focuses barcode input</span>
-            <span className="rounded-full border border-stone-200 bg-white px-3 py-1">Existing cart lines increase quantity automatically</span>
-          </div>
-
-          {barcodeScannerNotes ? (
-            <div className="mt-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-              {barcodeScannerNotes}
+        <div className="mt-5 grid gap-4 lg:grid-cols-[1.25fr_0.75fr]">
+          <div className={`rounded-[24px] border px-4 py-4 text-sm ${
+            offlineCheckoutBlocked
+              ? 'border-red-200 bg-red-50 text-red-800'
+              : !isOnline && isStockSnapshotStale
+                ? 'border-amber-200 bg-amber-50 text-amber-800'
+                : 'border-stone-200 bg-stone-50 text-stone-700'
+          }`}>
+            <div className="font-semibold text-stone-900">Offline stock safeguard</div>
+            <div className="mt-2 leading-6">
+              {offlineCheckoutBlocked
+                ? `This branch is offline and the stock snapshot is older than ${offlineStockMaxAgeMinutes} minutes, so offline selling is locked until checkout is refreshed online.`
+                : !isOnline && isStockSnapshotStale
+                  ? `This branch is offline and the stock snapshot is stale. Offline checkout is still allowed in warning mode, but queued sales may need conflict review when sync resumes.`
+                  : `The current stock snapshot was captured ${Math.ceil(stockSnapshotAgeMinutes)} minute(s) ago. Offline checkout will warn or lock based on the branch rule in settings.`}
             </div>
-          ) : null}
+          </div>
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" onClick={() => setSelectedCategory('')} className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${!selectedCategory ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300 hover:bg-stone-50'}`}>All</button>
-            {categories.map((category) => (
-              <button key={category.id} type="button" onClick={() => setSelectedCategory(category.id)} className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${selectedCategory === category.id ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300 hover:bg-stone-50'}`}>{category.name}</button>
+          <div className="flex flex-col gap-3 sm:flex-row lg:flex-col">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!queuedSales.length || syncingQueue || !isOnline}
+              onClick={() => void syncQueuedSalesNow()}
+            >
+              {syncingQueue ? 'Syncing queued sales...' : 'Retry sync now'}
+            </Button>
+            {activeReceiptSale ? (
+              <Button type="button" variant="secondary" onClick={() => setActiveReceiptId(activeReceiptSale.id)}>
+                Open queued receipt
+              </Button>
+            ) : null}
+            {lastSyncedSale ? (
+              <Link href={`/print/receipt/${lastSyncedSale.id}`} className="inline-flex">
+                <Button type="button" className="w-full justify-center">
+                  Open last synced receipt
+                </Button>
+              </Link>
+            ) : null}
+          </div>
+        </div>
+
+        {lastSyncedSale ? (
+          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            Queued receipt {lastSyncedSale.localReceiptNumber} synced successfully as {lastSyncedSale.receiptNumber}.
+          </div>
+        ) : null}
+
+        {queuedSales.length ? (
+          <div className="mt-6 space-y-3">
+            {queuedSales.map((queuedSale) => (
+              <div key={queuedSale.id} className="rounded-[24px] border border-stone-200 bg-white p-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${getQueuedSaleStatusTone(queuedSale.status)}`}>
+                        {getQueuedSaleStatusLabel(queuedSale.status)}
+                      </span>
+                      <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-600">
+                        {queuedSale.localReceiptNumber}
+                      </span>
+                    </div>
+                    <div className="mt-3 text-lg font-black text-stone-950">
+                      {money(queuedSale.receipt.totalAmount, currencySymbol)}
+                    </div>
+                    <div className="mt-1 text-sm text-stone-500">
+                      Queued {dateTime(queuedSale.queuedAt)} / {queuedSale.receipt.items.length} line(s)
+                    </div>
+                    {queuedSale.lastError ? (
+                      <div className="mt-3 rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                        {queuedSale.lastError}
+                      </div>
+                    ) : null}
+                    {queuedSale.conflicts.length ? (
+                      <div className="mt-3 space-y-2">
+                        {queuedSale.conflicts.map((conflict, index) => (
+                          <div key={`${queuedSale.id}-${conflict.productId}-${index}`} className="rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                            <div className="font-semibold text-amber-900">{conflict.productName}</div>
+                            <div className="mt-1">{conflict.message}</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="min-w-[240px] space-y-2">
+                    <Button type="button" variant="secondary" className="w-full justify-center" onClick={() => setActiveReceiptId(queuedSale.id)}>
+                      Print local receipt
+                    </Button>
+                    {queuedSale.status !== 'SYNCING' ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="w-full justify-center"
+                        onClick={() => restoreQueuedSaleToCheckout(queuedSale)}
+                      >
+                        Review in checkout
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      disabled={queuedSale.status === 'SYNCING' || !isOnline}
+                      className="w-full justify-center"
+                      onClick={() => void syncQueuedSalesNow()}
+                    >
+                      Retry sync
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      className="w-full justify-center"
+                      disabled={queuedSale.status === 'SYNCING'}
+                      onClick={() => removeQueuedSale(queuedSale)}
+                    >
+                      Remove queued sale
+                    </Button>
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
-
-          {scanFeedback ? <div className={`mt-3 rounded-2xl border px-4 py-3 text-sm ${scanFeedback.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'}`}>{scanFeedback.message}</div> : null}
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((product) => (
-            <button key={product.id} type="button" onClick={() => { setScanFeedback(null); addToCart(product); }} className="rounded-[24px] border border-stone-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,245,244,0.92))] p-4 text-left shadow-[0_18px_36px_-30px_rgba(28,25,23,0.35)] transition hover:-translate-y-1 hover:border-emerald-300">
-              <div className="flex items-start gap-3">
-                <div className="h-16 w-16 overflow-hidden rounded-[18px] border border-stone-200 bg-stone-50">
-                  {product.imageUrl ? <img src={product.imageUrl} alt={getOptionDisplayName(product)} className="h-full w-full object-cover" /> : null}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-semibold text-stone-900">{product.name}</div>
-                  <div className="mt-1 text-sm text-stone-500">{product.variantLabel ?? product.category?.name ?? 'Standard item'}</div>
-                  <div className="mt-2 text-xs text-stone-500">SKU: {product.sku ?? 'N/A'} / Barcode: {product.barcode ?? 'N/A'}</div>
-                </div>
-                <div className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${product.stockQty <= 0 ? 'border-red-200 bg-red-50 text-red-700' : product.stockQty <= 5 ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{product.stockQty <= 0 ? 'Out' : product.stockQty <= 5 ? 'Low' : 'Ready'}</div>
-              </div>
-              <div className="mt-4 flex items-end justify-between gap-3">
-                <div><div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Selling price</div><div className="mt-1 text-2xl font-black text-emerald-700">{money(product.price, currencySymbol)}</div></div>
-                <div className="text-right text-xs font-medium text-stone-500">{product.stockQty} in stock</div>
-              </div>
-            </button>
-          ))}
-        </div>
-
-        {!filtered.length ? (
-          products.length ? (
-            <div className="rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-6">
-              <div className="text-sm font-semibold text-stone-900">{hasSearchFilters ? 'No products matched that search.' : 'No products are visible right now.'}</div>
-              <div className="mt-2 text-sm text-stone-500">
-                {hasSearchFilters
-                  ? 'Try a barcode, SKU, or a broader category filter to keep checkout moving.'
-                  : 'The active branch catalog is empty or fully filtered out.'}
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Button type="button" variant="secondary" onClick={() => { setQuery(''); setSelectedCategory(''); focusScanInput(); }}>
-                  Reset search
-                </Button>
-                <Link href="/products" className="inline-flex h-11 items-center justify-center rounded-2xl border border-emerald-700/90 bg-[linear-gradient(180deg,#059669,#047857)] px-4 text-sm font-semibold text-white shadow-[0_18px_30px_-20px_rgba(5,150,105,0.9)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_36px_-20px_rgba(5,150,105,0.85)]">
-                  Add products
-                </Link>
-              </div>
-            </div>
-          ) : (
-            <div className="rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-6">
-              <div className="text-sm font-semibold text-stone-900">This branch does not have sellable products yet.</div>
-              <div className="mt-2 text-sm text-stone-500">Add products with barcode or SKU data first, then the scanner-first checkout flow will be ready for cashiers.</div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Link href="/products" className="inline-flex h-11 items-center justify-center rounded-2xl border border-emerald-700/90 bg-[linear-gradient(180deg,#059669,#047857)] px-4 text-sm font-semibold text-white shadow-[0_18px_30px_-20px_rgba(5,150,105,0.9)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_36px_-20px_rgba(5,150,105,0.85)]">
-                  Create first product
-                </Link>
-                <Link href="/settings" className="inline-flex h-11 items-center justify-center rounded-2xl border border-stone-200 bg-white/90 px-4 text-sm font-semibold text-stone-800 shadow-[0_12px_24px_-18px_rgba(28,25,23,0.32)] transition duration-200 hover:-translate-y-0.5 hover:border-stone-300 hover:bg-white">
-                  Review branch settings
-                </Link>
-              </div>
-            </div>
-          )
         ) : null}
       </Card>
 
-      <Card className="space-y-5 xl:sticky xl:top-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">Sale desk</div>
-            <h2 className="mt-2 text-2xl font-black text-stone-900">Checkout summary</h2>
-            <p className="mt-1 text-sm text-stone-500">Cashier: <span className="font-semibold text-stone-700">{cashierName}</span></p>
+      {activeReceiptSale ? (
+        <Card>
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">Offline receipt</div>
+              <h2 className="mt-2 text-2xl font-black text-stone-950">Temporary receipt preview</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">
+                This receipt uses the local offline identifier {activeReceiptSale.localReceiptNumber}. It remains printable until the sale syncs to the server and gets a final receipt number.
+              </p>
+            </div>
           </div>
-          <div className="rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-3 text-right"><div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500">Items</div><div className="text-2xl font-black text-stone-950">{itemCount}</div></div>
-        </div>
 
-        <div className="space-y-3">
-          {cart.length ? cart.map((item) => (
-            <div key={item.id} className="rounded-[24px] border border-stone-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,245,244,0.9))] p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="font-semibold text-stone-900">{item.name}</div>
-                  <div className="text-sm text-stone-500">{item.variantLabel ?? 'Base item'}</div>
-                  <div className="mt-1 text-xs text-stone-500">{money(item.price, currencySymbol)} each</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button type="button" variant="secondary" className="h-10 w-10 px-0" onClick={() => updateQty(item.id, 'decrease')}>-</Button>
-                  <span className="inline-flex h-10 min-w-10 items-center justify-center rounded-2xl bg-white px-3 font-semibold text-stone-900">{item.qty}</span>
-                  <Button type="button" variant="secondary" className="h-10 w-10 px-0" onClick={() => updateQty(item.id, 'increase')}>+</Button>
-                  <Button type="button" variant="ghost" className="h-10 px-3 text-xs uppercase tracking-[0.14em]" onClick={() => removeFromCart(item.id)}>Remove</Button>
-                </div>
-              </div>
-              <div className="mt-4 flex items-center justify-between rounded-[20px] border border-stone-200/80 bg-white/80 px-3 py-2.5 text-sm"><span className="text-stone-500">Line total</span><span className="font-semibold text-stone-900">{money(Number(item.price) * item.qty, currencySymbol)}</span></div>
+          <div className="mt-6">
+            <ThermalReceipt
+              sale={activeReceiptSale.receipt}
+              shop={shop}
+              currencySymbol={currencySymbol}
+              receiptHeader={receiptHeader}
+              receiptFooter={receiptFooter}
+              receiptWidth={receiptWidth}
+            />
+          </div>
+        </Card>
+      ) : null}
+
+      <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+        <Card className="space-y-5 overflow-hidden">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">Scanner-first checkout</div>
+              <h2 className="mt-2 text-2xl font-black text-stone-900">Find products</h2>
+              <p className="mt-1 text-sm text-stone-500">Scan a barcode or type a SKU to add fast, then fall back to manual search or browsing when needed.</p>
             </div>
-          )) : (
-            <div className="rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-6">
-              <div className="text-sm font-semibold text-stone-900">No items in the cart yet.</div>
-              <div className="mt-2 text-sm text-stone-500">Scan a barcode and press Enter, browse the product tiles, or use `F2` to jump back to the scanner input.</div>
+            <div className="grid grid-cols-2 gap-3 sm:w-auto">
+              <div className="rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-3"><div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Visible</div><div className="mt-1 text-xl font-black text-stone-950">{filtered.length}</div></div>
+              <div className="rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-3"><div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Cart lines</div><div className="mt-1 text-xl font-black text-stone-950">{cart.length}</div></div>
             </div>
-          )}
-        </div>
+          </div>
 
-        <div className="rounded-[26px] border border-stone-200 bg-stone-50/85 p-4">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Customer and payment</div>
-          <p className="mt-1 text-sm text-stone-500">Attach a customer when you need history, loyalty, or receivables.</p>
-          {!canAcceptCash && !isCreditSale ? <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Open a register session first to accept cash payments. Non-cash payments can still be processed safely.</div> : null}
-
-          <div className="mt-4 rounded-2xl border border-stone-200 bg-white p-4">
-            <div className="text-sm font-semibold text-stone-900">Customer search</div>
-            <div className="mt-3 grid gap-3">
-              <Input placeholder="Search customer by name, phone, email, or business" value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} />
-              <div className="flex flex-wrap gap-2">
-                {filteredCustomers.map((customer) => (
-                  <button key={customer.id} type="button" onClick={() => selectCustomer(customer)} className={`rounded-full border px-3 py-2 text-sm transition ${selectedCustomerId === customer.id ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-stone-200 bg-stone-50 text-stone-700 hover:border-stone-300 hover:bg-white'}`}>
-                    {getCustomerDisplayName(customer)}
-                  </button>
-                ))}
-              </div>
+          <div className="rounded-[24px] border border-stone-200 bg-stone-50/80 p-4">
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,320px)_1fr]">
+              <form onSubmit={handleScanSubmit} className="flex gap-3">
+                <Input ref={scanInputRef} placeholder="Scan barcode or enter SKU" value={scanQuery} onChange={(event) => setScanQuery(event.target.value)} autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+                <Button type="submit" variant="secondary" className="shrink-0">Add</Button>
+              </form>
+              <Input placeholder="Search by product, variant, SKU, barcode..." value={query} onChange={(event) => setQuery(event.target.value)} />
             </div>
 
-            {selectedCustomer ? (
-              <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 text-sm">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="font-semibold text-stone-900">{getCustomerDisplayName(selectedCustomer)}</div>
-                    <div className="text-stone-600">{selectedCustomer.phone || 'No phone'}{selectedCustomer.email ? ` / ${selectedCustomer.email}` : ''}</div>
-                    <div className="mt-1 text-xs text-stone-500">Points {selectedCustomer.loyaltyBalance} / Receivables {money(selectedCustomer.receivableBalance, currencySymbol)}</div>
-                  </div>
-                  <Button type="button" variant="ghost" onClick={() => { setSelectedCustomerId(null); setCustomerSearch(''); setCustomerName(''); setCustomerPhone(''); setLoyaltyPointsToRedeem('0'); setIsCreditSale(false); }}>
-                    Clear
-                  </Button>
-                </div>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-500">
+              <span className="rounded-full border border-stone-200 bg-white px-3 py-1">Enter adds scanned item</span>
+              <span className="rounded-full border border-stone-200 bg-white px-3 py-1">`F2` focuses barcode input</span>
+              <span className="rounded-full border border-stone-200 bg-white px-3 py-1">Existing cart lines increase quantity automatically</span>
+            </div>
+
+            {barcodeScannerNotes ? (
+              <div className="mt-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+                {barcodeScannerNotes}
               </div>
             ) : null}
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" onClick={() => setSelectedCategory('')} className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${!selectedCategory ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300 hover:bg-stone-50'}`}>All</button>
+              {categories.map((category) => (
+                <button key={category.id} type="button" onClick={() => setSelectedCategory(category.id)} className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${selectedCategory === category.id ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300 hover:bg-stone-50'}`}>{category.name}</button>
+              ))}
+            </div>
+
+            {scanFeedback ? <div className={`mt-3 rounded-2xl border px-4 py-3 text-sm ${scanFeedback.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'}`}>{scanFeedback.message}</div> : null}
           </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <Input placeholder="Customer name" value={customerName} onChange={(event) => setCustomerName(event.target.value)} />
-            <Input placeholder="Customer phone" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} />
-            <Input type="number" step="0.01" placeholder="Discount amount" value={discountAmount} onChange={(event) => setDiscountAmount(event.target.value)} />
-            <Input placeholder="Notes for this sale" value={notes} onChange={(event) => setNotes(event.target.value)} />
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <Input type="number" min={0} placeholder="Redeem loyalty points" value={loyaltyPointsToRedeem} onChange={(event) => setLoyaltyPointsToRedeem(event.target.value)} />
-            <label className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
-              <input type="checkbox" checked={isCreditSale} onChange={(event) => setIsCreditSale(event.target.checked)} />
-              Post as customer credit sale
-            </label>
-            <Input type="date" value={creditDueDate} onChange={(event) => setCreditDueDate(event.target.value)} disabled={!isCreditSale} />
-          </div>
-
-          {!isCreditSale ? <div className="mt-4 space-y-3">
-            {payments.map((payment) => {
-              const exactAmount = getExactAmountForLine(payment.id);
-              const quickAmounts = getQuickCashAmounts(exactAmount).filter((amount) => amount !== exactAmount);
-              return (
-                <div key={payment.id} className="rounded-[24px] border border-stone-200 bg-white p-4">
-                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_auto]">
-                    <select className="h-11 w-full rounded-2xl border border-stone-200 bg-white px-4 text-sm text-stone-900 outline-none focus:border-emerald-500" value={payment.method} onChange={(event) => updatePaymentLine(payment.id, { method: event.target.value as PaymentMethod })}>
-                      {PAYMENT_METHODS.map((method) => <option key={method} value={method} disabled={method === 'Cash' && !canAcceptCash}>{method === 'Cash' && !canAcceptCash ? 'Cash (open register required)' : method}</option>)}
-                    </select>
-                    <Input type="number" step="0.01" placeholder={payment.method === 'Cash' ? 'Cash received' : 'Amount'} value={payment.amount} onChange={(event) => updatePaymentLine(payment.id, { amount: event.target.value })} />
-                    <Button type="button" variant="ghost" onClick={() => removePaymentLine(payment.id)} disabled={payments.length === 1}>Remove</Button>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {filtered.map((product) => (
+              <button key={product.id} type="button" onClick={() => { setScanFeedback(null); addToCart(product); }} className="rounded-[24px] border border-stone-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,245,244,0.92))] p-4 text-left shadow-[0_18px_36px_-30px_rgba(28,25,23,0.35)] transition hover:-translate-y-1 hover:border-emerald-300">
+                <div className="flex items-start gap-3">
+                  <div className="h-16 w-16 overflow-hidden rounded-[18px] border border-stone-200 bg-stone-50">
+                    {product.imageUrl ? (
+                      <Image
+                        src={product.imageUrl}
+                        alt={getOptionDisplayName(product)}
+                        width={64}
+                        height={64}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : null}
                   </div>
-                  {requiresReferenceNumber(payment.method) ? <div className="mt-3"><Input placeholder={payment.method === 'Card' ? 'Card reference number' : 'E-wallet reference number'} value={payment.referenceNumber} onChange={(event) => updatePaymentLine(payment.id, { referenceNumber: event.target.value })} /></div> : null}
-                  {payment.method === 'Cash' ? <div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="secondary" className="h-9 px-3 text-xs" onClick={() => setPaymentLineAmount(payment.id, exactAmount)}>Exact amount</Button>{quickAmounts.map((amount) => <Button key={`${payment.id}-${amount}`} type="button" variant="secondary" className="h-9 px-3 text-xs" onClick={() => setPaymentLineAmount(payment.id, amount)}>{money(amount, currencySymbol)}</Button>)}</div> : null}
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-semibold text-stone-900">{product.name}</div>
+                    <div className="mt-1 text-sm text-stone-500">{product.variantLabel ?? product.category?.name ?? 'Standard item'}</div>
+                    <div className="mt-2 text-xs text-stone-500">SKU: {product.sku ?? 'N/A'} / Barcode: {product.barcode ?? 'N/A'}</div>
+                  </div>
+                  <div className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${product.stockQty <= 0 ? 'border-red-200 bg-red-50 text-red-700' : product.stockQty <= 5 ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{product.stockQty <= 0 ? 'Out' : product.stockQty <= 5 ? 'Low' : 'Ready'}</div>
                 </div>
-              );
-            })}
-            <Button type="button" variant="secondary" onClick={addPaymentLine}>Add payment line</Button>
-          </div> : (
-            <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-              This sale will be posted to customer receivables and collected later from the customer ledger.
-            </div>
-          )}
-
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-3"><div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Paid total</div><div className="mt-1 text-2xl font-black text-stone-950">{money(paymentSummary.totalPaid, currencySymbol)}</div></div>
-            <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-3"><div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Remaining</div><div className={`mt-1 text-2xl font-black ${paymentSummary.remainingAmount > 0 ? 'text-red-700' : 'text-emerald-700'}`}>{money(paymentSummary.remainingAmount, currencySymbol)}</div></div>
-            <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-3"><div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Cash received</div><div className="mt-1 text-2xl font-black text-stone-950">{money(paymentSummary.cashReceived, currencySymbol)}</div></div>
-            <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-3"><div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Change due</div><div className={`mt-1 text-2xl font-black ${paymentSummary.changeDue > 0 ? 'text-emerald-700' : 'text-stone-950'}`}>{money(paymentSummary.changeDue, currencySymbol)}</div></div>
+                <div className="mt-4 flex items-end justify-between gap-3">
+                  <div><div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">Selling price</div><div className="mt-1 text-2xl font-black text-emerald-700">{money(product.price, currencySymbol)}</div></div>
+                  <div className="text-right text-xs font-medium text-stone-500">{product.stockQty} in stock</div>
+                </div>
+              </button>
+            ))}
           </div>
-        </div>
 
-        <div className="rounded-[26px] border border-stone-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(245,245,244,0.96))] p-5 text-sm">
-          <div className="flex justify-between"><span>Subtotal</span><span>{money(subtotal, currencySymbol)}</span></div>
-          <div className="mt-2 flex justify-between"><span>Tax ({taxRate}%)</span><span>{money(taxAmount, currencySymbol)}</span></div>
-          <div className="mt-2 flex justify-between"><span>Manual discount</span><span>-{money(manualDiscount, currencySymbol)}</span></div>
-          <div className="mt-2 flex justify-between"><span>Loyalty discount</span><span>-{money(loyaltyDiscount, currencySymbol)}</span></div>
-          <div className="mt-2 flex justify-between"><span>{isCreditSale ? 'Receivable' : 'Paid'}</span><span>{money(isCreditSale ? total : paymentSummary.totalPaid, currencySymbol)}</span></div>
-          <div className="mt-2 flex justify-between"><span>Change</span><span>{money(paymentSummary.changeDue, currencySymbol)}</span></div>
-          <div className="mt-3 flex justify-between border-t border-stone-200 pt-3 text-lg font-black text-stone-900"><span>Total</span><span>{money(total, currencySymbol)}</span></div>
-          <div className="mt-4 rounded-[22px] border border-stone-200 bg-white px-4 py-3 text-sm text-stone-600">{cart.length ? paymentError || `${itemCount} item(s) across ${cart.length} line(s) are ready for validation and receipt printing.` : 'Add at least one product before finalizing the sale.'}</div>
-        </div>
-
-        {parkedFeedback ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{parkedFeedback}</div> : null}
-        {error ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
-
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <Button type="button" className="flex-1" disabled={!canCompleteSale} onClick={() => void completeSale()}>{loading ? 'Completing sale...' : 'Complete sale'}</Button>
-          <Button type="button" variant="secondary" className="sm:min-w-32" disabled={!cart.length || loading || holding} onClick={() => void holdCart()}>{holding ? 'Holding cart...' : 'Hold cart'}</Button>
-          <Button type="button" variant="secondary" className="sm:min-w-32" disabled={!cart.length || loading || holding} onClick={requestClearCart}>Clear</Button>
-        </div>
-
-        <div className="rounded-[26px] border border-stone-200 bg-stone-50/85 p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Held carts</div>
-              <h3 className="mt-2 text-xl font-black text-stone-900">Suspend and resume checkout</h3>
-              <p className="mt-1 text-sm text-stone-500">Held carts keep item snapshots, customer details, and notes for up to 24 hours.</p>
-            </div>
-            <div className="rounded-[20px] border border-stone-200 bg-white px-4 py-3 text-right"><div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Active holds</div><div className="mt-1 text-2xl font-black text-stone-950">{parkedSales.length}</div></div>
-          </div>
-          <div className="mt-4 space-y-3">
-            {parkedSales.length ? parkedSales.map((parkedSale) => (
-              <div key={parkedSale.id} className="rounded-[24px] border border-stone-200 bg-white p-4">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">Held</span>
-                      <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-600">{parkedSale.itemCount} item(s)</span>
-                    </div>
-                    <div className="mt-3 text-lg font-black text-stone-950">{money(parkedSale.totalAmount, currencySymbol)}</div>
-                    <div className="mt-1 text-sm text-stone-500">{parkedSale.cashierName}{parkedSale.customerName ? ` / ${parkedSale.customerName}` : ''}</div>
-                    <div className="mt-2 text-xs text-stone-500">Created {dateTime(parkedSale.createdAt)} / Expires {dateTime(parkedSale.expiresAt)}</div>
-                    {parkedSale.notes ? <div className="mt-3 rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-600">{parkedSale.notes}</div> : null}
-                  </div>
-                  <div className="min-w-[220px] space-y-2">
-                    <div className="rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-500">
-                      {parkedSale.items.map((item) => `${item.qty}x ${item.productName}${item.variantLabel ? ` (${item.variantLabel})` : ''}`).join(', ')}
-                    </div>
-                    <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
-                      <Button type="button" disabled={resumeLoadingId === parkedSale.id || cancelLoadingId === parkedSale.id} onClick={() => void resumeParkedSale(parkedSale)}>{resumeLoadingId === parkedSale.id ? 'Resuming...' : 'Resume'}</Button>
-                      <Button type="button" variant="danger" disabled={resumeLoadingId === parkedSale.id || cancelLoadingId === parkedSale.id} onClick={() => void cancelParkedSale(parkedSale)}>{cancelLoadingId === parkedSale.id ? 'Cancelling...' : 'Cancel'}</Button>
-                    </div>
-                  </div>
+          {!filtered.length ? (
+            products.length ? (
+              <div className="rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-6">
+                <div className="text-sm font-semibold text-stone-900">{hasSearchFilters ? 'No products matched that search.' : 'No products are visible right now.'}</div>
+                <div className="mt-2 text-sm text-stone-500">
+                  {hasSearchFilters
+                    ? 'Try a barcode, SKU, or a broader category filter to keep checkout moving.'
+                    : 'The active branch catalog is empty or fully filtered out.'}
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button type="button" variant="secondary" onClick={() => { setQuery(''); setSelectedCategory(''); focusScanInput(); }}>
+                    Reset search
+                  </Button>
+                  <Link href="/products" className="inline-flex h-11 items-center justify-center rounded-2xl border border-emerald-700/90 bg-[linear-gradient(180deg,#059669,#047857)] px-4 text-sm font-semibold text-white shadow-[0_18px_30px_-20px_rgba(5,150,105,0.9)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_36px_-20px_rgba(5,150,105,0.85)]">
+                    Add products
+                  </Link>
                 </div>
               </div>
-            )) : <div className="rounded-[24px] border border-dashed border-stone-300 bg-white px-4 py-5 text-sm text-stone-500">No active held carts right now.</div>}
+            ) : (
+              <div className="rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-6">
+                <div className="text-sm font-semibold text-stone-900">This branch does not have sellable products yet.</div>
+                <div className="mt-2 text-sm text-stone-500">Add products with barcode or SKU data first, then the scanner-first checkout flow will be ready for cashiers.</div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Link href="/products" className="inline-flex h-11 items-center justify-center rounded-2xl border border-emerald-700/90 bg-[linear-gradient(180deg,#059669,#047857)] px-4 text-sm font-semibold text-white shadow-[0_18px_30px_-20px_rgba(5,150,105,0.9)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_36px_-20px_rgba(5,150,105,0.85)]">
+                    Create first product
+                  </Link>
+                  <Link href="/settings" className="inline-flex h-11 items-center justify-center rounded-2xl border border-stone-200 bg-white/90 px-4 text-sm font-semibold text-stone-800 shadow-[0_12px_24px_-18px_rgba(28,25,23,0.32)] transition duration-200 hover:-translate-y-0.5 hover:border-stone-300 hover:bg-white">
+                    Review branch settings
+                  </Link>
+                </div>
+              </div>
+            )
+          ) : null}
+        </Card>
+        <Card className="space-y-5 xl:sticky xl:top-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">Sale desk</div>
+              <h2 className="mt-2 text-2xl font-black text-stone-900">Checkout summary</h2>
+              <p className="mt-1 text-sm text-stone-500">Cashier: <span className="font-semibold text-stone-700">{cashierName}</span></p>
+            </div>
+            <div className="rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-3 text-right"><div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500">Items</div><div className="text-2xl font-black text-stone-950">{itemCount}</div></div>
           </div>
-        </div>
-      </Card>
+
+          <div className="space-y-3">
+            {cart.length ? cart.map((item) => (
+              <div key={item.id} className="rounded-[24px] border border-stone-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,245,244,0.9))] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-semibold text-stone-900">{item.name}</div>
+                    <div className="text-sm text-stone-500">{item.variantLabel ?? 'Base item'}</div>
+                    <div className="mt-1 text-xs text-stone-500">{money(item.price, currencySymbol)} each</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button type="button" variant="secondary" className="h-10 w-10 px-0" onClick={() => updateQty(item.id, 'decrease')}>-</Button>
+                    <span className="inline-flex h-10 min-w-10 items-center justify-center rounded-2xl bg-white px-3 font-semibold text-stone-900">{item.qty}</span>
+                    <Button type="button" variant="secondary" className="h-10 w-10 px-0" onClick={() => updateQty(item.id, 'increase')}>+</Button>
+                    <Button type="button" variant="ghost" className="h-10 px-3 text-xs uppercase tracking-[0.14em]" onClick={() => removeFromCart(item.id)}>Remove</Button>
+                  </div>
+                </div>
+                <div className="mt-4 flex items-center justify-between rounded-[20px] border border-stone-200/80 bg-white/80 px-3 py-2.5 text-sm"><span className="text-stone-500">Line total</span><span className="font-semibold text-stone-900">{money(Number(item.price) * item.qty, currencySymbol)}</span></div>
+              </div>
+            )) : (
+              <div className="rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-6">
+                <div className="text-sm font-semibold text-stone-900">No items in the cart yet.</div>
+                <div className="mt-2 text-sm text-stone-500">Scan a barcode and press Enter, browse the product tiles, or use `F2` to jump back to the scanner input.</div>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-[26px] border border-stone-200 bg-stone-50/85 p-4">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Customer and payment</div>
+            <p className="mt-1 text-sm text-stone-500">Attach a customer when you need history, loyalty, or receivables.</p>
+            {!canAcceptCash && !isCreditSale ? <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Open a register session first to accept cash payments. Non-cash payments can still be processed safely.</div> : null}
+
+            <div className="mt-4 rounded-2xl border border-stone-200 bg-white p-4">
+              <div className="text-sm font-semibold text-stone-900">Customer search</div>
+              <div className="mt-3 grid gap-3">
+                <Input placeholder="Search customer by name, phone, email, or business" value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} />
+                <div className="flex flex-wrap gap-2">
+                  {filteredCustomers.map((customer) => (
+                    <button key={customer.id} type="button" onClick={() => selectCustomer(customer)} className={`rounded-full border px-3 py-2 text-sm transition ${selectedCustomerId === customer.id ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-stone-200 bg-stone-50 text-stone-700 hover:border-stone-300 hover:bg-white'}`}>
+                      {getCustomerDisplayName(customer)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {selectedCustomer ? (
+                <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-stone-900">{getCustomerDisplayName(selectedCustomer)}</div>
+                      <div className="text-stone-600">{selectedCustomer.phone || 'No phone'}{selectedCustomer.email ? ` / ${selectedCustomer.email}` : ''}</div>
+                      <div className="mt-1 text-xs text-stone-500">Points {selectedCustomer.loyaltyBalance} / Receivables {money(selectedCustomer.receivableBalance, currencySymbol)}</div>
+                    </div>
+                    <Button type="button" variant="ghost" onClick={() => { setSelectedCustomerId(null); setCustomerSearch(''); setCustomerName(''); setCustomerPhone(''); setLoyaltyPointsToRedeem('0'); setIsCreditSale(false); }}>
+                      Clear
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <Input placeholder="Customer name" value={customerName} onChange={(event) => setCustomerName(event.target.value)} />
+              <Input placeholder="Customer phone" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} />
+              <Input type="number" step="0.01" placeholder="Discount amount" value={discountAmount} onChange={(event) => setDiscountAmount(event.target.value)} />
+              <Input placeholder="Notes for this sale" value={notes} onChange={(event) => setNotes(event.target.value)} />
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <Input type="number" min={0} placeholder="Redeem loyalty points" value={loyaltyPointsToRedeem} onChange={(event) => setLoyaltyPointsToRedeem(event.target.value)} />
+              <label className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
+                <input type="checkbox" checked={isCreditSale} onChange={(event) => setIsCreditSale(event.target.checked)} />
+                Post as customer credit sale
+              </label>
+              <Input type="date" value={creditDueDate} onChange={(event) => setCreditDueDate(event.target.value)} disabled={!isCreditSale} />
+            </div>
+
+            {!isCreditSale ? <div className="mt-4 space-y-3">
+              {payments.map((payment) => {
+                const exactAmount = getExactAmountForLine(payment.id);
+                const quickAmounts = getQuickCashAmounts(exactAmount).filter((amount) => amount !== exactAmount);
+                return (
+                  <div key={payment.id} className="rounded-[24px] border border-stone-200 bg-white p-4">
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_auto]">
+                      <select className="h-11 w-full rounded-2xl border border-stone-200 bg-white px-4 text-sm text-stone-900 outline-none focus:border-emerald-500" value={payment.method} onChange={(event) => updatePaymentLine(payment.id, { method: event.target.value as PaymentMethod })}>
+                        {PAYMENT_METHODS.map((method) => <option key={method} value={method} disabled={method === 'Cash' && !canAcceptCash}>{method === 'Cash' && !canAcceptCash ? 'Cash (open register required)' : method}</option>)}
+                      </select>
+                      <Input type="number" step="0.01" placeholder={payment.method === 'Cash' ? 'Cash received' : 'Amount'} value={payment.amount} onChange={(event) => updatePaymentLine(payment.id, { amount: event.target.value })} />
+                      <Button type="button" variant="ghost" onClick={() => removePaymentLine(payment.id)} disabled={payments.length === 1}>Remove</Button>
+                    </div>
+                    {requiresReferenceNumber(payment.method) ? <div className="mt-3"><Input placeholder={payment.method === 'Card' ? 'Card reference number' : 'E-wallet reference number'} value={payment.referenceNumber} onChange={(event) => updatePaymentLine(payment.id, { referenceNumber: event.target.value })} /></div> : null}
+                    {payment.method === 'Cash' ? <div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="secondary" className="h-9 px-3 text-xs" onClick={() => setPaymentLineAmount(payment.id, exactAmount)}>Exact amount</Button>{quickAmounts.map((amount) => <Button key={`${payment.id}-${amount}`} type="button" variant="secondary" className="h-9 px-3 text-xs" onClick={() => setPaymentLineAmount(payment.id, amount)}>{money(amount, currencySymbol)}</Button>)}</div> : null}
+                  </div>
+                );
+              })}
+              <Button type="button" variant="secondary" onClick={addPaymentLine}>Add payment line</Button>
+            </div> : (
+              <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                This sale will be posted to customer receivables and collected later from the customer ledger.
+              </div>
+            )}
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-3"><div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Paid total</div><div className="mt-1 text-2xl font-black text-stone-950">{money(paymentSummary.totalPaid, currencySymbol)}</div></div>
+              <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-3"><div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Remaining</div><div className={`mt-1 text-2xl font-black ${paymentSummary.remainingAmount > 0 ? 'text-red-700' : 'text-emerald-700'}`}>{money(paymentSummary.remainingAmount, currencySymbol)}</div></div>
+              <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-3"><div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Cash received</div><div className="mt-1 text-2xl font-black text-stone-950">{money(paymentSummary.cashReceived, currencySymbol)}</div></div>
+              <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-3"><div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Change due</div><div className={`mt-1 text-2xl font-black ${paymentSummary.changeDue > 0 ? 'text-emerald-700' : 'text-stone-950'}`}>{money(paymentSummary.changeDue, currencySymbol)}</div></div>
+            </div>
+          </div>
+
+          <div className="rounded-[26px] border border-stone-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(245,245,244,0.96))] p-5 text-sm">
+            <div className="flex justify-between"><span>Subtotal</span><span>{money(subtotal, currencySymbol)}</span></div>
+            <div className="mt-2 flex justify-between"><span>Tax ({taxRate}%)</span><span>{money(taxAmount, currencySymbol)}</span></div>
+            <div className="mt-2 flex justify-between"><span>Manual discount</span><span>-{money(manualDiscount, currencySymbol)}</span></div>
+            <div className="mt-2 flex justify-between"><span>Loyalty discount</span><span>-{money(loyaltyDiscount, currencySymbol)}</span></div>
+            <div className="mt-2 flex justify-between"><span>{isCreditSale ? 'Receivable' : 'Paid'}</span><span>{money(isCreditSale ? total : paymentSummary.totalPaid, currencySymbol)}</span></div>
+            <div className="mt-2 flex justify-between"><span>Change</span><span>{money(paymentSummary.changeDue, currencySymbol)}</span></div>
+            <div className="mt-3 flex justify-between border-t border-stone-200 pt-3 text-lg font-black text-stone-900"><span>Total</span><span>{money(total, currencySymbol)}</span></div>
+            <div className="mt-4 rounded-[22px] border border-stone-200 bg-white px-4 py-3 text-sm text-stone-600">{cart.length ? paymentError || `${itemCount} item(s) across ${cart.length} line(s) are ready for validation and receipt printing.` : 'Add at least one product before finalizing the sale.'}</div>
+          </div>
+
+          {parkedFeedback ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{parkedFeedback}</div> : null}
+          {error ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
+
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Button type="button" className="flex-1" disabled={!canCompleteSale} onClick={() => void completeSale()}>{loading ? 'Completing sale...' : !isOnline ? 'Queue offline sale' : 'Complete sale'}</Button>
+            <Button type="button" variant="secondary" className="sm:min-w-32" disabled={!cart.length || loading || holding} onClick={() => void holdCart()}>{holding ? 'Holding cart...' : 'Hold cart'}</Button>
+            <Button type="button" variant="secondary" className="sm:min-w-32" disabled={!cart.length || loading || holding} onClick={requestClearCart}>Clear</Button>
+          </div>
+
+          <div className="rounded-[26px] border border-stone-200 bg-stone-50/85 p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Held carts</div>
+                <h3 className="mt-2 text-xl font-black text-stone-900">Suspend and resume checkout</h3>
+                <p className="mt-1 text-sm text-stone-500">Held carts keep item snapshots, customer details, and notes for up to 24 hours.</p>
+              </div>
+              <div className="rounded-[20px] border border-stone-200 bg-white px-4 py-3 text-right"><div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Active holds</div><div className="mt-1 text-2xl font-black text-stone-950">{parkedSales.length}</div></div>
+            </div>
+            <div className="mt-4 space-y-3">
+              {parkedSales.length ? parkedSales.map((parkedSale) => (
+                <div key={parkedSale.id} className="rounded-[24px] border border-stone-200 bg-white p-4">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">Held</span>
+                        <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-600">{parkedSale.itemCount} item(s)</span>
+                      </div>
+                      <div className="mt-3 text-lg font-black text-stone-950">{money(parkedSale.totalAmount, currencySymbol)}</div>
+                      <div className="mt-1 text-sm text-stone-500">{parkedSale.cashierName}{parkedSale.customerName ? ` / ${parkedSale.customerName}` : ''}</div>
+                      <div className="mt-2 text-xs text-stone-500">Created {dateTime(parkedSale.createdAt)} / Expires {dateTime(parkedSale.expiresAt)}</div>
+                      {parkedSale.notes ? <div className="mt-3 rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-600">{parkedSale.notes}</div> : null}
+                    </div>
+                    <div className="min-w-[220px] space-y-2">
+                      <div className="rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-500">
+                        {parkedSale.items.map((item) => `${item.qty}x ${item.productName}${item.variantLabel ? ` (${item.variantLabel})` : ''}`).join(', ')}
+                      </div>
+                      <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
+                        <Button type="button" disabled={resumeLoadingId === parkedSale.id || cancelLoadingId === parkedSale.id} onClick={() => void resumeParkedSale(parkedSale)}>{resumeLoadingId === parkedSale.id ? 'Resuming...' : 'Resume'}</Button>
+                        <Button type="button" variant="danger" disabled={resumeLoadingId === parkedSale.id || cancelLoadingId === parkedSale.id} onClick={() => void cancelParkedSale(parkedSale)}>{cancelLoadingId === parkedSale.id ? 'Cancelling...' : 'Cancel'}</Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )) : <div className="rounded-[24px] border border-dashed border-stone-300 bg-white px-4 py-5 text-sm text-stone-500">No active held carts right now.</div>}
+            </div>
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }

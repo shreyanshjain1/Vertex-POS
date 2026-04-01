@@ -44,7 +44,7 @@ type CheckoutCustomer = {
 };
 
 export default async function CheckoutPage() {
-  const { shopId, session, role, userId } = await getActiveShopContext();
+  const { shopId, shop, session, role, userId } = await getActiveShopContext();
 
   await cleanupExpiredParkedSales(prisma, shopId);
 
@@ -222,6 +222,21 @@ export default async function CheckoutPage() {
         barcodeScannerNotes={settings?.barcodeScannerNotes ?? ''}
         cashierName={session.user.name ?? 'Cashier'}
         hasActiveCashSession={Boolean(activeCashSession)}
+        activeCashSessionId={activeCashSession?.id ?? null}
+        shopId={shopId}
+        userId={userId}
+        offlineStockStrict={settings?.offlineStockStrict ?? false}
+        offlineStockMaxAgeMinutes={settings?.offlineStockMaxAgeMinutes ?? 240}
+        stockSnapshotCapturedAt={new Date().toISOString()}
+        shop={{
+          name: shop.name,
+          address: shop.address,
+          phone: shop.phone,
+          email: shop.email
+        }}
+        receiptHeader={settings?.receiptHeader ?? null}
+        receiptFooter={settings?.receiptFooter ?? null}
+        receiptWidth={settings?.receiptWidth === '58mm' ? '58mm' : '80mm'}
         initialParkedSales={parkedSales.map(serializeParkedSale)}
       />
     </div>

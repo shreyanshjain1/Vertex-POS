@@ -1,6 +1,7 @@
 export type SaleInputItem = {
   productId: string;
   variantId?: string | null;
+  priceSnapshot?: number | null;
   qty: number;
 };
 
@@ -20,19 +21,28 @@ export function normalizeText(value: string | null | undefined) {
 }
 
 export function collapseSaleItems(items: SaleInputItem[]) {
-  const grouped = new Map<string, { qty: number; variantId: string | null }>();
+  const grouped = new Map<string, { qty: number; variantId: string | null; priceSnapshot: number | null }>();
 
   for (const item of items) {
     const variantId = item.variantId ?? null;
-    const key = `${item.productId}:${variantId ?? 'base'}`;
-    const current = grouped.get(key) ?? { qty: 0, variantId };
+    const priceSnapshot =
+      item.priceSnapshot === null || item.priceSnapshot === undefined
+        ? null
+        : roundCurrency(Number(item.priceSnapshot));
+    const key = `${item.productId}:${variantId ?? 'base'}:${priceSnapshot ?? 'live'}`;
+    const current = grouped.get(key) ?? { qty: 0, variantId, priceSnapshot };
     current.qty += item.qty;
     grouped.set(key, current);
   }
 
   return [...grouped.entries()].map(([key, value]) => {
     const [productId] = key.split(':');
-    return { productId, variantId: value.variantId, qty: value.qty };
+    return {
+      productId,
+      variantId: value.variantId,
+      priceSnapshot: value.priceSnapshot,
+      qty: value.qty
+    };
   });
 }
 

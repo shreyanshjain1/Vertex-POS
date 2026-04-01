@@ -21,6 +21,18 @@ import { prisma } from '@/lib/prisma';
 import { CASH_PAYMENT_METHOD, getActiveCashSession } from '@/lib/register';
 import { calculateTaxBreakdown } from '@/lib/shop-settings';
 
+type SaleConflict = {
+  type: 'INSUFFICIENT_STOCK' | 'PRICE_CHANGED' | 'PRODUCT_UNAVAILABLE';
+  productId: string;
+  variantId: string | null;
+  productName: string;
+  message: string;
+  requestedQty?: number;
+  availableQty?: number;
+  queuedPrice?: number | null;
+  currentPrice?: number | null;
+};
+
 function parseOptionalDateInput(value?: string | null) {
   if (!value) {
     return null;
@@ -34,9 +46,14 @@ function parseOptionalDateInput(value?: string | null) {
   return parsed;
 }
 
-function serializeSale<T extends { createdAt: Date; subtotal: { toString(): string }; taxAmount: { toString(): string }; discountAmount: { toString(): string }; totalAmount: { toString(): string }; changeDue: { toString(): string } }>(
-  sale: T
-) {
+function serializeSale<T extends {
+  createdAt: Date;
+  subtotal: { toString(): string };
+  taxAmount: { toString(): string };
+  discountAmount: { toString(): string };
+  totalAmount: { toString(): string };
+  changeDue: { toString(): string };
+}>(sale: T) {
   return {
     ...sale,
     subtotal: sale.subtotal.toString(),
@@ -46,6 +63,17 @@ function serializeSale<T extends { createdAt: Date; subtotal: { toString(): stri
     changeDue: sale.changeDue.toString(),
     createdAt: sale.createdAt.toISOString()
   };
+}
+
+function conflictResponse(error: string, conflicts: SaleConflict[]) {
+  return NextResponse.json(
+    {
+      error,
+      code: 'OFFLINE_SYNC_CONFLICT',
+      conflicts
+    },
+    { status: 409 }
+  );
 }
 
 export async function GET() {
@@ -85,6 +113,41 @@ export async function POST(request: Request) {
       );
     }
 
+    const occurredAt = parseOptionalDateInput(parsed.data.occurredAt) ?? new Date();
+    if (parsed.data.occurredAt && !parseOptionalDateInput(parsed.data.occurredAt)) {
+      return NextResponse.json(
+        { error: 'Enter a valid sale timestamp.' },
+        { status: 400 }
+      );
+    }
+
+    const clientRequestId = normalizeText(parsed.data.clientRequestId);
+    if (clientRequestId) {
+      const existingSale = await prisma.sale.findFirst({
+        where: {
+          shopId,
+          clientRequestId
+        },
+        include: {
+          items: true
+        }
+      });
+
+      if (existingSale) {
+        return NextResponse.json({
+          sale: {
+            ...serializeSale(existingSale),
+            items: existingSale.items.map((item) => ({
+              ...item,
+              unitPrice: item.unitPrice.toString(),
+              lineTotal: item.lineTotal.toString()
+            }))
+          },
+          alreadySynced: true
+        });
+      }
+    }
+
     const rawPayments = parsed.data.payments.map((payment) => ({
       method: payment.method,
       amount: Number(payment.amount),
@@ -105,12 +168,37 @@ export async function POST(request: Request) {
     const hasCashPayment = !isCreditSale && rawPayments.some((payment) => payment.method === CASH_PAYMENT_METHOD);
 
     if (hasCashPayment) {
-      const activeCashSession = await getActiveCashSession(prisma, shopId, userId);
-      if (!activeCashSession) {
-        return NextResponse.json(
-          { error: 'Open a register session before accepting cash sales.' },
-          { status: 409 }
-        );
+      if (parsed.data.cashSessionId?.trim()) {
+        const referencedSession = await prisma.cashSession.findFirst({
+          where: {
+            id: parsed.data.cashSessionId.trim(),
+            shopId,
+            userId
+          }
+        });
+
+        if (!referencedSession) {
+          return NextResponse.json(
+            { error: 'The referenced cash session was not found for this cashier.' },
+            { status: 409 }
+          );
+        }
+
+        const closesAt = referencedSession.closedAt ?? occurredAt;
+        if (occurredAt < referencedSession.openedAt || occurredAt > closesAt) {
+          return NextResponse.json(
+            { error: 'The sale timestamp falls outside the referenced cash session.' },
+            { status: 409 }
+          );
+        }
+      } else {
+        const activeCashSession = await getActiveCashSession(prisma, shopId, userId);
+        if (!activeCashSession) {
+          return NextResponse.json(
+            { error: 'Open a register session before accepting cash sales.' },
+            { status: 409 }
+          );
+        }
       }
     }
 
@@ -146,31 +234,52 @@ export async function POST(request: Request) {
 
     const productMap = new Map(products.map((product) => [product.id, product]));
     const productQtyTotals = new Map<string, number>();
+    const conflicts: SaleConflict[] = [];
 
     for (const item of items) {
       const product = productMap.get(item.productId);
 
-      if (!product) {
-        return NextResponse.json(
-          { error: 'One or more selected products were not found.' },
-          { status: 404 }
-        );
+      if (!product || !product.isActive) {
+        conflicts.push({
+          type: 'PRODUCT_UNAVAILABLE',
+          productId: item.productId,
+          variantId: item.variantId ?? null,
+          productName: product?.name ?? 'Archived product',
+          message: product
+            ? `${product.name} is archived and cannot be sold.`
+            : 'One queued item no longer exists in the branch catalog.'
+        });
+        continue;
       }
 
-      if (!product.isActive) {
-        return NextResponse.json(
-          { error: `${product.name} is archived and cannot be sold.` },
-          { status: 400 }
-        );
+      const variant = item.variantId
+        ? product.variants.find((entry) => entry.id === item.variantId)
+        : null;
+
+      if (item.variantId && (!variant || !variant.isActive)) {
+        conflicts.push({
+          type: 'PRODUCT_UNAVAILABLE',
+          productId: item.productId,
+          variantId: item.variantId,
+          productName: product.name,
+          message: `A selected variant for ${product.name} is no longer available.`
+        });
+        continue;
       }
 
-      if (item.variantId) {
-        const variant = product.variants.find((entry) => entry.id === item.variantId);
-        if (!variant || !variant.isActive) {
-          return NextResponse.json(
-            { error: `A selected variant for ${product.name} is no longer available.` },
-            { status: 400 }
-          );
+      const currentUnitPrice = Number(variant?.priceOverride ?? product.price);
+      if (item.priceSnapshot !== null && item.priceSnapshot !== undefined) {
+        const queuedPrice = roundCurrency(Number(item.priceSnapshot));
+        if (queuedPrice !== roundCurrency(currentUnitPrice)) {
+          conflicts.push({
+            type: 'PRICE_CHANGED',
+            productId: item.productId,
+            variantId: item.variantId ?? null,
+            productName: product.name,
+            queuedPrice,
+            currentPrice: roundCurrency(currentUnitPrice),
+            message: `${product.name} changed price while this sale was queued offline.`
+          });
         }
       }
 
@@ -178,13 +287,27 @@ export async function POST(request: Request) {
     }
 
     for (const [productId, qty] of productQtyTotals) {
-      const product = productMap.get(productId)!;
+      const product = productMap.get(productId);
+      if (!product) continue;
+
       if (product.stockQty < qty) {
-        return NextResponse.json(
-          { error: `${product.name} has only ${product.stockQty} item(s) available.` },
-          { status: 400 }
-        );
+        conflicts.push({
+          type: 'INSUFFICIENT_STOCK',
+          productId,
+          variantId: null,
+          productName: product.name,
+          requestedQty: qty,
+          availableQty: product.stockQty,
+          message: `${product.name} has only ${product.stockQty} item(s) available.`
+        });
       }
+    }
+
+    if (conflicts.length) {
+      return conflictResponse(
+        'One or more queued sale lines need cashier review before sync can continue.',
+        conflicts
+      );
     }
 
     const saleLines = items.map((item) => {
@@ -273,6 +396,8 @@ export async function POST(request: Request) {
           customerId: customer?.id ?? null,
           saleNumber,
           receiptNumber,
+          clientRequestId,
+          createdAt: occurredAt,
           customerName: normalizeText(parsed.data.customerName) ?? (customer ? getCustomerDisplayName(customer) : null),
           customerPhone: normalizeText(parsed.data.customerPhone) ?? normalizeText(customer?.phone),
           subtotal,
@@ -305,7 +430,8 @@ export async function POST(request: Request) {
                 create: paymentValidation.payments.map((payment) => ({
                   method: payment.method,
                   amount: payment.amount,
-                  referenceNumber: normalizeText(payment.referenceNumber)
+                  referenceNumber: normalizeText(payment.referenceNumber),
+                  createdAt: occurredAt
                 }))
               }
             : undefined
@@ -326,7 +452,8 @@ export async function POST(request: Request) {
               type: 'REDEEMED',
               points: loyaltyPointsToRedeem,
               balanceAfter: nextBalance,
-              note: `Redeemed for sale ${saleRecord.saleNumber}.`
+              note: `Redeemed for sale ${saleRecord.saleNumber}.`,
+              createdAt: occurredAt
             }
           });
         }
@@ -341,7 +468,8 @@ export async function POST(request: Request) {
               type: 'EARNED',
               points: pointsEarned,
               balanceAfter: nextBalance,
-              note: `Earned from sale ${saleRecord.saleNumber}.`
+              note: `Earned from sale ${saleRecord.saleNumber}.`,
+              createdAt: occurredAt
             }
           });
         }
@@ -355,7 +483,8 @@ export async function POST(request: Request) {
               dueDate: creditDueDate,
               originalAmount: totalAmount,
               balance: totalAmount,
-              status: creditDueDate < new Date() ? 'OVERDUE' : 'OPEN'
+              status: creditDueDate < new Date() ? 'OVERDUE' : 'OPEN',
+              createdAt: occurredAt
             }
           });
         }
@@ -380,7 +509,8 @@ export async function POST(request: Request) {
             qtyChange: qty * -1,
             referenceId: saleRecord.id,
             userId,
-            notes: `Sale ${saleRecord.saleNumber}`
+            notes: `Sale ${saleRecord.saleNumber}`,
+            createdAt: occurredAt
           }
         });
       }
@@ -389,10 +519,12 @@ export async function POST(request: Request) {
         tx,
         shopId,
         userId,
-        action: 'SALE_COMPLETED',
+        action: clientRequestId ? 'SALE_SYNCED_FROM_OFFLINE_QUEUE' : 'SALE_COMPLETED',
         entityType: 'Sale',
         entityId: saleRecord.id,
-        description: `Completed sale ${saleRecord.saleNumber}.`,
+        description: clientRequestId
+          ? `Synced offline sale ${saleRecord.saleNumber}.`
+          : `Completed sale ${saleRecord.saleNumber}.`,
         metadata: {
           customerId: customer?.id ?? null,
           customerName: customer ? getCustomerDisplayName(customer) : normalizeText(parsed.data.customerName),
@@ -406,7 +538,9 @@ export async function POST(request: Request) {
           loyaltyPointsEarned: pointsEarned,
           totalAmount,
           totalPaid: paymentValidation.summary.totalPaid,
-          changeDue: paymentValidation.summary.changeDue
+          changeDue: paymentValidation.summary.changeDue,
+          clientRequestId,
+          occurredAt: occurredAt.toISOString()
         }
       });
 
@@ -425,15 +559,15 @@ export async function POST(request: Request) {
         }
       },
       { status: 201 }
+    );
+  } catch (error) {
+    if (error instanceof Error && error.message === 'LOYALTY_BALANCE_EXCEEDED') {
+      return NextResponse.json(
+        { error: 'Customer does not have enough loyalty points for this redemption.' },
+        { status: 400 }
       );
-    } catch (error) {
-      if (error instanceof Error && error.message === 'LOYALTY_BALANCE_EXCEEDED') {
-        return NextResponse.json(
-          { error: 'Customer does not have enough loyalty points for this redemption.' },
-          { status: 400 }
-        );
-      }
-
-      return apiErrorResponse(error, 'Unable to complete sale.');
     }
+
+    return apiErrorResponse(error, 'Unable to complete sale.');
+  }
 }
