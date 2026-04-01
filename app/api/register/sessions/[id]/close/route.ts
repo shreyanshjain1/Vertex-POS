@@ -3,7 +3,12 @@ import { requireRole } from '@/lib/authz';
 import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
 import { cashSessionCloseSchema } from '@/lib/auth/validation';
-import { appendRegisterNotes, computeClosingExpectedCash } from '@/lib/register';
+import {
+  appendRegisterNotes,
+  calculateDenominationTotal,
+  computeClosingExpectedCash,
+  normalizeDenominationSnapshot
+} from '@/lib/register';
 import { prisma } from '@/lib/prisma';
 import { serializeCashSession } from '@/lib/serializers/register';
 
@@ -31,6 +36,27 @@ export async function POST(
       },
       include: {
         user: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        closedByUser: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        reviewedByUser: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        reopenedByUser: {
           select: {
             id: true,
             name: true,
@@ -67,24 +93,54 @@ export async function POST(
     }
 
     const closedAt = new Date();
+    const denominationBreakdown = normalizeDenominationSnapshot(parsed.data.denominationBreakdown);
+    const closingActual = parsed.data.denominationBreakdown
+      ? calculateDenominationTotal(denominationBreakdown)
+      : parsed.data.closingActual;
 
     const closedSession = await prisma.$transaction(async (tx) => {
       const expectedCash = await computeClosingExpectedCash(tx, cashSession, closedAt);
-      const variance = parsed.data.closingActual - expectedCash;
+      const variance = closingActual - expectedCash;
       const status = !isOwnSession && canOverride ? 'OVERRIDE_CLOSED' : 'CLOSED';
 
       const updatedSession = await tx.cashSession.update({
         where: { id: cashSession.id },
         data: {
           closedAt,
+          closedByUserId: userId,
           closingExpected: expectedCash,
-          closingActual: parsed.data.closingActual,
+          closingActual,
           variance,
+          denominationBreakdown,
+          reviewedByUserId: null,
+          reviewedAt: null,
+          reviewNote: null,
           notes: appendRegisterNotes(cashSession.notes, closeNotes || null),
           status
         },
         include: {
           user: {
+            select: {
+              id: true,
+              name: true,
+              email: true
+            }
+          },
+          closedByUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true
+            }
+          },
+          reviewedByUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true
+            }
+          },
+          reopenedByUser: {
             select: {
               id: true,
               name: true,
@@ -108,8 +164,9 @@ export async function POST(
         metadata: {
           cashierUserId: cashSession.userId,
           closingExpected: expectedCash,
-          closingActual: parsed.data.closingActual,
-          variance
+          closingActual,
+          variance,
+          denominationBreakdown
         }
       });
 
