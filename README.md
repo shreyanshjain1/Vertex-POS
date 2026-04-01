@@ -42,6 +42,8 @@ The codebase is structured as a production-minded full-stack application with se
 - Inventory movement history with reason-coded stock corrections
 - Stock counts with blind counting, approval, posting, and variance trails
 - Inventory export and low-stock monitoring
+- Smart reorder suggestions using recent sales velocity, supplier lead-time history, safety stock, and stockout pressure
+- Supplier-grouped replenishment queue with one-click draft PO creation from recommendations
 
 ### Purchasing and Supplier Operations
 
@@ -75,6 +77,8 @@ The codebase is structured as a production-minded full-stack application with se
 - Inventory reporting: cost valuation, sell valuation, low movement, dead stock, low-stock value at risk
 - Profit reporting: revenue, estimated gross profit, margin %, profit by sale, item, category, day, and month
 - Cashier reporting: sales count, revenue handled, refund count, void count, average basket size, shift totals
+- Advanced owner dashboard analytics: sales heatmap by hour and weekday, sell-through, stock aging, fast/slow movers, margin leakage, shrinkage trend, refund trend, purchase lead-time, and stockout frequency
+- Reorder recommendation preview wired into the dashboard and inventory workflow
 - Report filtering by date range and operational dimensions where implemented
 
 ### Customer and Growth Features
@@ -108,32 +112,33 @@ The codebase is structured as a production-minded full-stack application with se
 - Low-stock alerts and daily summary notifications
 - Command palette
 - Guided first-run and empty-state UX across key modules
-- Receipt header/footer, printer-related settings, scanner notes, and operational defaults in settings
+- Thermal receipt settings for 58mm / 80mm paper, printer-safe browser output, brand-mark toggle, drawer placeholder trigger, scanner notes, and operational defaults
 - Offline stock max-age and strict-lock settings for branches that need tighter offline checkout safeguards
 
 ## Screens / Modules
 
 Key app modules currently present in the repository:
 
-- `/dashboard` — branch dashboard, alerts, quick actions, and operational prompts
-- `/checkout` — cashier checkout, barcode flow, held sales, offline queue/sync, conflict review, and receipt generation
-- `/sales` — sales history, sale detail, refund, void, and reprint flows
-- `/returns` — return and adjustment history
-- `/products` — products, variants, images, pricing/cost history, and labels
-- `/categories` — category management
-- `/inventory` — stock corrections, batches, movement history, and export
-- `/stock-counts` — stock count creation, review, approval, and posting
-- `/suppliers` — supplier directory, invoices, balances, and supplier returns
-- `/purchases` — purchase orders, receiving, supplier invoices, and payments
-- `/customers` — customer directory, loyalty, credit balances, and receivable payments
-- `/transfers` — branch transfer creation, dispatch, and receiving
-- `/reports` — sales, inventory, profit, and cashier reports
-- `/register/open`, `/register/close`, `/register/history` — cash drawer/session workflows, reconciliation, review, and reopen controls
-- `/print/register-z-read/[id]` — printable register Z-read / end-of-shift summary
-- `/staff` — staff directory, permissions, and security controls
-- `/activity` — operational activity and audit visibility
-- `/settings` — branch identity, tax, receipt, numbering, payment, and inventory defaults
-- `/onboard` — initial business and branch setup
+- `/dashboard` - branch dashboard, alerts, quick actions, owner analytics, and reorder pressure signals
+- `/checkout` - cashier checkout, barcode flow, held sales, offline queue/sync, conflict review, and receipt generation
+- `/sales` - sales history, sale detail, refund, void, and reprint flows
+- `/returns` - return and adjustment history
+- `/products` - products, variants, images, pricing/cost history, and labels
+- `/categories` - category management
+- `/inventory` - stock corrections, smart reorder suggestions, batches, movement history, and export
+- `/stock-counts` - stock count creation, review, approval, and posting
+- `/suppliers` - supplier directory, invoices, balances, and supplier returns
+- `/purchases` - purchase orders, receiving, supplier invoices, and payments
+- `/customers` - customer directory, loyalty, credit balances, and receivable payments
+- `/transfers` - branch transfer creation, dispatch, and receiving
+- `/reports` - sales, inventory, profit, and cashier reports
+- `/register/open`, `/register/close`, `/register/history` - cash drawer/session workflows, reconciliation, review, and reopen controls
+- `/print/receipt/test` - thermal printer test page for width checks, printer-safe layout review, barcode output, and drawer placeholder validation
+- `/print/register-z-read/[id]` - printable register Z-read / end-of-shift summary
+- `/staff` - staff directory, permissions, and security controls
+- `/activity` - operational activity and audit visibility
+- `/settings` - branch identity, tax, receipt, numbering, payment, and inventory defaults
+- `/onboard` - initial business and branch setup
 
 ## Tech Stack
 
@@ -223,7 +228,7 @@ For deployed environments:
 npm run prisma:deploy
 ```
 
-The latest migration adds register reconciliation fields, cash movement tracking, sale replay idempotency, and offline checkout stock-safety settings.
+The latest migrations add register reconciliation fields, cash movement tracking, sale replay idempotency, offline checkout stock-safety settings, thermal receipt settings, and smart reorder safety-stock settings.
 
 ### 5. Seed sample data (optional, useful for local evaluation)
 
@@ -273,9 +278,9 @@ AUTH_TRUST_HOST=
 
 What they are used for:
 
-- `DATABASE_URL` — Prisma database connection string
-- `AUTH_SECRET` — Auth.js secret used for signing/auth security
-- `AUTH_TRUST_HOST` — enables trusted-host behavior for Auth.js in local/deployed environments where needed
+- `DATABASE_URL` - Prisma database connection string
+- `AUTH_SECRET` - Auth.js secret used for signing/auth security
+- `AUTH_TRUST_HOST` - enables trusted-host behavior for Auth.js in local/deployed environments where needed
 
 ## Project Structure
 
@@ -305,7 +310,11 @@ Permissions are also enforced beyond role names for actions such as reports, ref
 - Printable register Z-read closeout summaries
 - Offline receipt preview/print support for queued sales before sync completes
 - Receipt reprint flow from sales history and sale detail
-- Configurable receipt header/footer and width settings
+- Configurable receipt header/footer, 58mm/80mm width settings, and branch brand-mark toggle
+- Printer-safe / ESC-POS-friendly browser print mode for thermal layouts
+- Receipt barcode based on the current receipt identifier
+- Print test page for thermal alignment, barcode validation, and width checks
+- Browser-side cash drawer trigger placeholder event for hardware bridge integration
 - Barcode label printing for products and variants
 
 ## Offline Checkout Notes
@@ -322,6 +331,13 @@ Permissions are also enforced beyond role names for actions such as reports, ref
 - Inventory valuation and stock movement insights
 - Profit and margin reporting using the best available cost basis in the current architecture
 - Cashier performance, refunds, voids, and shift/session totals
+- Owner analytics for demand heatmaps, sell-through, stock aging, margin leakage, shrinkage, refunds, lead times, stockouts, and reorder pressure
+
+## Reorder Suggestions Notes
+
+- Smart reorder suggestions are generated from the current inventory position, the last 30 days of completed sales, recent supplier receiving lead times, and the branch safety stock setting.
+- The inventory screen groups recommendations by supplier and can create draft purchase orders directly through the existing purchase-order API flow.
+- Products without supplier receiving history remain visible in the recommendation queue but are not draftable until supplier history exists.
 
 ## Current Status
 
