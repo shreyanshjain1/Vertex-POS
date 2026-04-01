@@ -43,6 +43,8 @@ export default async function SettingsPage() {
           barcodeScannerNotes: settings?.barcodeScannerNotes ?? '',
           lowStockEnabled: settings?.lowStockEnabled ?? true,
           lowStockThreshold: settings?.lowStockThreshold ?? 5,
+          offlineStockStrict: settings?.offlineStockStrict ?? false,
+          offlineStockMaxAgeMinutes: settings?.offlineStockMaxAgeMinutes ?? 240,
           batchTrackingEnabled: settings?.batchTrackingEnabled ?? false,
           expiryTrackingEnabled: settings?.expiryTrackingEnabled ?? false,
           fefoEnabled: settings?.fefoEnabled ?? false,

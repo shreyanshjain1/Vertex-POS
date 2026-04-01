@@ -263,6 +263,9 @@ export const salePaymentSchema = z.object({
 });
 
 export const saleSchema = z.object({
+  clientRequestId: z.string().trim().min(12).max(80).optional().nullable(),
+  occurredAt: z.string().trim().optional().nullable().or(z.literal('')),
+  cashSessionId: z.string().trim().optional().nullable(),
   customerId: z.string().trim().optional().nullable(),
   customerName: z.string().trim().max(120).optional().nullable(),
   customerPhone: z.string().trim().max(40).optional().nullable(),
@@ -275,6 +278,7 @@ export const saleSchema = z.object({
   items: z.array(z.object({
     productId: z.string().trim().min(1),
     variantId: z.string().trim().min(1).optional().nullable(),
+    priceSnapshot: z.coerce.number().min(0).optional().nullable(),
     qty: z.coerce.number().int().positive()
   })).min(1)
 }).superRefine((input, ctx) => {
@@ -447,6 +451,8 @@ export const settingSchema = z.object({
   barcodeScannerNotes: z.string().trim().max(500).optional().nullable(),
   lowStockEnabled: z.coerce.boolean(),
   lowStockThreshold: z.coerce.number().int().min(0).max(9999),
+  offlineStockStrict: z.coerce.boolean().default(false),
+  offlineStockMaxAgeMinutes: z.coerce.number().int().min(5).max(1440).default(240),
   openingFloatRequired: z.coerce.boolean(),
   openingFloatAmount: z.coerce.number().min(0).max(999999.99),
   salePrefix: z.string().trim().min(2).max(10).regex(/^[A-Za-z0-9]+$/, 'Use letters or numbers only for the sale prefix'),
@@ -497,5 +503,20 @@ export const cashSessionOpenSchema = z.object({
 
 export const cashSessionCloseSchema = z.object({
   closingActual: z.coerce.number().min(0, 'Actual counted cash must be zero or greater.').max(999999.99),
+  denominationBreakdown: z.record(z.string(), z.coerce.number().int().min(0).max(9999)).optional().nullable(),
   notes: z.string().trim().max(500).optional().nullable()
+});
+
+export const cashMovementSchema = z.object({
+  type: z.enum(['PAYOUT', 'CASH_DROP', 'PETTY_CASH', 'MANUAL_CORRECTION']),
+  amount: z.coerce.number().positive('Cash movement amount must be greater than zero.').max(999999.99),
+  note: z.string().trim().min(3, 'Add a short note for the cash movement.').max(300)
+});
+
+export const cashSessionReviewSchema = z.object({
+  reviewNote: z.string().trim().max(500).optional().nullable()
+});
+
+export const cashSessionReopenSchema = z.object({
+  reason: z.string().trim().min(3, 'Reopen reason is required.').max(500)
 });

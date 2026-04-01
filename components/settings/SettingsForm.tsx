@@ -38,6 +38,8 @@ type Props = {
     barcodeScannerNotes: string;
     lowStockEnabled: boolean;
     lowStockThreshold: number;
+    offlineStockStrict: boolean;
+    offlineStockMaxAgeMinutes: number;
     batchTrackingEnabled: boolean;
     expiryTrackingEnabled: boolean;
     fefoEnabled: boolean;
@@ -98,6 +100,7 @@ export default function SettingsForm({ initialValues }: Props) {
         ...form,
         taxRate: Number(form.taxRate),
         lowStockThreshold: Number(form.lowStockThreshold),
+        offlineStockMaxAgeMinutes: Number(form.offlineStockMaxAgeMinutes),
         openingFloatAmount: Number(form.openingFloatAmount)
       })
     });
@@ -254,6 +257,20 @@ export default function SettingsForm({ initialValues }: Props) {
                 onChange={(event) => setForm((current) => ({ ...current, lowStockEnabled: event.target.checked }))}
               />
               Enable low-stock alerts
+            </label>
+            <Input
+              type="number"
+              placeholder="Offline stock max age (minutes)"
+              value={String(form.offlineStockMaxAgeMinutes)}
+              onChange={(event) => setForm((current) => ({ ...current, offlineStockMaxAgeMinutes: Number(event.target.value) }))}
+            />
+            <label className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
+              <input
+                type="checkbox"
+                checked={form.offlineStockStrict}
+                onChange={(event) => setForm((current) => ({ ...current, offlineStockStrict: event.target.checked }))}
+              />
+              Block offline checkout when branch stock is stale
             </label>
           </div>
         </div>
