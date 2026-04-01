@@ -1,0 +1,5 @@
+ALTER TABLE "ShopSetting"
+ADD COLUMN "receiptShowBrandMark" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "printerSafeMode" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "cashDrawerKickEnabled" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "reorderSafetyStock" INTEGER NOT NULL DEFAULT 3;

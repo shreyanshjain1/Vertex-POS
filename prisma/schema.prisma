@@ -1249,11 +1249,15 @@ model ShopSetting {
   receiptHeader         String?
   receiptFooter         String?
   receiptWidth          String                @default("80mm")
+  receiptShowBrandMark  Boolean               @default(false)
+  printerSafeMode       Boolean               @default(true)
   printerName           String?
   printerConnection     PrinterConnectionType @default(MANUAL)
+  cashDrawerKickEnabled Boolean               @default(false)
   barcodeScannerNotes   String?
   lowStockEnabled       Boolean               @default(true)
   lowStockThreshold     Int                   @default(5)
+  reorderSafetyStock    Int                   @default(3)
   offlineStockStrict    Boolean               @default(false)
   offlineStockMaxAgeMinutes Int               @default(240)
   openingFloatRequired  Boolean               @default(true)
