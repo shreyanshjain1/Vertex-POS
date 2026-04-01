@@ -181,6 +181,13 @@ enum CashSessionStatus {
   OVERRIDE_CLOSED
 }
 
+enum CashMovementType {
+  PAYOUT
+  CASH_DROP
+  PETTY_CASH
+  MANUAL_CORRECTION
+}
+
 enum ParkedSaleStatus {
   HELD
   RESUMED
@@ -224,6 +231,10 @@ model User {
   productPriceChanges       ProductPriceHistory[]
   productCostChanges        ProductCostHistory[]
   cashSessions              CashSession[]
+  cashSessionsClosed        CashSession[]            @relation("CashSessionClosedBy")
+  cashSessionsReviewed      CashSession[]            @relation("CashSessionReviewedBy")
+  cashSessionsReopened      CashSession[]            @relation("CashSessionReopenedBy")
+  cashMovementsCreated      CashMovement[]           @relation("CashMovementCreatedBy")
   parkedSales               ParkedSale[]
   activities                ActivityLog[]
   authAuditLogs             AuthAuditLog[]
@@ -274,6 +285,7 @@ model Shop {
   supplierPayments       SupplierPayment[]
   accountsPayableEntries AccountsPayableEntry[]
   cashSessions           CashSession[]
+  cashMovements          CashMovement[]
   settings               ShopSetting?
   notifications          Notification[]
   activities             ActivityLog[]
@@ -407,6 +419,7 @@ model Sale {
   customerId              String?
   saleNumber              String
   receiptNumber           String
+  clientRequestId         String?
   status                  SaleStatus              @default(COMPLETED)
   customerName            String?
   customerPhone           String?
@@ -437,28 +450,59 @@ model Sale {
 
   @@unique([shopId, saleNumber])
   @@unique([shopId, receiptNumber])
+  @@unique([shopId, clientRequestId])
   @@index([shopId, createdAt])
   @@index([customerId, createdAt])
 }
 
 model CashSession {
-  id              String            @id @default(cuid())
-  shopId          String
-  userId          String
-  openedAt        DateTime          @default(now())
-  openingFloat    Decimal           @db.Decimal(12, 2)
-  closedAt        DateTime?
-  closingExpected Decimal?          @db.Decimal(12, 2)
-  closingActual   Decimal?          @db.Decimal(12, 2)
-  variance        Decimal?          @db.Decimal(12, 2)
-  notes           String?
-  status          CashSessionStatus @default(OPEN)
-  shop            Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  user            User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  id                   String            @id @default(cuid())
+  shopId               String
+  userId               String
+  openedAt             DateTime          @default(now())
+  openingFloat         Decimal           @db.Decimal(12, 2)
+  closedAt             DateTime?
+  closedByUserId       String?
+  closingExpected      Decimal?          @db.Decimal(12, 2)
+  closingActual        Decimal?          @db.Decimal(12, 2)
+  variance             Decimal?          @db.Decimal(12, 2)
+  denominationBreakdown Json?
+  reviewedByUserId     String?
+  reviewedAt           DateTime?
+  reviewNote           String?
+  reopenedByUserId     String?
+  reopenedAt           DateTime?
+  reopenReason         String?
+  notes                String?
+  status               CashSessionStatus @default(OPEN)
+  shop                 Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  user                 User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  closedByUser         User?             @relation("CashSessionClosedBy", fields: [closedByUserId], references: [id], onDelete: SetNull)
+  reviewedByUser       User?             @relation("CashSessionReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  reopenedByUser       User?             @relation("CashSessionReopenedBy", fields: [reopenedByUserId], references: [id], onDelete: SetNull)
+  movements            CashMovement[]
 
   @@index([shopId, openedAt])
   @@index([shopId, userId, status])
   @@index([userId, openedAt])
+}
+
+model CashMovement {
+  id              String           @id @default(cuid())
+  shopId          String
+  cashSessionId   String
+  type            CashMovementType
+  amount          Decimal          @db.Decimal(12, 2)
+  note            String?
+  createdByUserId String
+  createdAt       DateTime         @default(now())
+  shop            Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  cashSession     CashSession      @relation(fields: [cashSessionId], references: [id], onDelete: Cascade)
+  createdByUser   User             @relation("CashMovementCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([shopId, createdAt])
+  @@index([cashSessionId, createdAt])
+  @@index([createdByUserId, createdAt])
 }
 
 model SaleItem {
@@ -1210,6 +1254,8 @@ model ShopSetting {
   barcodeScannerNotes   String?
   lowStockEnabled       Boolean               @default(true)
   lowStockThreshold     Int                   @default(5)
+  offlineStockStrict    Boolean               @default(false)
+  offlineStockMaxAgeMinutes Int               @default(240)
   openingFloatRequired  Boolean               @default(true)
   openingFloatAmount    Decimal               @default(0) @db.Decimal(12, 2)
   batchTrackingEnabled  Boolean               @default(false)
