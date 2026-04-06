@@ -351,6 +351,10 @@ Vertex-POS already demonstrates a broad retail operations surface area:
 
 In portfolio terms, this project shows the ability to design and ship a serious business application with real workflow depth, not just a CRUD storefront or a simple cash register UI.
 
-## Product images
-- Product image uploads now save files to `public/uploads/products` instead of storing data URLs in the database.
-- Configure `MAX_PRODUCT_IMAGE_UPLOAD_MB` in `.env` when you need a different per-file upload cap.
+
+## Product image uploads
+
+- Product images can be uploaded through `/api/uploads/products`.
+- Local uploads are stored in `public/uploads/products/`.
+- Removed or replaced local product images are cleaned up automatically when a product is updated.
+- Control the upload size with `MAX_PRODUCT_IMAGE_UPLOAD_MB`.

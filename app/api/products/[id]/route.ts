@@ -5,6 +5,7 @@ import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
 import { normalizeText } from '@/lib/inventory';
 import { prisma } from '@/lib/prisma';
+import { extractLocalProductUploadPaths, deleteLocalProductUploads } from '@/lib/product-images';
 import { ensureUnitsOfMeasure } from '@/lib/uom';
 
 function serializeProduct(product: {
@@ -312,6 +313,10 @@ export async function PATCH(
     const costChanged =
       parsed.data.cost !== undefined && Number(existing.cost) !== parsed.data.cost;
 
+    const previousLocalImagePaths = extractLocalProductUploadPaths(existing.images.map((image) => image.imageUrl));
+    const nextLocalImagePaths = extractLocalProductUploadPaths(nextImages.map((image) => image.imageUrl));
+    const localImagePathsToDelete = previousLocalImagePaths.filter((imagePath) => !nextLocalImagePaths.includes(imagePath));
+
     const updatedProduct = await prisma.$transaction(async (tx) => {
       if (priceChanged) {
         await tx.productPriceHistory.create({
@@ -491,6 +496,14 @@ export async function PATCH(
 
       return product;
     });
+
+    if (localImagePathsToDelete.length) {
+      try {
+        await deleteLocalProductUploads(localImagePathsToDelete);
+      } catch (cleanupError) {
+        console.error('Failed to remove replaced product images:', cleanupError);
+      }
+    }
 
     return NextResponse.json({ product: serializeProduct(updatedProduct) });
   } catch (error) {

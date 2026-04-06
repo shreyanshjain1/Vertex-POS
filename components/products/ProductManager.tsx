@@ -146,6 +146,24 @@ function toVariantLabel(variant: VariantDraft | Variant) {
   });
 }
 
+async function uploadProductImage(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch('/api/uploads/products', {
+    method: 'POST',
+    body: formData
+  });
+
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok || typeof payload?.imageUrl !== 'string') {
+    throw new Error(payload?.error || 'Unable to upload image.');
+  }
+
+  return payload.imageUrl as string;
+}
+
 export default function ProductManager({
   initialProducts,
   categories,
@@ -197,6 +215,7 @@ export default function ProductManager({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
 
   const filtered = useMemo(() => {
     const term = query.toLowerCase().trim();
@@ -299,50 +318,34 @@ export default function ProductManager({
     }
 
     const remainingSlots = Math.max(0, 6 - form.images.length);
-    const selectedFiles = Array.from(files).slice(0, remainingSlots);
-    if (!selectedFiles.length) {
-      setError('You can keep up to 6 product images. Remove one before uploading more.');
+    if (!remainingSlots) {
+      setError('You can only add up to 6 images per product.');
       if (uploadInputRef.current) {
         uploadInputRef.current.value = '';
       }
       return;
     }
 
+    const selectedFiles = Array.from(files).slice(0, remainingSlots);
+    setUploadingImages(true);
     setError('');
-    setSuccess('');
-    setLoading(true);
 
     try {
-      const formData = new FormData();
-      for (const file of selectedFiles) {
-        formData.append('files', file);
-      }
-
-      const response = await fetch('/api/uploads/products', {
-        method: 'POST',
-        body: formData
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.error || 'Unable to upload one or more images.');
-      }
-
-      const uploadedImages = Array.isArray(data?.images) ? data.images : [];
+      const uploadedImageUrls = await Promise.all(selectedFiles.map((file) => uploadProductImage(file)));
       setForm((current) => ({
         ...current,
         images: [
           ...current.images,
-          ...uploadedImages.map((uploaded: { imageUrl: string }, index: number) => ({
+          ...uploadedImageUrls.map((imageUrl, index) => ({
             ...emptyImage(current.images.length + index),
-            imageUrl: uploaded.imageUrl
+            imageUrl
           }))
         ]
       }));
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Unable to upload one or more images.');
     } finally {
-      setLoading(false);
+      setUploadingImages(false);
       if (uploadInputRef.current) {
         uploadInputRef.current.value = '';
       }
@@ -783,8 +786,8 @@ export default function ProductManager({
                   onChange={(event) => void addUploadedImages(event.target.files)}
                 />
                 <div className="flex gap-2">
-                  <Button type="button" variant="secondary" onClick={() => uploadInputRef.current?.click()}>
-                    Upload files
+                  <Button type="button" variant="secondary" onClick={() => uploadInputRef.current?.click()} disabled={uploadingImages || form.images.length >= 6}>
+                    {uploadingImages ? 'Uploading…' : 'Upload image'}
                   </Button>
                   <Button type="button" variant="secondary" onClick={() => setForm((current) => ({ ...current, images: [...current.images, emptyImage(current.images.length)] }))}>
                     Add URL
@@ -817,7 +820,7 @@ export default function ProductManager({
                   </div>
                 )) : (
                   <div className="rounded-[22px] border border-dashed border-stone-300 bg-stone-50 px-4 py-5 text-sm text-stone-500">
-                    No images yet. Upload a product image or store a hosted image URL.
+                    No images yet. Upload an image or use a hosted image URL.
                   </div>
                 )}
               </div>

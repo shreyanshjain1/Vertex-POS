@@ -27,10 +27,13 @@ const imageUrlSchema = z
   .string()
   .trim()
   .min(1, 'Image is required.')
-  .max(500, 'Image URL is too long.')
+  .max(2048, 'Image path is too long.')
   .refine(
-    (value) => /^https?:\/\//i.test(value) || /^\/uploads\/products\//i.test(value),
-    'Use a hosted image URL or upload an image file.'
+    (value) =>
+      value.startsWith('/uploads/products/') ||
+      value.startsWith('data:image/') ||
+      /^https?:\/\//i.test(value),
+    'Use an uploaded image path or a valid image URL.'
   );
 
 const productVariantSchema = z.object({

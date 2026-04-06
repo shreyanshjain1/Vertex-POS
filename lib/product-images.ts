@@ -1,77 +1,112 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import path from 'node:path';
-import crypto from 'node:crypto';
+import { randomUUID } from 'crypto';
+import { mkdir, rm, writeFile } from 'fs/promises';
+import path from 'path';
 
-const ALLOWED_PRODUCT_IMAGE_TYPES = new Map<string, string>([
-  ['image/jpeg', 'jpg'],
-  ['image/png', 'png'],
-  ['image/webp', 'webp'],
-  ['image/gif', 'gif']
-]);
+const PUBLIC_ROOT = path.join(process.cwd(), 'public');
+const PRODUCT_UPLOAD_ROOT = path.join(PUBLIC_ROOT, 'uploads', 'products');
 
-const DEFAULT_MAX_PRODUCT_IMAGE_UPLOAD_MB = 5;
+function sanitizeSegment(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9-_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || 'shop';
+}
 
-export function getMaxProductImageUploadBytes() {
-  const configured = Number(process.env.MAX_PRODUCT_IMAGE_UPLOAD_MB ?? DEFAULT_MAX_PRODUCT_IMAGE_UPLOAD_MB);
-  if (!Number.isFinite(configured) || configured <= 0) {
-    return DEFAULT_MAX_PRODUCT_IMAGE_UPLOAD_MB * 1024 * 1024;
+function extensionFromMimeType(mimeType: string) {
+  if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') return '.jpg';
+  if (mimeType === 'image/png') return '.png';
+  if (mimeType === 'image/webp') return '.webp';
+  if (mimeType === 'image/gif') return '.gif';
+  if (mimeType === 'image/svg+xml') return '.svg';
+  return '.bin';
+}
+
+function maxUploadBytes() {
+  const mb = Number(process.env.MAX_PRODUCT_IMAGE_UPLOAD_MB || '5');
+  return Number.isFinite(mb) && mb > 0 ? Math.floor(mb * 1024 * 1024) : 5 * 1024 * 1024;
+}
+
+export function isLocalProductUploadPath(value: string) {
+  return value.startsWith('/uploads/products/');
+}
+
+export function extractLocalProductUploadPaths(values: string[]) {
+  const paths = new Set<string>();
+
+  for (const value of values) {
+    const normalized = value.trim();
+    if (!normalized) continue;
+
+    if (isLocalProductUploadPath(normalized)) {
+      paths.add(normalized);
+      continue;
+    }
+
+    try {
+      const parsed = new URL(normalized);
+      if (isLocalProductUploadPath(parsed.pathname)) {
+        paths.add(parsed.pathname);
+      }
+    } catch {
+      // ignore non-URL values
+    }
   }
 
-  return Math.floor(configured * 1024 * 1024);
+  return [...paths];
 }
 
-export function isSupportedProductImageType(contentType: string) {
-  return ALLOWED_PRODUCT_IMAGE_TYPES.has(contentType);
-}
-
-export function isStoredProductImagePath(value: string) {
-  return /^\/uploads\/products\/[a-z0-9/_-]+\.(jpg|png|webp|gif)$/i.test(value);
-}
-
-export function isSupportedRemoteImageUrl(value: string) {
-  return /^https?:\/\//i.test(value);
-}
-
-export function getPublicProductImageDirectory() {
-  return path.join(process.cwd(), 'public', 'uploads', 'products');
-}
-
-export async function saveProductImageFile(file: File, shopId: string) {
-  const contentType = file.type || 'application/octet-stream';
-  if (!isSupportedProductImageType(contentType)) {
-    throw new Error('Only JPG, PNG, WEBP, and GIF images are supported.');
+export async function saveProductImageUpload(shopId: string, file: File) {
+  if (!file || typeof file.arrayBuffer !== 'function') {
+    throw new Error('No upload file received.');
   }
 
-  const maxBytes = getMaxProductImageUploadBytes();
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Only image uploads are allowed.');
+  }
+
   if (file.size <= 0) {
-    throw new Error('Image file is empty.');
+    throw new Error('Uploaded image is empty.');
   }
 
-  if (file.size > maxBytes) {
-    throw new Error(`Image must be ${Math.round(maxBytes / (1024 * 1024))}MB or smaller.`);
+  if (file.size > maxUploadBytes()) {
+    throw new Error(`Image exceeds the ${process.env.MAX_PRODUCT_IMAGE_UPLOAD_MB || '5'} MB upload limit.`);
   }
 
-  const extension = ALLOWED_PRODUCT_IMAGE_TYPES.get(contentType);
-  if (!extension) {
-    throw new Error('Unsupported image type.');
-  }
+  const now = new Date();
+  const year = String(now.getUTCFullYear());
+  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const safeShopId = sanitizeSegment(shopId);
+  const extension = extensionFromMimeType(file.type);
+  const fileName = `${Date.now()}-${randomUUID()}${extension}`;
+  const relativeDirectory = path.posix.join('/uploads/products', safeShopId, year, month);
+  const relativePath = path.posix.join(relativeDirectory, fileName);
+  const absoluteDirectory = path.join(PRODUCT_UPLOAD_ROOT, safeShopId, year, month);
+  const absolutePath = path.join(absoluteDirectory, fileName);
 
-  const date = new Date();
-  const year = String(date.getUTCFullYear());
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const safeShopId = shopId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48) || 'shop';
-  const fileName = `${Date.now()}-${crypto.randomUUID()}.${extension}`;
-  const relativeDirectory = path.posix.join('uploads', 'products', safeShopId, year, month);
-  const outputDirectory = path.join(process.cwd(), 'public', relativeDirectory);
-  const outputPath = path.join(outputDirectory, fileName);
-
-  await mkdir(outputDirectory, { recursive: true });
+  await mkdir(absoluteDirectory, { recursive: true });
   const buffer = Buffer.from(await file.arrayBuffer());
-  await writeFile(outputPath, buffer);
+  await writeFile(absolutePath, buffer);
 
-  return {
-    imageUrl: `/${path.posix.join(relativeDirectory, fileName)}`,
-    bytes: file.size,
-    contentType
-  };
+  return relativePath;
+}
+
+export async function deleteLocalProductUploads(pathsToDelete: string[]) {
+  const uniquePaths = [...new Set(pathsToDelete.filter(Boolean))];
+
+  await Promise.all(
+    uniquePaths.map(async (relativePath) => {
+      if (!isLocalProductUploadPath(relativePath)) {
+        return;
+      }
+
+      const normalized = path.posix.normalize(relativePath);
+      if (!normalized.startsWith('/uploads/products/')) {
+        return;
+      }
+
+      const absolutePath = path.join(PUBLIC_ROOT, normalized.replace(/^\/+/, ''));
+      await rm(absolutePath, { force: true });
+    })
+  );
 }
