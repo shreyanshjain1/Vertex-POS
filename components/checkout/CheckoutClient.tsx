@@ -571,6 +571,22 @@ export default function CheckoutClient({
   function resetPayments() {
     setPayments(buildInitialPaymentLines(defaultPaymentMethods, canAcceptCash));
   }
+  const clearCartState = () => {
+    setCart([]);
+    setSelectedCustomerId(null);
+    setCustomerSearch('');
+    setCustomerName('');
+    setCustomerPhone('');
+    setDiscountAmount('0');
+    setLoyaltyPointsToRedeem('0');
+    setIsCreditSale(false);
+    setCreditDueDate(toDateInputValue());
+    setNotes('');
+    setScanQuery('');
+    setScanFeedback(null);
+    setError('');
+    resetPayments();
+  };
 
   function resetCheckoutState() {
     setCart([]);
