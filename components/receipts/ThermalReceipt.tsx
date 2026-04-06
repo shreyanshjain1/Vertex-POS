@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Button from '@/components/ui/Button';
+import { openCashDrawer } from '@/lib/cash-drawer';
 import { dateTime, money, shortDate } from '@/lib/format';
 
 type ReceiptWidth = '58mm' | '80mm';
@@ -176,6 +177,7 @@ export default function ThermalReceipt({
     [sale.receiptNumber]
   );
   const [drawerMessage, setDrawerMessage] = useState('');
+  const [drawerBusy, setDrawerBusy] = useState(false);
 
   useEffect(() => {
     if (!autoprint) {
@@ -186,25 +188,32 @@ export default function ThermalReceipt({
     return () => clearTimeout(timer);
   }, [autoprint]);
 
-  function handleDrawerKick() {
-    if (typeof window === 'undefined') {
+  async function handleDrawerKick() {
+    if (drawerBusy) {
       return;
     }
 
-    window.dispatchEvent(
-      new CustomEvent('vertex-pos:cash-drawer-kick', {
-        detail: {
-          mode: 'browser-placeholder',
-          source: testMode ? 'print-test' : 'receipt-print',
-          saleId: sale.id,
-          receiptNumber: sale.receiptNumber,
-          triggeredAt: new Date().toISOString()
-        }
-      })
-    );
-    setDrawerMessage(
-      'Cash-drawer placeholder event dispatched. Connect this browser event to your native bridge or local helper to fire real hardware.'
-    );
+    setDrawerBusy(true);
+    setDrawerMessage('');
+
+    try {
+      const result = await openCashDrawer({
+        source: testMode ? 'print-test' : 'receipt-print',
+        saleId: sale.id,
+        receiptNumber: sale.receiptNumber,
+        triggeredAt: new Date().toISOString()
+      });
+
+      setDrawerMessage(result.message);
+    } catch (error) {
+      setDrawerMessage(
+        error instanceof Error
+          ? `Unable to trigger the cash drawer: ${error.message}`
+          : 'Unable to trigger the cash drawer.'
+      );
+    } finally {
+      setDrawerBusy(false);
+    }
   }
 
   return (
@@ -255,12 +264,22 @@ export default function ThermalReceipt({
           {testMode ? 'Print test page' : 'Print receipt'}
         </Button>
         {cashDrawerKickEnabled ? (
-          <Button type="button" variant="secondary" onClick={handleDrawerKick}>
-            Open cash drawer
+          <Button type="button" variant="secondary" onClick={handleDrawerKick} disabled={drawerBusy}>
+            {drawerBusy ? 'Triggering drawer…' : 'Open cash drawer'}
           </Button>
         ) : null}
         {drawerMessage ? (
-          <div className="max-w-xl rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <div
+            className={`max-w-xl rounded-2xl px-4 py-3 text-sm ${
+              drawerMessage.toLowerCase().includes('unreachable') ||
+              drawerMessage.toLowerCase().includes('unable') ||
+              drawerMessage.toLowerCase().includes('rejected')
+                ? 'border border-red-200 bg-red-50 text-red-800'
+                : drawerMessage.toLowerCase().includes('fallback')
+                  ? 'border border-amber-200 bg-amber-50 text-amber-800'
+                  : 'border border-emerald-200 bg-emerald-50 text-emerald-800'
+            }`}
+          >
             {drawerMessage}
           </div>
         ) : null}
