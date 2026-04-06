@@ -30,8 +30,10 @@ export async function POST(request: Request) {
       );
     }
 
+    const email = parsed.data.email.trim().toLowerCase();
+
     const user = await prisma.user.findUnique({
-      where: { email: parsed.data.email },
+      where: { email },
       select: {
         id: true,
         name: true,
@@ -39,31 +41,17 @@ export async function POST(request: Request) {
         forcePasswordReset: true,
         failedLoginAttempts: true,
         lockedUntil: true,
-        userShops: {
-          where: { isActive: true },
-          orderBy: { createdAt: 'asc' },
-          select: {
-            shopId: true,
-            shop: {
-              select: {
-                name: true
-              }
-            }
-          }
-        }
+        isActive: true
       }
     });
 
-    if (!user) {
+    if (!user || !user.isActive) {
       return NextResponse.json({ ok: true, message: GENERIC_SUCCESS_MESSAGE });
     }
 
     const rawToken = createPasswordResetToken();
     const tokenHash = hashPasswordResetToken(rawToken);
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    const primaryMembership = user.userShops[0] ?? null;
-    const shopId = primaryMembership?.shopId ?? null;
-    const shopName = primaryMembership?.shop.name ?? null;
 
     const created = await prisma.$transaction(async (tx) => {
       await tx.passwordResetToken.updateMany({
@@ -79,7 +67,7 @@ export async function POST(request: Request) {
       const token = await tx.passwordResetToken.create({
         data: {
           userId: user.id,
-          shopId,
+          shopId: null,
           createdById: null,
           tokenHash,
           expiresAt
@@ -100,7 +88,7 @@ export async function POST(request: Request) {
         tx,
         action: 'PASSWORD_RESET_REQUESTED',
         userId: user.id,
-        shopId,
+        shopId: null,
         email: user.email,
         metadata: {
           selfService: true
@@ -121,7 +109,7 @@ export async function POST(request: Request) {
         resetUrl,
         expiresAt,
         issuedByName: 'Vertex POS',
-        shopName
+        shopName: null
       });
     } catch (mailError) {
       console.error('Failed to send self-service password reset email.', mailError);
