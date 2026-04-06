@@ -359,9 +359,10 @@ In portfolio terms, this project shows the ability to design and ship a serious 
 - Removed or replaced local product images are cleaned up automatically when a product is updated.
 - Control the upload size with `MAX_PRODUCT_IMAGE_UPLOAD_MB`.
 
-## Quality checks
 
-Run the automated checks locally before pushing:
+## Quality Checks
+
+Run the local verification commands before pushing:
 
 ```bash
 npm run lint
@@ -369,11 +370,4 @@ npm run typecheck
 npm test
 ```
 
-Useful test commands:
-
-```bash
-npm run test:watch
-npm run test:coverage
-```
-
-Current automated coverage now includes helper-level tests plus route-focused coverage for auth email flows and register session opening safeguards.
+GitHub Actions also runs the same checks on pushes to `main` and on pull requests.
