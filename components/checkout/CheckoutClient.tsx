@@ -82,6 +82,9 @@ type ParkedSale = {
   cashierEmail: string | null;
   customerName: string | null;
   customerPhone: string | null;
+  title: string | null;
+  quoteReference: string | null;
+  type: 'SAVED_CART' | 'QUOTE';
   notes: string | null;
   subtotal: string;
   taxAmount: string;
@@ -397,7 +400,7 @@ export default function CheckoutClient({
   const [scanFeedback, setScanFeedback] = useState<ScanFeedback>(null);
   const [parkedFeedback, setParkedFeedback] = useState(initialLocalState.message);
   const [loading, setLoading] = useState(false);
-  const [holding, setHolding] = useState(false);
+  const [holding, setHolding] = useState<'SAVED_CART' | 'QUOTE' | null>(null);
   const [resumeLoadingId, setResumeLoadingId] = useState<string | null>(null);
   const [cancelLoadingId, setCancelLoadingId] = useState<string | null>(null);
   const hasSearchFilters = Boolean(query.trim() || selectedCategory);
@@ -1061,44 +1064,57 @@ export default function CheckoutClient({
     };
   }, []);
 
-  async function holdCart() {
+  async function saveCheckoutDraft(type: 'SAVED_CART' | 'QUOTE') {
+    if (!cart.length) {
+      setError(`Add at least one item before saving this ${type === 'QUOTE' ? 'quote' : 'cart'}.`);
+      return;
+    }
+
+    setHolding(type);
     setError('');
     setParkedFeedback('');
-    if (!cart.length) {
-      setError('Add at least one item before holding the cart.');
-      return;
-    }
-    if (isCreditSale || Number(loyaltyPointsToRedeem) > 0) {
-      setError('Hold cart is only available for standard checkout carts in this pass.');
-      return;
-    }
-    setHolding(true);
     try {
       const response = await fetch('/api/parked-sales', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          type,
+          title:
+            type === 'QUOTE'
+              ? `${selectedCustomerId ? 'Customer' : 'Walk-in'} quote`
+              : null,
           customerId: selectedCustomerId,
-          customerName: customerName || null,
-          customerPhone: customerPhone || null,
-          discountAmount: manualDiscount,
-          notes: notes || null,
-          items: cart.map((item) => ({ productId: item.productId, variantId: item.variantId, qty: item.qty }))
+          customerName,
+          customerPhone,
+          discountAmount: Number(discountAmount || 0),
+          notes,
+          items: cart.map((item) => ({
+            productId: item.productId,
+            variantId: item.variantId,
+            qty: item.qty
+          }))
         })
       });
-      const data = await response.json().catch(() => ({ error: 'Unable to hold the cart.' }));
-      setHolding(false);
+
+      const data = await response.json().catch(() => ({ error: 'Unable to save the checkout draft.' }));
+
       if (!response.ok || !data?.parkedSale) {
-        setError(data?.error ?? 'Unable to hold the cart.');
+        setError(data?.error ?? 'Unable to save the checkout draft.');
         return;
       }
+
       setParkedSales((current) => [data.parkedSale, ...current].slice(0, 20));
-      resetCheckoutState();
-      setParkedFeedback('Cart held successfully and moved to the held cart list.');
-      focusScanInput();
-    } catch {
-      setHolding(false);
-      setError('Unable to hold the cart.');
+      setParkedFeedback(
+        type === 'QUOTE'
+          ? `Quote ${data.parkedSale.quoteReference ?? ''} saved successfully.`
+          : 'Cart saved successfully and moved to the saved cart list.'
+      );
+      clearCartState();
+    } catch (error) {
+      console.error(error);
+      setError('Unable to save the checkout draft.');
+    } finally {
+      setHolding(null);
     }
   }
 
@@ -1107,17 +1123,17 @@ export default function CheckoutClient({
     setParkedFeedback('');
     const missingOption = parkedSale.items.find((item) => !productMap.has(item.productVariantId ?? item.productId));
     if (missingOption) {
-      setError('One or more items in this held cart are no longer available in the active catalog.');
+      setError('One or more items in this saved checkout entry are no longer available in the active catalog.');
       return;
     }
-    if (cart.length && !window.confirm('Resume this held cart and replace the current checkout cart?')) return;
+    if (cart.length && !window.confirm('Load this saved checkout entry and replace the current checkout cart?')) return;
     setResumeLoadingId(parkedSale.id);
     try {
       const response = await fetch(`/api/parked-sales/${parkedSale.id}/resume`, { method: 'POST' });
-      const data = await response.json().catch(() => ({ error: 'Unable to resume the held cart.' }));
+      const data = await response.json().catch(() => ({ error: 'Unable to load the saved checkout entry.' }));
       setResumeLoadingId(null);
       if (!response.ok) {
-        setError(data?.error ?? 'Unable to resume the held cart.');
+        setError(data?.error ?? 'Unable to load the saved checkout entry.');
         return;
       }
       setCart(
@@ -1143,32 +1159,32 @@ export default function CheckoutClient({
       setScanFeedback(null);
       resetPayments();
       setParkedSales((current) => current.filter((entry) => entry.id !== parkedSale.id));
-      setParkedFeedback(`Resumed held cart from ${parkedSale.cashierName}.`);
+      setParkedFeedback(`Loaded ${parkedSale.type === 'QUOTE' ? 'quote' : 'saved cart'} from ${parkedSale.cashierName}.`);
       focusScanInput();
     } catch {
       setResumeLoadingId(null);
-      setError('Unable to resume the held cart.');
+      setError('Unable to load the saved checkout entry.');
     }
   }
 
   async function cancelParkedSale(parkedSale: ParkedSale) {
     setError('');
     setParkedFeedback('');
-    if (!window.confirm('Cancel this held cart? This removes it from the active held cart list.')) return;
+    if (!window.confirm('Cancel this saved checkout entry? This removes it from the active list.')) return;
     setCancelLoadingId(parkedSale.id);
     try {
       const response = await fetch(`/api/parked-sales/${parkedSale.id}`, { method: 'DELETE' });
-      const data = await response.json().catch(() => ({ error: 'Unable to cancel the held cart.' }));
+      const data = await response.json().catch(() => ({ error: 'Unable to cancel the saved checkout entry.' }));
       setCancelLoadingId(null);
       if (!response.ok) {
-        setError(data?.error ?? 'Unable to cancel the held cart.');
+        setError(data?.error ?? 'Unable to cancel the saved checkout entry.');
         return;
       }
       setParkedSales((current) => current.filter((entry) => entry.id !== parkedSale.id));
       setParkedFeedback('Held cart cancelled successfully.');
     } catch {
       setCancelLoadingId(null);
-      setError('Unable to cancel the held cart.');
+      setError('Unable to cancel the saved checkout entry.');
     }
   }
 
@@ -1781,18 +1797,19 @@ export default function CheckoutClient({
 
           <div className="flex flex-col gap-3 sm:flex-row">
             <Button type="button" className="flex-1" disabled={!canCompleteSale} onClick={() => void completeSale()}>{loading ? 'Completing sale...' : !isOnline ? 'Queue offline sale' : 'Complete sale'}</Button>
-            <Button type="button" variant="secondary" className="sm:min-w-32" disabled={!cart.length || loading || holding} onClick={() => void holdCart()}>{holding ? 'Holding cart...' : 'Hold cart'}</Button>
-            <Button type="button" variant="secondary" className="sm:min-w-32" disabled={!cart.length || loading || holding} onClick={requestClearCart}>Clear</Button>
+            <Button type="button" variant="secondary" className="sm:min-w-32" disabled={!cart.length || loading || Boolean(holding)} onClick={() => void saveCheckoutDraft('SAVED_CART')}>{holding === 'SAVED_CART' ? 'Saving cart...' : 'Save cart'}</Button>
+            <Button type="button" variant="secondary" className="sm:min-w-32" disabled={!cart.length || loading || Boolean(holding)} onClick={() => void saveCheckoutDraft('QUOTE')}>{holding === 'QUOTE' ? 'Saving quote...' : 'Save quote'}</Button>
+            <Button type="button" variant="secondary" className="sm:min-w-32" disabled={!cart.length || loading || Boolean(holding)} onClick={requestClearCart}>Clear</Button>
           </div>
 
           <div className="rounded-[26px] border border-stone-200 bg-stone-50/85 p-4">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Held carts</div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">Saved checkouts</div>
                 <h3 className="mt-2 text-xl font-black text-stone-900">Suspend and resume checkout</h3>
-                <p className="mt-1 text-sm text-stone-500">Held carts keep item snapshots, customer details, and notes for up to 24 hours.</p>
+                <p className="mt-1 text-sm text-stone-500">Saved checkouts keep item snapshots, customer details, and notes for up to 24 hours.</p>
               </div>
-              <div className="rounded-[20px] border border-stone-200 bg-white px-4 py-3 text-right"><div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Active holds</div><div className="mt-1 text-2xl font-black text-stone-950">{parkedSales.length}</div></div>
+              <div className="rounded-[20px] border border-stone-200 bg-white px-4 py-3 text-right"><div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Saved carts & quotes</div><div className="mt-1 text-2xl font-black text-stone-950">{parkedSales.length}</div></div>
             </div>
             <div className="mt-4 space-y-3">
               {parkedSales.length ? parkedSales.map((parkedSale) => (
@@ -1802,10 +1819,13 @@ export default function CheckoutClient({
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">Held</span>
                         <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-600">{parkedSale.itemCount} item(s)</span>
+                        <span className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${parkedSale.type === 'QUOTE' ? 'border border-sky-200 bg-sky-50 text-sky-700' : 'border border-stone-200 bg-stone-50 text-stone-600'}`}>{parkedSale.type === 'QUOTE' ? 'Quote' : 'Saved cart'}</span>
                       </div>
                       <div className="mt-3 text-lg font-black text-stone-950">{money(parkedSale.totalAmount, currencySymbol)}</div>
                       <div className="mt-1 text-sm text-stone-500">{parkedSale.cashierName}{parkedSale.customerName ? ` / ${parkedSale.customerName}` : ''}</div>
                       <div className="mt-2 text-xs text-stone-500">Created {dateTime(parkedSale.createdAt)} / Expires {dateTime(parkedSale.expiresAt)}</div>
+                      {parkedSale.quoteReference ? <div className="mt-2 text-xs font-semibold uppercase tracking-[0.16em] text-sky-700">{parkedSale.quoteReference}</div> : null}
+                      {parkedSale.title ? <div className="mt-2 text-sm font-semibold text-stone-700">{parkedSale.title}</div> : null}
                       {parkedSale.notes ? <div className="mt-3 rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-600">{parkedSale.notes}</div> : null}
                     </div>
                     <div className="min-w-[220px] space-y-2">
@@ -1813,13 +1833,13 @@ export default function CheckoutClient({
                         {parkedSale.items.map((item) => `${item.qty}x ${item.productName}${item.variantLabel ? ` (${item.variantLabel})` : ''}`).join(', ')}
                       </div>
                       <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
-                        <Button type="button" disabled={resumeLoadingId === parkedSale.id || cancelLoadingId === parkedSale.id} onClick={() => void resumeParkedSale(parkedSale)}>{resumeLoadingId === parkedSale.id ? 'Resuming...' : 'Resume'}</Button>
+                        <Button type="button" disabled={resumeLoadingId === parkedSale.id || cancelLoadingId === parkedSale.id} onClick={() => void resumeParkedSale(parkedSale)}>{resumeLoadingId === parkedSale.id ? 'Loading...' : parkedSale.type === 'QUOTE' ? 'Load quote' : 'Resume'}</Button>
                         <Button type="button" variant="danger" disabled={resumeLoadingId === parkedSale.id || cancelLoadingId === parkedSale.id} onClick={() => void cancelParkedSale(parkedSale)}>{cancelLoadingId === parkedSale.id ? 'Cancelling...' : 'Cancel'}</Button>
                       </div>
                     </div>
                   </div>
                 </div>
-              )) : <div className="rounded-[24px] border border-dashed border-stone-300 bg-white px-4 py-5 text-sm text-stone-500">No active held carts right now.</div>}
+              )) : <div className="rounded-[24px] border border-dashed border-stone-300 bg-white px-4 py-5 text-sm text-stone-500">No saved carts or quotes right now.</div>}
             </div>
           </div>
         </Card>

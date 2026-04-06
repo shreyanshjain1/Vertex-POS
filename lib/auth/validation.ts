@@ -350,6 +350,8 @@ export const saleRefundSchema = approvalSchema.extend({
 });
 
 export const parkedSaleCreateSchema = z.object({
+  type: z.enum(['SAVED_CART', 'QUOTE']).default('SAVED_CART'),
+  title: z.string().trim().max(120).optional().nullable(),
   customerId: z.string().trim().optional().nullable(),
   customerName: z.string().trim().max(120).optional().nullable(),
   customerPhone: z.string().trim().max(40).optional().nullable(),

@@ -43,11 +43,11 @@ export async function POST(
     });
 
     if (!parkedSale) {
-      return NextResponse.json({ error: 'Held cart not found.' }, { status: 404 });
+      return NextResponse.json({ error: 'Saved checkout entry not found.' }, { status: 404 });
     }
 
     if (parkedSale.cashierUserId !== userId && !canManageAllParkedSales(role)) {
-      return NextResponse.json({ error: 'You do not have access to this held cart.' }, { status: 403 });
+      return NextResponse.json({ error: 'You do not have access to this saved checkout entry.' }, { status: 403 });
     }
 
     const resumedParkedSale = await prisma.$transaction(async (tx) => {
@@ -78,10 +78,12 @@ export async function POST(
         action: 'PARKED_SALE_RESUMED',
         entityType: 'ParkedSale',
         entityId: parkedSale.id,
-        description: `Resumed held cart for ${parkedSale.cashier.name ?? parkedSale.cashier.email ?? 'cashier'}.`,
+        description: `Loaded ${parkedSale.type === 'QUOTE' ? 'quote' : 'saved cart'} for ${parkedSale.cashier.name ?? parkedSale.cashier.email ?? 'cashier'}.`,
         metadata: {
           itemCount: parkedSale.items.reduce((sum, item) => sum + item.qty, 0),
-          totalAmount: Number(parkedSale.totalAmount)
+          totalAmount: Number(parkedSale.totalAmount),
+          type: parkedSale.type,
+          quoteReference: parkedSale.quoteReference
         }
       });
 
@@ -92,6 +94,6 @@ export async function POST(
       parkedSale: serializeParkedSale(resumedParkedSale)
     });
   } catch (error) {
-    return apiErrorResponse(error, 'Unable to resume the held cart.');
+    return apiErrorResponse(error, 'Unable to load the saved checkout entry.');
   }
 }

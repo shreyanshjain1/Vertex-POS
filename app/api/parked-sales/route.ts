@@ -6,7 +6,9 @@ import { logActivity } from '@/lib/activity';
 import {
   calculateParkedSaleTotals,
   cleanupExpiredParkedSales,
+  createQuoteReference,
   getParkedSaleExpiresAt,
+  getParkedSaleTypeLabel,
   serializeParkedSale
 } from '@/lib/parked-sales';
 import { getCustomerDisplayName } from '@/lib/customers';
@@ -22,7 +24,7 @@ export async function POST(request: Request) {
 
     if (!parsed.success) {
       return NextResponse.json(
-        { error: parsed.error.issues[0]?.message ?? 'Invalid held cart payload.' },
+        { error: parsed.error.issues[0]?.message ?? 'Invalid saved checkout payload.' },
         { status: 400 }
       );
     }
@@ -102,12 +104,15 @@ export async function POST(request: Request) {
           customerId: customer?.id ?? null,
           customerName: normalizeText(parsed.data.customerName) ?? (customer ? getCustomerDisplayName(customer) : null),
           customerPhone: normalizeText(parsed.data.customerPhone) ?? normalizeText(customer?.phone),
+          title: normalizeText(parsed.data.title),
+          quoteReference: parsed.data.type === 'QUOTE' ? createQuoteReference() : null,
+          type: parsed.data.type,
           notes: normalizeText(parsed.data.notes),
           subtotal: totals.subtotal,
           taxAmount: totals.taxAmount,
           discountAmount: totals.discountAmount,
           totalAmount: totals.totalAmount,
-          expiresAt: getParkedSaleExpiresAt(),
+          expiresAt: getParkedSaleExpiresAt(parsed.data.type),
           items: {
             create: heldItems.map((item) => ({
               productId: item.productId,
@@ -141,10 +146,12 @@ export async function POST(request: Request) {
         action: 'CART_HELD',
         entityType: 'ParkedSale',
         entityId: createdParkedSale.id,
-        description: `Held cart for ${session.user.name ?? session.user.email ?? 'cashier'}.`,
+        description: `Saved ${getParkedSaleTypeLabel(createdParkedSale.type).toLowerCase()} for ${session.user.name ?? session.user.email ?? 'cashier'}.`,
         metadata: {
           itemCount: createdParkedSale.items.reduce((sum, item) => sum + item.qty, 0),
-          totalAmount: totals.totalAmount
+          totalAmount: totals.totalAmount,
+          type: createdParkedSale.type,
+          quoteReference: createdParkedSale.quoteReference
         }
       });
 
@@ -170,6 +177,6 @@ export async function POST(request: Request) {
       );
     }
 
-    return apiErrorResponse(error, 'Unable to hold the cart.');
+    return apiErrorResponse(error, 'Unable to save the checkout draft.');
   }
 }

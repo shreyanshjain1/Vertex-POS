@@ -1,4 +1,4 @@
-import { ParkedSale, ParkedSaleItem, Prisma, ShopRole, User } from '@prisma/client';
+import { ParkedSale, ParkedSaleItem, ParkedSaleType, Prisma, ShopRole, User } from '@prisma/client';
 import { hasRole } from '@/lib/authz';
 import { roundCurrency } from '@/lib/inventory';
 import { prisma } from '@/lib/prisma';
@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma';
 type ParkedSalesDb = Prisma.TransactionClient | typeof prisma;
 
 export const PARKED_SALE_TTL_HOURS = 24;
+export const QUOTE_TTL_DAYS = 30;
 
 type ParkedSaleRecord = ParkedSale & {
   cashier?: Pick<User, 'id' | 'name' | 'email'> | null;
@@ -21,6 +22,9 @@ export type SerializedParkedSale = {
   cashierEmail: string | null;
   customerName: string | null;
   customerPhone: string | null;
+  title: string | null;
+  quoteReference: string | null;
+  type: ParkedSale['type'];
   notes: string | null;
   subtotal: string;
   taxAmount: string;
@@ -46,8 +50,26 @@ export type SerializedParkedSale = {
   }>;
 };
 
-export function getParkedSaleExpiresAt(now = new Date()) {
+export function getParkedSaleExpiresAt(type: ParkedSaleType = 'SAVED_CART', now = new Date()) {
+  if (type === 'QUOTE') {
+    return new Date(now.getTime() + QUOTE_TTL_DAYS * 24 * 60 * 60 * 1000);
+  }
+
   return new Date(now.getTime() + PARKED_SALE_TTL_HOURS * 60 * 60 * 1000);
+}
+
+export function createQuoteReference(now = new Date()) {
+  const compactDate = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const timeFragment = `${now.getHours().toString().padStart(2, '0')}${now
+    .getMinutes()
+    .toString()
+    .padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
+
+  return `QT-${compactDate}-${timeFragment}`;
+}
+
+export function getParkedSaleTypeLabel(type: ParkedSaleType) {
+  return type === 'QUOTE' ? 'Quote' : 'Saved cart';
 }
 
 export async function cleanupExpiredParkedSales(db: ParkedSalesDb, shopId: string) {
@@ -93,6 +115,9 @@ export function serializeParkedSale(record: ParkedSaleRecord): SerializedParkedS
     cashierEmail: record.cashier?.email ?? null,
     customerName: record.customerName ?? null,
     customerPhone: record.customerPhone ?? null,
+    title: record.title ?? null,
+    quoteReference: record.quoteReference ?? null,
+    type: record.type,
     notes: record.notes ?? null,
     subtotal: record.subtotal.toString(),
     taxAmount: record.taxAmount.toString(),

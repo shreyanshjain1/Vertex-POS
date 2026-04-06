@@ -371,3 +371,17 @@ npm test
 ```
 
 GitHub Actions also runs the same checks on pushes to `main` and on pull requests.
+
+
+## Saved carts and quotes
+
+Checkout now supports two non-finalized sales flows without affecting live stock:
+
+- **Saved cart**: park an in-progress checkout and resume it later.
+- **Quote**: save a priced quote with a quote reference, then load it back into checkout and convert it into a completed sale when the customer is ready.
+
+Behavior notes:
+- saved carts expire after 24 hours
+- quotes expire after 30 days
+- neither flow deducts stock until the checkout is completed as a real sale
+- both flows preserve cart lines, customer details, discount amount, and notes

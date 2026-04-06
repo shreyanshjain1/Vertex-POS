@@ -195,6 +195,11 @@ enum ParkedSaleStatus {
   EXPIRED
 }
 
+enum ParkedSaleType {
+  SAVED_CART
+  QUOTE
+}
+
 enum StockTransferStatus {
   DRAFT
   IN_TRANSIT
@@ -655,6 +660,9 @@ model ParkedSale {
   customerId     String?
   customerName   String?
   customerPhone  String?
+  title          String?
+  quoteReference String?
+  type           ParkedSaleType   @default(SAVED_CART)
   notes          String?
   subtotal       Decimal          @db.Decimal(12, 2)
   taxAmount      Decimal          @db.Decimal(12, 2)
@@ -671,6 +679,8 @@ model ParkedSale {
   customer       Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
   items          ParkedSaleItem[]
 
+  @@unique([shopId, quoteReference])
+  @@index([shopId, type, status, createdAt])
   @@index([shopId, status, createdAt])
   @@index([shopId, status, expiresAt])
   @@index([cashierUserId, status, createdAt])
