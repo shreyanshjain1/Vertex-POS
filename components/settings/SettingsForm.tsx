@@ -384,7 +384,7 @@ export default function SettingsForm({ initialValues }: Props) {
               checked={form.cashDrawerKickEnabled}
               onChange={(event) => setForm((current) => ({ ...current, cashDrawerKickEnabled: event.target.checked }))}
             />
-            Show the cash-drawer trigger button on print pages
+            Show the browser cash-drawer placeholder trigger on print pages
           </label>
           <Input
             placeholder="Receipt header"
@@ -407,9 +407,9 @@ export default function SettingsForm({ initialValues }: Props) {
             />
           </div>
           <div className="md:col-span-2 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-4 text-sm text-stone-600">
-            <div className="font-semibold text-stone-900">Printer test and cash drawer integration point</div>
+            <div className="font-semibold text-stone-900">Printer test and drawer integration point</div>
             <div className="mt-2">
-              Open a live thermal test page to verify 58mm or 80mm spacing, compact printer-safe output, receipt barcode clarity, and the cash-drawer integration before deploying to a register.
+              Open a live thermal test page to verify 58mm or 80mm spacing, compact printer-safe output, receipt barcode clarity, and the cash-drawer placeholder event before deploying to a register.
             </div>
             <div className="mt-4">
               <Link

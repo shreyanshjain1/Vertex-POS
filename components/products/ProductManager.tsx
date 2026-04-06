@@ -146,15 +146,6 @@ function toVariantLabel(variant: VariantDraft | Variant) {
   });
 }
 
-async function toDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
-    reader.onerror = () => reject(new Error('Unable to read image.'));
-    reader.readAsDataURL(file);
-  });
-}
-
 export default function ProductManager({
   initialProducts,
   categories,
@@ -307,22 +298,51 @@ export default function ProductManager({
       return;
     }
 
-    const selectedFiles = Array.from(files).slice(0, Math.max(0, 6 - form.images.length));
+    const remainingSlots = Math.max(0, 6 - form.images.length);
+    const selectedFiles = Array.from(files).slice(0, remainingSlots);
+    if (!selectedFiles.length) {
+      setError('You can keep up to 6 product images. Remove one before uploading more.');
+      if (uploadInputRef.current) {
+        uploadInputRef.current.value = '';
+      }
+      return;
+    }
+
+    setError('');
+    setSuccess('');
+    setLoading(true);
+
     try {
-      const encoded = await Promise.all(selectedFiles.map(toDataUrl));
+      const formData = new FormData();
+      for (const file of selectedFiles) {
+        formData.append('files', file);
+      }
+
+      const response = await fetch('/api/uploads/products', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Unable to upload one or more images.');
+      }
+
+      const uploadedImages = Array.isArray(data?.images) ? data.images : [];
       setForm((current) => ({
         ...current,
         images: [
           ...current.images,
-          ...encoded.map((imageUrl, index) => emptyImage(current.images.length + index)).map((image, index) => ({
-            ...image,
-            imageUrl: encoded[index]
+          ...uploadedImages.map((uploaded: { imageUrl: string }, index: number) => ({
+            ...emptyImage(current.images.length + index),
+            imageUrl: uploaded.imageUrl
           }))
         ]
       }));
-    } catch {
-      setError('Unable to read one or more images.');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Unable to upload one or more images.');
     } finally {
+      setLoading(false);
       if (uploadInputRef.current) {
         uploadInputRef.current.value = '';
       }
@@ -764,7 +784,7 @@ export default function ProductManager({
                 />
                 <div className="flex gap-2">
                   <Button type="button" variant="secondary" onClick={() => uploadInputRef.current?.click()}>
-                    Upload image
+                    Upload files
                   </Button>
                   <Button type="button" variant="secondary" onClick={() => setForm((current) => ({ ...current, images: [...current.images, emptyImage(current.images.length)] }))}>
                     Add URL
@@ -784,7 +804,7 @@ export default function ProductManager({
                         )}
                       </div>
                       <div className="space-y-3">
-                        <Input placeholder="Image URL or uploaded data URL" value={image.imageUrl} onChange={(event) => setForm((current) => ({ ...current, images: current.images.map((entry, entryIndex) => entryIndex === index ? { ...entry, imageUrl: event.target.value } : entry) }))} />
+                        <Input placeholder="Image URL or uploaded file path" value={image.imageUrl} onChange={(event) => setForm((current) => ({ ...current, images: current.images.map((entry, entryIndex) => entryIndex === index ? { ...entry, imageUrl: event.target.value } : entry) }))} />
                         <div className="grid gap-3 md:grid-cols-[1fr_120px_auto]">
                           <Input placeholder="Alt text" value={image.altText} onChange={(event) => setForm((current) => ({ ...current, images: current.images.map((entry, entryIndex) => entryIndex === index ? { ...entry, altText: event.target.value } : entry) }))} />
                           <Input type="number" placeholder="Sort" value={image.sortOrder} onChange={(event) => setForm((current) => ({ ...current, images: current.images.map((entry, entryIndex) => entryIndex === index ? { ...entry, sortOrder: event.target.value } : entry) }))} />
@@ -797,7 +817,7 @@ export default function ProductManager({
                   </div>
                 )) : (
                   <div className="rounded-[22px] border border-dashed border-stone-300 bg-stone-50 px-4 py-5 text-sm text-stone-500">
-                    No images yet. Upload an image or store a hosted image URL.
+                    No images yet. Upload a product image or store a hosted image URL.
                   </div>
                 )}
               </div>

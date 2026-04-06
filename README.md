@@ -351,29 +351,6 @@ Vertex-POS already demonstrates a broad retail operations surface area:
 
 In portfolio terms, this project shows the ability to design and ship a serious business application with real workflow depth, not just a CRUD storefront or a simple cash register UI.
 
-
-## Automated QA checks
-
-The repo now includes a lightweight Vitest suite for high-signal business logic:
-- document number generation
-- permission defaults and overrides
-- business status labels
-- money/date/slug formatting
-
-Run the checks with:
-
-```bash
-npm test
-```
-
-Watch mode:
-
-```bash
-npm run test:watch
-```
-
-Coverage report:
-
-```bash
-npm run test:coverage
-```
+## Product images
+- Product image uploads now save files to `public/uploads/products` instead of storing data URLs in the database.
+- Configure `MAX_PRODUCT_IMAGE_UPLOAD_MB` in `.env` when you need a different per-file upload cap.
