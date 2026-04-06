@@ -359,18 +359,21 @@ In portfolio terms, this project shows the ability to design and ship a serious 
 - Removed or replaced local product images are cleaned up automatically when a product is updated.
 - Control the upload size with `MAX_PRODUCT_IMAGE_UPLOAD_MB`.
 
-## Test coverage
+## Quality checks
 
-Run the current automated checks with:
+Run the automated checks locally before pushing:
 
 ```bash
+npm run lint
+npm run typecheck
 npm test
+```
+
+Useful test commands:
+
+```bash
 npm run test:watch
 npm run test:coverage
 ```
 
-Current test coverage includes helper-level protection for:
-- money and payment validation
-- purchase lifecycle rules and payable status derivation
-- register denomination math and cash movement behavior
-- offline checkout identifiers, storage keys, and browser storage helpers
+Current automated coverage now includes helper-level tests plus route-focused coverage for auth email flows and register session opening safeguards.
