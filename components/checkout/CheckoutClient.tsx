@@ -32,7 +32,8 @@ import {
   normalizePaymentInput,
   PAYMENT_METHODS,
   type PaymentMethod,
-  requiresReferenceNumber
+  requiresReferenceNumber,
+  validatePaymentsForSale
 } from '@/lib/payments';
 import { calculateTaxBreakdown, sanitizeDefaultPaymentMethods, type TaxModeValue } from '@/lib/shop-settings';
 
@@ -505,17 +506,8 @@ export default function CheckoutClient({
       }
     }
 
-    if (!payments.length) return 'Add at least one payment line.';
-    for (const payment of paymentInputs) {
-      if (payment.amount <= 0) return 'Each payment line needs an amount greater than zero.';
-      if (requiresReferenceNumber(payment.method) && !payment.referenceNumber) {
-        return `${payment.method} payments require a reference number.`;
-      }
-    }
-    if (paymentSummary.totalPaid < total) return 'Total paid must cover the sale total before checkout can finish.';
-    if (!paymentSummary.hasCashPayment && paymentSummary.totalPaid !== total) {
-      return 'Non-cash payments must match the sale total exactly.';
-    }
+    const paymentValidation = validatePaymentsForSale(total, paymentInputs);
+    if (!paymentValidation.ok) return paymentValidation.error;
     return '';
   }, [
     creditDueDate,
@@ -1753,7 +1745,7 @@ export default function CheckoutClient({
                       <Input type="number" step="0.01" placeholder={payment.method === 'Cash' ? 'Cash received' : 'Amount'} value={payment.amount} onChange={(event) => updatePaymentLine(payment.id, { amount: event.target.value })} />
                       <Button type="button" variant="ghost" onClick={() => removePaymentLine(payment.id)} disabled={payments.length === 1}>Remove</Button>
                     </div>
-                    {requiresReferenceNumber(payment.method) ? <div className="mt-3"><Input placeholder={payment.method === 'Card' ? 'Card reference number' : 'E-wallet reference number'} value={payment.referenceNumber} onChange={(event) => updatePaymentLine(payment.id, { referenceNumber: event.target.value })} /></div> : null}
+                    {requiresReferenceNumber(payment.method) ? <div className="mt-3"><Input placeholder={payment.method === 'Card' ? 'Card reference number' : payment.method === 'E-Wallet' ? 'E-wallet reference number' : 'Bank transfer reference number'} value={payment.referenceNumber} onChange={(event) => updatePaymentLine(payment.id, { referenceNumber: event.target.value })} /></div> : null}
                     {payment.method === 'Cash' ? <div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="secondary" className="h-9 px-3 text-xs" onClick={() => setPaymentLineAmount(payment.id, exactAmount)}>Exact amount</Button>{quickAmounts.map((amount) => <Button key={`${payment.id}-${amount}`} type="button" variant="secondary" className="h-9 px-3 text-xs" onClick={() => setPaymentLineAmount(payment.id, amount)}>{money(amount, currencySymbol)}</Button>)}</div> : null}
                   </div>
                 );

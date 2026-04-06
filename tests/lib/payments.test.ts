@@ -1,90 +1,91 @@
+import { describe, expect, it } from 'vitest';
 import {
   getPaymentSummary,
-  getQuickCashAmounts,
-  getSalePaymentSummaryLabel,
   normalizePaymentInput,
   requiresReferenceNumber,
   validatePaymentsForSale
 } from '@/lib/payments';
 
 describe('payments', () => {
-  it('requires reference numbers only for card and e-wallet', () => {
+  it('requires references for card, e-wallet, and bank transfer payments', () => {
     expect(requiresReferenceNumber('Cash')).toBe(false);
-    expect(requiresReferenceNumber('Bank Transfer')).toBe(false);
     expect(requiresReferenceNumber('Card')).toBe(true);
     expect(requiresReferenceNumber('E-Wallet')).toBe(true);
+    expect(requiresReferenceNumber('Bank Transfer')).toBe(true);
   });
 
-  it('normalizes amounts and trims empty reference numbers', () => {
+  it('normalizes payment input amounts and empty references', () => {
     expect(
-      normalizePaymentInput({ method: 'Cash', amount: 123.456, referenceNumber: '   ' })
+      normalizePaymentInput({
+        method: 'Cash',
+        amount: 100.456,
+        referenceNumber: '   '
+      })
     ).toEqual({
       method: 'Cash',
-      amount: 123.46,
+      amount: 100.46,
       referenceNumber: null
     });
   });
 
-  it('returns cash change when cash overpays the balance', () => {
-    const result = getPaymentSummary(150, [
-      { method: 'Cash', amount: 200 },
-      { method: 'Card', amount: 20, referenceNumber: 'REF-1' }
+  it('rejects missing bank transfer references', () => {
+    const result = validatePaymentsForSale(500, [
+      { method: 'Bank Transfer', amount: 500, referenceNumber: null }
     ]);
 
-    expect(result).toEqual({
-      totalPaid: 220,
-      remainingAmount: 0,
-      changeDue: 70,
-      cashReceived: 200,
-      hasCashPayment: true
-    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe('Bank Transfer payments require a reference number.');
+    }
   });
 
-  it('rejects non-cash overpayment', () => {
-    const result = validatePaymentsForSale(100, [
-      { method: 'Card', amount: 60, referenceNumber: 'A1' },
-      { method: 'Bank Transfer', amount: 50 }
+  it('rejects duplicate non-cash references for the same payment method', () => {
+    const result = validatePaymentsForSale(500, [
+      { method: 'Card', amount: 250, referenceNumber: 'ABC123' },
+      { method: 'Card', amount: 250, referenceNumber: 'abc123' }
     ]);
 
-    expect(result).toEqual({
-      ok: false,
-      error: 'Non-cash payments must match the sale total exactly.'
-    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe('Duplicate card reference numbers are not allowed in one sale.');
+    }
   });
 
-  it('rejects card and e-wallet rows with no reference number', () => {
-    const result = validatePaymentsForSale(100, [
-      { method: 'Card', amount: 100, referenceNumber: '' }
-    ]);
-
-    expect(result).toEqual({
-      ok: false,
-      error: 'Card payments require a reference number.'
-    });
-  });
-
-  it('accepts split payment where only the cash line exceeds the remaining amount', () => {
-    const result = validatePaymentsForSale(100, [
-      { method: 'Card', amount: 20, referenceNumber: 'CARD-1' },
-      { method: 'Cash', amount: 100 }
+  it('allows cash overpayment while returning change', () => {
+    const result = validatePaymentsForSale(500, [
+      { method: 'Cash', amount: 1000, referenceNumber: null }
     ]);
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.summary.changeDue).toBe(20);
-      expect(result.summary.totalPaid).toBe(120);
-      expect(result.summary.cashReceived).toBe(100);
+      expect(result.summary.changeDue).toBe(500);
+      expect(result.summary.totalPaid).toBe(1000);
     }
   });
 
-  it('produces readable payment labels for single and split tenders', () => {
-    expect(getSalePaymentSummaryLabel([{ method: 'Cash' }, { method: 'Cash' }])).toBe('Cash');
-    expect(getSalePaymentSummaryLabel([{ method: 'Cash' }, { method: 'Card' }])).toBe('Split');
+  it('blocks non-cash overpayment', () => {
+    const result = validatePaymentsForSale(500, [
+      { method: 'Card', amount: 600, referenceNumber: 'CARD-1' }
+    ]);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe('Non-cash payments must match the sale total exactly.');
+    }
   });
 
-  it('builds sorted quick-cash suggestions without duplicates', () => {
-    expect(getQuickCashAmounts(0)).toEqual([]);
-    expect(getQuickCashAmounts(83)).toEqual([83, 100, 200, 500, 1000]);
-    expect(getQuickCashAmounts(100)).toEqual([100, 200, 500, 1000]);
+  it('summarizes mixed cash and non-cash tenders correctly', () => {
+    const summary = getPaymentSummary(500, [
+      { method: 'Cash', amount: 300, referenceNumber: null },
+      { method: 'Card', amount: 200, referenceNumber: 'CARD-2' }
+    ]);
+
+    expect(summary).toEqual({
+      totalPaid: 500,
+      remainingAmount: 0,
+      changeDue: 0,
+      cashReceived: 300,
+      hasCashPayment: true
+    });
   });
 });

@@ -19,16 +19,19 @@ export type PaymentSummary = {
 };
 
 export function requiresReferenceNumber(method: PaymentMethod) {
-  return method === 'Card' || method === 'E-Wallet';
+  return method === 'Card' || method === 'E-Wallet' || method === 'Bank Transfer';
+}
+
+function normalizeReferenceNumber(referenceNumber?: string | null) {
+  const normalized = referenceNumber?.trim() ?? '';
+  return normalized || null;
 }
 
 export function normalizePaymentInput(payment: PaymentInput): PaymentInput {
-  const referenceNumber = payment.referenceNumber?.trim() ?? '';
-
   return {
     method: payment.method,
     amount: roundCurrency(Number(payment.amount ?? 0)),
-    referenceNumber: referenceNumber || null
+    referenceNumber: normalizeReferenceNumber(payment.referenceNumber)
   };
 }
 
@@ -68,12 +71,25 @@ export function validatePaymentsForSale(totalAmount: number, payments: PaymentIn
     return { ok: false as const, error: 'Each payment amount must be greater than zero.' };
   }
 
+  const seenReferenceKeys = new Set<string>();
+
   for (const payment of normalizedPayments) {
     if (requiresReferenceNumber(payment.method) && !payment.referenceNumber) {
       return {
         ok: false as const,
         error: `${payment.method} payments require a reference number.`
       };
+    }
+
+    if (payment.referenceNumber) {
+      const referenceKey = `${payment.method}:${payment.referenceNumber.toLowerCase()}`;
+      if (seenReferenceKeys.has(referenceKey)) {
+        return {
+          ok: false as const,
+          error: `Duplicate ${payment.method.toLowerCase()} reference numbers are not allowed in one sale.`
+        };
+      }
+      seenReferenceKeys.add(referenceKey);
     }
   }
 
