@@ -5,18 +5,29 @@ import { useRouter } from 'next/navigation';
 import Input from '@/components/ui/Input';
 import Button from '@/components/ui/Button';
 
+type SignupFormState = {
+  name: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+};
+
 export default function SignupPage() {
   const router = useRouter();
-  const [form, setForm] = useState({ name: '', email: '', password: '', confirmPassword: '' });
+  const [form, setForm] = useState<SignupFormState>({ name: '', email: '', password: '', confirmPassword: '' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [verificationUrl, setVerificationUrl] = useState('');
+  const [pendingEmail, setPendingEmail] = useState('');
   const [verificationExpiresAt, setVerificationExpiresAt] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendMessage, setResendMessage] = useState('');
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
+    setSuccess('');
+    setResendMessage('');
     setLoading(true);
 
     const response = await fetch('/api/auth/register', {
@@ -26,16 +37,45 @@ export default function SignupPage() {
     });
 
     const data = await response.json().catch(() => ({ error: 'Unable to create account.' }));
+    setLoading(false);
+
     if (!response.ok) {
-      setLoading(false);
       setError(data.error ?? 'Unable to create account.');
       return;
     }
 
-    setLoading(false);
-    setSuccess('Account created. Verify the email address before signing in.');
-    setVerificationUrl(data.verificationUrl ?? '');
+    setPendingEmail(form.email.trim().toLowerCase());
     setVerificationExpiresAt(data.expiresAt ?? '');
+    setSuccess(data.message ?? 'Account created. Check your inbox to verify the email address before signing in.');
+    setForm({ name: '', email: '', password: '', confirmPassword: '' });
+  }
+
+  async function resendVerificationEmail() {
+    if (!pendingEmail) {
+      setError('Enter your email address and create an account first.');
+      return;
+    }
+
+    setError('');
+    setResendMessage('');
+    setResendLoading(true);
+
+    const response = await fetch('/api/auth/resend-verification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: pendingEmail })
+    });
+
+    const data = await response.json().catch(() => ({ error: 'Unable to resend the verification email.' }));
+    setResendLoading(false);
+
+    if (!response.ok) {
+      setError(data.error ?? 'Unable to resend the verification email.');
+      return;
+    }
+
+    setVerificationExpiresAt(data.expiresAt ?? '');
+    setResendMessage(data.message ?? 'A fresh verification email has been sent.');
   }
 
   return (
@@ -55,13 +95,22 @@ export default function SignupPage() {
             <div><label className="mb-2 block text-sm font-semibold text-stone-800">Confirm password</label><Input type="password" value={form.confirmPassword} onChange={(e) => setForm((p) => ({ ...p, confirmPassword: e.target.value }))} required /></div>
             {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
             {success ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div> : null}
-            {verificationUrl ? (
-              <div className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
-                <div className="font-semibold text-stone-900">Verification link</div>
-                <div className="mt-2 break-all">{verificationUrl}</div>
+            {pendingEmail ? (
+              <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm text-stone-700">
+                <div className="font-semibold text-stone-900">Verification email sent</div>
+                <div className="mt-2">We sent the verification link to <span className="font-semibold">{pendingEmail}</span>.</div>
                 {verificationExpiresAt ? (
-                  <div className="mt-2 text-xs text-stone-500">Expires {new Date(verificationExpiresAt).toLocaleString()}</div>
+                  <div className="mt-2 text-xs text-stone-500">Current link expires {new Date(verificationExpiresAt).toLocaleString()}</div>
                 ) : null}
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Button type="button" variant="secondary" onClick={resendVerificationEmail} disabled={resendLoading}>
+                    {resendLoading ? 'Resending...' : 'Resend verification email'}
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={() => router.push('/login')}>
+                    Go to sign in
+                  </Button>
+                </div>
+                {resendMessage ? <div className="mt-3 text-sm text-emerald-700">{resendMessage}</div> : null}
               </div>
             ) : null}
             <Button type="submit" className="w-full" disabled={loading}>{loading ? 'Creating account...' : 'Create account'}</Button>

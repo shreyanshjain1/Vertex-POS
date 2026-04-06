@@ -169,7 +169,15 @@ export async function updatePurchaseStatus({
   purchase: PurchaseDetail;
   shopId: string;
   userId: string;
-  nextStatus: 'DRAFT' | 'SENT' | 'CANCELLED' | 'CLOSED';
+  nextStatus:
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'APPROVED'
+  | 'SENT'
+  | 'PARTIALLY_RECEIVED'
+  | 'FULLY_RECEIVED'
+  | 'CANCELLED'
+  | 'CLOSED';
   notes?: string | null;
 }) {
   if (purchase.status === 'CANCELLED' || purchase.status === 'CLOSED') {

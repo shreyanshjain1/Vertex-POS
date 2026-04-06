@@ -7,12 +7,23 @@ import { createPasswordResetToken, hashPasswordResetToken } from '@/lib/auth/pas
 import { passwordResetGenerateSchema } from '@/lib/auth/validation';
 import { prisma } from '@/lib/prisma';
 import { assertManagedShopAccess } from '@/lib/staff';
+import { buildAppUrl, isMailConfigured, sendPasswordResetEmail } from '@/lib/email';
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    if (!isMailConfigured()) {
+      return NextResponse.json(
+        {
+          error:
+            'Email delivery is not configured yet. Set the SMTP and mail environment variables before issuing staff password resets.'
+        },
+        { status: 503 }
+      );
+    }
+
     const { id } = await params;
     const { userId } = await requirePermission('MANAGE_STAFF');
     const body = await request.json().catch(() => ({}));
@@ -32,7 +43,10 @@ export async function POST(
           select: {
             id: true,
             name: true,
-            email: true
+            email: true,
+            forcePasswordReset: true,
+            failedLoginAttempts: true,
+            lockedUntil: true
           }
         },
         shop: {
@@ -53,11 +67,19 @@ export async function POST(
       return NextResponse.json({ error: 'You do not have access to that staff record.' }, { status: 403 });
     }
 
+    const issuedBy = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        name: true,
+        email: true
+      }
+    });
+
     const rawToken = createPasswordResetToken();
     const tokenHash = hashPasswordResetToken(rawToken);
     const expiresAt = new Date(Date.now() + parsed.data.expiresInHours * 60 * 60 * 1000);
 
-    await prisma.$transaction(async (tx) => {
+    const created = await prisma.$transaction(async (tx) => {
       await tx.passwordResetToken.updateMany({
         where: {
           userId: membership.userId,
@@ -68,13 +90,16 @@ export async function POST(
         }
       });
 
-      await tx.passwordResetToken.create({
+      const token = await tx.passwordResetToken.create({
         data: {
           userId: membership.userId,
           shopId: membership.shopId,
           createdById: userId,
           tokenHash,
           expiresAt
+        },
+        select: {
+          id: true
         }
       });
 
@@ -94,7 +119,7 @@ export async function POST(
         action: 'STAFF_PASSWORD_RESET_ISSUED',
         entityType: 'User',
         entityId: membership.userId,
-        description: `Issued a password reset link for ${membership.user.name ?? membership.user.email}.`
+        description: `Issued a password reset email for ${membership.user.name ?? membership.user.email}.`
       });
 
       await logAuthAudit({
@@ -107,17 +132,63 @@ export async function POST(
           issuedByUserId: userId
         }
       });
+
+      return token;
     });
 
-    const resetUrl = new URL('/reset-password', request.url);
-    resetUrl.searchParams.set('token', rawToken);
+    const resetUrl = buildAppUrl(`/reset-password?token=${rawToken}`, request);
+
+    try {
+      await sendPasswordResetEmail({
+        to: {
+          email: membership.user.email,
+          name: membership.user.name
+        },
+        resetUrl,
+        expiresAt,
+        issuedByName: issuedBy?.name ?? issuedBy?.email ?? 'your administrator',
+        shopName: membership.shop.name
+      });
+    } catch (mailError) {
+      console.error('Failed to send password reset email.', mailError);
+
+      await prisma.$transaction(async (tx) => {
+        await tx.passwordResetToken.updateMany({
+          where: {
+            id: created.id,
+            userId: membership.userId,
+            usedAt: null
+          },
+          data: {
+            usedAt: new Date()
+          }
+        });
+
+        await tx.user.update({
+          where: { id: membership.userId },
+          data: {
+            forcePasswordReset: membership.user.forcePasswordReset,
+            failedLoginAttempts: membership.user.failedLoginAttempts,
+            lockedUntil: membership.user.lockedUntil
+          }
+        });
+      });
+
+      return NextResponse.json(
+        {
+          error: 'Unable to send the password reset email right now. Please check your mail settings and try again.'
+        },
+        { status: 502 }
+      );
+    }
 
     return NextResponse.json({
       ok: true,
-      resetUrl: resetUrl.toString(),
-      expiresAt: expiresAt.toISOString()
+      emailSent: true,
+      expiresAt: expiresAt.toISOString(),
+      message: `A password reset email has been sent to ${membership.user.email}.`
     });
   } catch (error) {
-    return apiErrorResponse(error, 'Unable to create a password reset link.');
+    return apiErrorResponse(error, 'Unable to create a password reset email.');
   }
 }

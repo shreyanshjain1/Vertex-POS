@@ -4,9 +4,20 @@ import { createEmailVerificationToken, hashEmailVerificationToken } from '@/lib/
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth/password';
 import { registerSchema } from '@/lib/auth/validation';
+import { buildAppUrl, isMailConfigured, sendEmailVerificationEmail } from '@/lib/email';
 
 export async function POST(request: Request) {
   try {
+    if (!isMailConfigured()) {
+      return NextResponse.json(
+        {
+          error:
+            'Email delivery is not configured yet. Set the SMTP and mail environment variables before allowing sign-ups.'
+        },
+        { status: 503 }
+      );
+    }
+
     const body = await request.json();
     const parsed = registerSchema.safeParse(body);
     if (!parsed.success) {
@@ -21,8 +32,8 @@ export async function POST(request: Request) {
     const requestMetadata = getRequestMetadata(request);
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    const user = await prisma.$transaction(async (tx) => {
-      const createdUser = await tx.user.create({
+    const created = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
         data: {
           name: parsed.data.name,
           email: parsed.data.email,
@@ -31,34 +42,73 @@ export async function POST(request: Request) {
         select: { id: true, email: true, name: true }
       });
 
-      await tx.emailVerificationToken.create({
+      const token = await tx.emailVerificationToken.create({
         data: {
-          userId: createdUser.id,
+          userId: user.id,
           tokenHash: verificationHash,
           expiresAt
+        },
+        select: {
+          id: true
         }
       });
 
       await logAuthAudit({
         tx,
         action: 'EMAIL_VERIFICATION_ISSUED',
-        userId: createdUser.id,
-        email: createdUser.email,
+        userId: user.id,
+        email: user.email,
         ...requestMetadata
       });
 
-      return createdUser;
+      return {
+        user,
+        tokenId: token.id
+      };
     });
 
-    const verificationUrl = new URL('/verify-email', request.url);
-    verificationUrl.searchParams.set('token', verificationToken);
+    const verificationUrl = buildAppUrl(`/verify-email?token=${verificationToken}`, request);
+
+    try {
+      await sendEmailVerificationEmail({
+        to: {
+          email: created.user.email,
+          name: created.user.name
+        },
+        verificationUrl,
+        expiresAt
+      });
+    } catch (mailError) {
+      console.error('Failed to send verification email. Rolling back user creation.', mailError);
+
+      await prisma.$transaction(async (tx) => {
+        await tx.emailVerificationToken.deleteMany({
+          where: {
+            id: created.tokenId,
+            userId: created.user.id
+          }
+        });
+
+        await tx.user.delete({
+          where: { id: created.user.id }
+        });
+      });
+
+      return NextResponse.json(
+        {
+          error: 'Unable to send the verification email right now. Please try again after checking your mail settings.'
+        },
+        { status: 502 }
+      );
+    }
 
     return NextResponse.json(
       {
         ok: true,
-        user,
-        verificationUrl: verificationUrl.toString(),
-        expiresAt: expiresAt.toISOString()
+        user: created.user,
+        emailSent: true,
+        expiresAt: expiresAt.toISOString(),
+        message: 'Account created. Check your inbox to verify the email address before signing in.'
       },
       { status: 201 }
     );
