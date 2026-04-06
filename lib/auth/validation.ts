@@ -491,6 +491,10 @@ export const passwordResetGenerateSchema = z.object({
   expiresInHours: z.coerce.number().int().min(1).max(72).default(24)
 });
 
+export const passwordResetRequestSchema = z.object({
+  email: z.string().trim().email().transform((value) => value.toLowerCase())
+});
+
 export const passwordResetConsumeSchema = z.object({
   token: z.string().trim().min(20, 'Reset token is required.'),
   password: z.string().min(8, 'Password must be at least 8 characters').max(72),

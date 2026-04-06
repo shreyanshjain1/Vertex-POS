@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -82,7 +83,12 @@ export default function LoginForm({
               <Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
             </div>
             <div>
-              <label className="mb-2 block text-sm font-semibold text-stone-800">Password</label>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <label className="block text-sm font-semibold text-stone-800">Password</label>
+                <Link href="/forgot-password" className="text-xs font-semibold text-emerald-600 hover:text-emerald-700">
+                  Forgot password?
+                </Link>
+              </div>
               <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
             </div>
             {showDevAutofill ? (
