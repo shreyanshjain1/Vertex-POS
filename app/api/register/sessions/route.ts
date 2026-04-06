@@ -6,7 +6,7 @@ import { logActivity } from '@/lib/activity';
 import { cashSessionOpenSchema } from '@/lib/auth/validation';
 import { normalizeText } from '@/lib/inventory';
 import { prisma } from '@/lib/prisma';
-import { getActiveCashSession } from '@/lib/register';
+import { acquireCashSessionOpenLock, getActiveCashSession } from '@/lib/register';
 import { serializeCashSession } from '@/lib/serializers/register';
 
 export async function POST(request: Request) {
@@ -51,6 +51,19 @@ export async function POST(request: Request) {
     }
 
     const createdSession = await prisma.$transaction(async (tx) => {
+      await acquireCashSessionOpenLock(tx, shopId, userId);
+
+      const currentSessionInTx = await getActiveCashSession(tx, shopId, userId);
+      if (currentSessionInTx) {
+        throw new Prisma.PrismaClientKnownRequestError(
+          'A cashier can only have one open register session per shop.',
+          {
+            code: 'P2002',
+            clientVersion: Prisma.prismaVersion.client
+          }
+        );
+      }
+
       const cashSession = await tx.cashSession.create({
         data: {
           shopId,

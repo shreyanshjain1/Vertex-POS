@@ -6,6 +6,16 @@ type RegisterDb = Prisma.TransactionClient | typeof prisma;
 
 export const CASH_PAYMENT_METHOD = 'Cash';
 
+export async function acquireCashSessionOpenLock(
+  db: RegisterDb,
+  shopId: string,
+  userId: string
+) {
+  const lockKey = `cash-session-open:${shopId}:${userId}`;
+
+  await db.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+}
+
 export const REGISTER_DENOMINATIONS = [
   { value: 1000, label: '1000 bill' },
   { value: 500, label: '500 bill' },
