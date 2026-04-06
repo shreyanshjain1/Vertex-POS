@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
-import { getRequestMetadata, logAuthAudit } from '@/lib/auth/audit';
+import { logAuthAudit } from '@/lib/auth/audit';
 import { createPasswordResetToken, hashPasswordResetToken } from '@/lib/auth/password-reset';
 import { passwordResetRequestSchema } from '@/lib/auth/validation';
 import { prisma } from '@/lib/prisma';
 import { buildAppUrl, isMailConfigured, sendPasswordResetEmail } from '@/lib/email';
 
 const GENERIC_SUCCESS_MESSAGE =
-  'If an account exists for that email, a password reset link has been sent.';
+  'If the email exists in the system, a password reset link has been sent.';
 
 export async function POST(request: Request) {
   try {
@@ -14,13 +14,13 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            'Password reset email delivery is not configured yet. Set the SMTP and mail environment variables first.'
+            'Email delivery is not configured yet. Set the SMTP and mail environment variables before requesting password resets.'
         },
         { status: 503 }
       );
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
     const parsed = passwordResetRequestSchema.safeParse(body);
 
     if (!parsed.success) {
@@ -30,28 +30,26 @@ export async function POST(request: Request) {
       );
     }
 
-    const email = parsed.data.email;
-    const requestMetadata = getRequestMetadata(request);
     const user = await prisma.user.findUnique({
-      where: { email },
+      where: { email: parsed.data.email },
       select: {
         id: true,
-        email: true,
         name: true,
-        emailVerifiedAt: true,
-        defaultShopId: true,
-        memberships: {
+        email: true,
+        forcePasswordReset: true,
+        failedLoginAttempts: true,
+        lockedUntil: true,
+        userShops: {
           where: { isActive: true },
+          orderBy: { createdAt: 'asc' },
           select: {
             shopId: true,
-            role: true,
             shop: {
               select: {
                 name: true
               }
             }
-          },
-          orderBy: { assignedAt: 'asc' }
+          }
         }
       }
     });
@@ -60,17 +58,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, message: GENERIC_SUCCESS_MESSAGE });
     }
 
-    const preferredMembership =
-      user.memberships.find((membership) => membership.shopId === user.defaultShopId) ??
-      user.memberships[0] ??
-      null;
-
-    const shopId = preferredMembership?.shopId ?? user.defaultShopId ?? null;
-    const shopName = preferredMembership?.shop.name ?? null;
-
     const rawToken = createPasswordResetToken();
     const tokenHash = hashPasswordResetToken(rawToken);
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const primaryMembership = user.userShops[0] ?? null;
+    const shopId = primaryMembership?.shopId ?? null;
+    const shopName = primaryMembership?.shop.name ?? null;
 
     const created = await prisma.$transaction(async (tx) => {
       await tx.passwordResetToken.updateMany({
@@ -91,21 +84,26 @@ export async function POST(request: Request) {
           tokenHash,
           expiresAt
         },
-        select: {
-          id: true
+        select: { id: true }
+      });
+
+      await tx.user.update({
+        where: { id: user.id },
+        data: {
+          forcePasswordReset: true,
+          failedLoginAttempts: 0,
+          lockedUntil: null
         }
       });
 
       await logAuthAudit({
         tx,
-        action: 'PASSWORD_RESET_ISSUED',
+        action: 'PASSWORD_RESET_REQUESTED',
         userId: user.id,
         shopId,
         email: user.email,
-        ...requestMetadata,
         metadata: {
-          source: 'self_service',
-          emailVerified: Boolean(user.emailVerifiedAt)
+          selfService: true
         }
       });
 
@@ -128,19 +126,32 @@ export async function POST(request: Request) {
     } catch (mailError) {
       console.error('Failed to send self-service password reset email.', mailError);
 
-      await prisma.passwordResetToken.updateMany({
-        where: {
-          id: created.id,
-          userId: user.id,
-          usedAt: null
-        },
-        data: {
-          usedAt: new Date()
-        }
+      await prisma.$transaction(async (tx) => {
+        await tx.passwordResetToken.updateMany({
+          where: {
+            id: created.id,
+            userId: user.id,
+            usedAt: null
+          },
+          data: {
+            usedAt: new Date()
+          }
+        });
+
+        await tx.user.update({
+          where: { id: user.id },
+          data: {
+            forcePasswordReset: user.forcePasswordReset,
+            failedLoginAttempts: user.failedLoginAttempts,
+            lockedUntil: user.lockedUntil
+          }
+        });
       });
 
       return NextResponse.json(
-        { error: 'Unable to send the password reset email right now. Please try again later.' },
+        {
+          error: 'Unable to send the password reset email right now. Please try again later.'
+        },
         { status: 502 }
       );
     }
@@ -148,6 +159,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, message: GENERIC_SUCCESS_MESSAGE });
   } catch (error) {
     console.error(error);
-    return NextResponse.json({ error: 'Unable to request a password reset.' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Unable to create a password reset request.' },
+      { status: 500 }
+    );
   }
 }

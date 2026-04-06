@@ -13,9 +13,9 @@ export default function ForgotPasswordForm() {
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setLoading(true);
     setError('');
     setSuccess('');
-    setLoading(true);
 
     const response = await fetch('/api/auth/request-password-reset', {
       method: 'POST',
@@ -23,17 +23,17 @@ export default function ForgotPasswordForm() {
       body: JSON.stringify({ email })
     });
 
-    const data = await response.json().catch(() => ({ error: 'Unable to process the password reset request.' }));
+    const data = await response.json().catch(() => ({ error: 'Unable to process your request right now.' }));
     setLoading(false);
 
     if (!response.ok) {
-      setError(data?.error ?? 'Unable to process the password reset request.');
+      setError(data?.error ?? 'Unable to process your request right now.');
       return;
     }
 
     setSuccess(
       data?.message ??
-        'If an account exists for that email, a password reset link has been sent.'
+        'If that email address exists in the system, a password reset link has been sent.'
     );
   }
 
@@ -46,7 +46,7 @@ export default function ForgotPasswordForm() {
           </div>
           <h1 className="mt-6 text-3xl font-black text-stone-950">Forgot password</h1>
           <p className="mt-2 text-sm leading-6 text-stone-500">
-            Enter the email address on your account and we will send you a password reset link.
+            Enter your account email address and we&apos;ll send you a password reset link if your account is eligible.
           </p>
 
           <form onSubmit={onSubmit} className="mt-8 space-y-5">
@@ -56,15 +56,13 @@ export default function ForgotPasswordForm() {
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                required
                 autoComplete="email"
+                required
               />
             </div>
 
             {error ? (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {error}
-              </div>
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
             ) : null}
 
             {success ? (
@@ -74,7 +72,7 @@ export default function ForgotPasswordForm() {
             ) : null}
 
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Sending reset link...' : 'Send password reset link'}
+              {loading ? 'Sending reset link...' : 'Send reset link'}
             </Button>
           </form>
 

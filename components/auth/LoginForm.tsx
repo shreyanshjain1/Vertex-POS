@@ -82,7 +82,16 @@ export default function LoginForm({
               <Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
             </div>
             <div>
-              <label className="mb-2 block text-sm font-semibold text-stone-800">Password</label>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <label className="block text-sm font-semibold text-stone-800">Password</label>
+                <button
+                  type="button"
+                  onClick={() => router.push('/forgot-password')}
+                  className="text-sm font-semibold text-emerald-600 hover:text-emerald-700"
+                >
+                  Forgot password?
+                </button>
+              </div>
               <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
             </div>
             {showDevAutofill ? (

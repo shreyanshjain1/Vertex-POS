@@ -27,13 +27,10 @@ const imageUrlSchema = z
   .string()
   .trim()
   .min(1, 'Image is required.')
-  .max(2048, 'Image path is too long.')
+  .max(600000, 'Image payload is too large.')
   .refine(
-    (value) =>
-      value.startsWith('/uploads/products/') ||
-      value.startsWith('data:image/') ||
-      /^https?:\/\//i.test(value),
-    'Use an uploaded image path or a valid image URL.'
+    (value) => value.startsWith('data:image/') || /^https?:\/\//i.test(value),
+    'Use an uploaded image or a valid image URL.'
   );
 
 const productVariantSchema = z.object({
@@ -492,6 +489,10 @@ export const staffPinSchema = z.object({
 
 export const passwordResetGenerateSchema = z.object({
   expiresInHours: z.coerce.number().int().min(1).max(72).default(24)
+});
+
+export const passwordResetRequestSchema = z.object({
+  email: z.string().trim().email('Enter a valid email').transform((value) => value.toLowerCase())
 });
 
 export const passwordResetConsumeSchema = z.object({
