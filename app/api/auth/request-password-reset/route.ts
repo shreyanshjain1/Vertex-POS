@@ -85,7 +85,7 @@ export async function POST(request: Request) {
 
       await logAuthAudit({
         tx,
-        action: 'PASSWORD_RESET_REQUESTED',
+        action: 'PASSWORD_RESET_ISSUED',
         userId: user.id,
         shopId: null,
         email: user.email,
