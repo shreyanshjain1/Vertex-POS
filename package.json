@@ -14,7 +14,8 @@
     "prisma:studio": "prisma studio",
     "seed": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\",\\\"moduleResolution\\\":\\\"node\\\"}\" prisma/seed.ts",
     "worker": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\",\\\"moduleResolution\\\":\\\"node\\\"}\" worker/index.ts",
-    "worker:once": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\",\\\"moduleResolution\\\":\\\"node\\\"}\" worker/index.ts --once"
+    "worker:once": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\",\\\"moduleResolution\\\":\\\"node\\\"}\" worker/index.ts --once",
+    "worker:tick": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\",\\\"moduleResolution\\\":\\\"node\\\"}\" worker/index.ts --once"
   },
   "dependencies": {
     "@prisma/client": "^6.19.2",
@@ -22,7 +23,6 @@
     "framer-motion": "^12.26.2",
     "next": "16.1.1",
     "next-auth": "^5.0.0-beta.22",
-    "nodemailer": "^6.10.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "zod": "^3.25.76"

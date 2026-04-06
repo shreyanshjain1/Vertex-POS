@@ -350,3 +350,39 @@ Vertex-POS already demonstrates a broad retail operations surface area:
 - production-minded setup, settings, and security controls
 
 In portfolio terms, this project shows the ability to design and ship a serious business application with real workflow depth, not just a CRUD storefront or a simple cash register UI.
+
+
+### 5. Run the worker
+
+For local development in a second terminal:
+
+```bash
+npm run worker
+```
+
+To process a single queued job manually:
+
+```bash
+npm run worker:tick
+```
+
+### 6. Optional cron endpoint for deployment
+
+For environments where you do not keep a long-running worker alive, you can call:
+
+```
+POST /api/cron/worker
+```
+
+Authorize the request with either:
+
+- `Authorization: Bearer <WORKER_CRON_SECRET>`
+- `x-worker-cron-secret: <WORKER_CRON_SECRET>`
+
+What this endpoint does:
+
+- queues operational jobs for every shop without piling up duplicate immediate jobs
+- recovers stale `RUNNING` jobs back to `QUEUED`
+- processes a small batch of queued jobs in the same request
+
+This is suitable for an external cron or scheduler hitting the endpoint every few minutes.
