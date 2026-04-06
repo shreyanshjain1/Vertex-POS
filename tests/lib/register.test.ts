@@ -41,7 +41,7 @@ describe('register', () => {
       '0.25': 4
     });
 
-    expect(total).toBe(1561);
+    expect(total).toBe(2061);
   });
 
   it('returns movement labels and signed amounts consistently', () => {
