@@ -4,7 +4,7 @@ import { requireRole } from '@/lib/authz';
 import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
 import { cashSessionReopenSchema } from '@/lib/auth/validation';
-import { appendRegisterNotes } from '@/lib/register';
+import { acquireCashSessionOpenLock, appendRegisterNotes, getActiveCashSession } from '@/lib/register';
 import { prisma } from '@/lib/prisma';
 import { serializeCashSession } from '@/lib/serializers/register';
 
@@ -65,6 +65,19 @@ export async function POST(
     }
 
     const reopenedSession = await prisma.$transaction(async (tx) => {
+      await acquireCashSessionOpenLock(tx, shopId, cashSession.userId);
+
+      const conflictingOpenSessionInTx = await getActiveCashSession(tx, shopId, cashSession.userId);
+      if (conflictingOpenSessionInTx && conflictingOpenSessionInTx.id !== cashSession.id) {
+        throw new Prisma.PrismaClientKnownRequestError(
+          'A cashier can only have one open register session per shop.',
+          {
+            code: 'P2002',
+            clientVersion: Prisma.prismaVersion.client
+          }
+        );
+      }
+
       const updated = await tx.cashSession.update({
         where: { id: cashSession.id },
         data: {
@@ -136,6 +149,13 @@ export async function POST(
 
     return NextResponse.json({ session: serializeCashSession(reopenedSession) });
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return NextResponse.json(
+        { error: 'The cashier already has another open register session in this branch.' },
+        { status: 409 }
+      );
+    }
+
     return apiErrorResponse(error, 'Unable to reopen register session.');
   }
 }
