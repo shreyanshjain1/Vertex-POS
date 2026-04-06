@@ -1,16 +1,20 @@
 'use client';
 
+import { useEffect } from 'react';
 import ErrorState from '@/components/system/ErrorState';
 
-export default function AuthError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function AuthSegmentError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  useEffect(() => {
+    console.error(error);
+  }, [error]);
+
   return (
     <ErrorState
-      title="The sign-in screen failed to load"
-      message="Authentication UI could not be rendered correctly. Retry the page. If it still fails, verify auth providers, session settings, and server environment values."
-      onRetry={reset}
+      title="Authentication screen failed to load"
+      message="We could not finish loading the sign-in or account access flow. Try again, then return to the login screen if needed."
+      onReset={reset}
       homeHref="/login"
-      homeLabel="Back to login"
-      details={process.env.NODE_ENV === 'development' ? error.message : error.digest ?? null}
+      homeLabel="Back to sign in"
     />
   );
 }

@@ -1,16 +1,20 @@
 'use client';
 
+import { useEffect } from 'react';
 import ErrorState from '@/components/system/ErrorState';
 
-export default function ProtectedAppError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function AppSegmentError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  useEffect(() => {
+    console.error(error);
+  }, [error]);
+
   return (
     <ErrorState
-      title="This workspace could not be loaded"
-      message="Vertex POS ran into an error while loading the current screen. Retry first. If it keeps failing, verify your database, auth session, and environment values."
-      onRetry={reset}
+      title="Unable to load the store workspace"
+      message="This part of Vertex POS could not load correctly. Try again, or head back to the dashboard and retry the action from there."
+      onReset={reset}
       homeHref="/dashboard"
       homeLabel="Back to dashboard"
-      details={process.env.NODE_ENV === 'development' ? error.message : error.digest ?? null}
     />
   );
 }

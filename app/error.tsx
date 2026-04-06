@@ -1,14 +1,22 @@
 'use client';
 
+import { useEffect } from 'react';
 import ErrorState from '@/components/system/ErrorState';
 
-export default function RootError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  useEffect(() => {
+    console.error(error);
+  }, [error]);
+
   return (
-    <ErrorState
-      title="Vertex POS hit an unexpected error"
-      message="Something failed while rendering this page. Please retry. If this keeps happening, check the server logs and environment configuration."
-      onRetry={reset}
-      details={process.env.NODE_ENV === 'development' ? error.message : error.digest ?? null}
-    />
+    <html lang="en">
+      <body>
+        <ErrorState
+          title="Vertex POS hit an unexpected error"
+          message="We could not finish loading this page. Try again, then head back to your dashboard if the issue keeps showing up."
+          onReset={reset}
+        />
+      </body>
+    </html>
   );
 }

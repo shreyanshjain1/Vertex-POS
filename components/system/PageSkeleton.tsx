@@ -1,80 +1,48 @@
-type PageSkeletonProps = {
-  mode?: 'app' | 'auth' | 'public';
+import Card from '@/components/ui/Card';
+
+type Props = {
+  title?: string;
+  subtitle?: string;
+  rows?: number;
 };
 
-function PulseBlock({ className }: { className: string }) {
-  return <div className={`animate-pulse rounded-3xl bg-white/70 ${className}`} />;
-}
-
-export default function PageSkeleton({ mode = 'public' }: PageSkeletonProps) {
-  if (mode === 'auth') {
-    return (
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.18),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(14,165,233,0.16),_transparent_26%),linear-gradient(180deg,_#f7faf8_0%,_#eef2ec_100%)] px-4 py-10 sm:px-6 lg:px-8">
-        <div className="mx-auto flex min-h-[80vh] max-w-6xl items-center justify-center">
-          <div className="w-full max-w-md rounded-[34px] border border-white/80 bg-white/55 p-4 shadow-[0_32px_90px_-48px_rgba(28,25,23,0.32)] backdrop-blur-xl">
-            <div className="rounded-[28px] border border-white/80 bg-white/75 p-6 sm:p-8">
-              <PulseBlock className="h-5 w-24" />
-              <PulseBlock className="mt-4 h-10 w-2/3" />
-              <PulseBlock className="mt-3 h-4 w-full" />
-              <div className="mt-8 space-y-4">
-                <PulseBlock className="h-11 w-full" />
-                <PulseBlock className="h-11 w-full" />
-                <PulseBlock className="h-11 w-full" />
-              </div>
-            </div>
-          </div>
+export default function PageSkeleton({
+  title = 'Loading workspace',
+  subtitle = 'Preparing your latest store data and controls.',
+  rows = 4
+}: Props) {
+  return (
+    <main className="mx-auto w-full max-w-7xl px-6 py-8">
+      <div className="animate-pulse">
+        <div className="h-3 w-28 rounded-full bg-emerald-100" />
+        <div className="mt-4 h-10 w-72 rounded-2xl bg-stone-200" />
+        <div className="mt-3 h-5 w-[34rem] max-w-full rounded-xl bg-stone-200" />
+        <div className="mt-8 grid gap-4 md:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Card key={index} className="space-y-4">
+              <div className="h-4 w-28 rounded-xl bg-stone-200" />
+              <div className="h-9 w-24 rounded-2xl bg-stone-200" />
+              <div className="h-4 w-full rounded-xl bg-stone-100" />
+            </Card>
+          ))}
         </div>
-      </div>
-    );
-  }
-
-  if (mode === 'app') {
-    return (
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.18),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(14,165,233,0.16),_transparent_26%),linear-gradient(180deg,_#f7faf8_0%,_#eef2ec_100%)]">
-        <div className="relative lg:flex">
-          <aside className="hidden min-h-screen w-[280px] border-r border-white/60 bg-white/35 px-5 py-6 shadow-[inset_-1px_0_0_rgba(255,255,255,0.45)] backdrop-blur-xl lg:block">
-            <PulseBlock className="h-10 w-40" />
-            <div className="mt-8 space-y-3">
-              {Array.from({ length: 8 }).map((_, index) => (
-                <PulseBlock key={index} className="h-12 w-full" />
-              ))}
-            </div>
-          </aside>
-          <main className="min-h-screen flex-1 px-4 py-4 sm:px-6 lg:px-8 lg:py-6">
-            <div className="mx-auto max-w-[1500px]">
-              <div className="mb-4 flex justify-end">
-                <PulseBlock className="h-11 w-11 rounded-full" />
-              </div>
-              <div className="rounded-[34px] border border-white/70 bg-white/28 p-2 shadow-[0_28px_70px_-48px_rgba(28,25,23,0.28)] backdrop-blur-[2px] sm:p-3">
-                <div className="rounded-[30px] bg-white/20 p-4 sm:p-6">
-                  <div className="grid gap-4 lg:grid-cols-3">
-                    <PulseBlock className="h-36 w-full lg:col-span-2" />
-                    <PulseBlock className="h-36 w-full" />
-                  </div>
-                  <div className="mt-4 grid gap-4 xl:grid-cols-4">
-                    {Array.from({ length: 4 }).map((_, index) => (
-                      <PulseBlock key={index} className="h-28 w-full" />
-                    ))}
-                  </div>
-                  <PulseBlock className="mt-4 h-[360px] w-full" />
+        <Card className="mt-6">
+          <div className="h-6 w-56 rounded-xl bg-stone-200" />
+          <div className="mt-3 h-4 w-80 max-w-full rounded-xl bg-stone-100" />
+          <div className="mt-6 space-y-3">
+            {Array.from({ length: rows }).map((_, index) => (
+              <div key={index} className="flex items-center gap-3">
+                <div className="h-11 w-11 rounded-2xl bg-stone-200" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-1/3 rounded-xl bg-stone-200" />
+                  <div className="h-4 w-2/3 rounded-xl bg-stone-100" />
                 </div>
               </div>
-            </div>
-          </main>
-        </div>
+            ))}
+          </div>
+        </Card>
+        <p className="mt-5 text-sm text-stone-500">{title} · {subtitle}</p>
       </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.18),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(14,165,233,0.16),_transparent_26%),linear-gradient(180deg,_#f7faf8_0%,_#eef2ec_100%)] px-4 py-10 sm:px-6 lg:px-8">
-      <div className="mx-auto flex min-h-[70vh] max-w-5xl items-center justify-center">
-        <div className="w-full space-y-4 rounded-[34px] border border-white/75 bg-white/45 p-5 shadow-[0_30px_80px_-50px_rgba(28,25,23,0.32)] backdrop-blur-xl sm:p-6">
-          <PulseBlock className="h-12 w-48" />
-          <PulseBlock className="h-5 w-2/3" />
-          <PulseBlock className="h-72 w-full" />
-        </div>
-      </div>
-    </div>
+    </main>
   );
 }
