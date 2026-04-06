@@ -40,12 +40,11 @@ export async function POST(request: Request) {
         email: true,
         forcePasswordReset: true,
         failedLoginAttempts: true,
-        lockedUntil: true,
-        isActive: true
+        lockedUntil: true
       }
     });
 
-    if (!user || !user.isActive) {
+    if (!user) {
       return NextResponse.json({ ok: true, message: GENERIC_SUCCESS_MESSAGE });
     }
 
