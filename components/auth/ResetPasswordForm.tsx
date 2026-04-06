@@ -50,7 +50,7 @@ export default function ResetPasswordForm({ token }: { token: string }) {
           </div>
           <h1 className="mt-6 text-3xl font-black text-stone-950">Reset password</h1>
           <p className="mt-2 text-sm leading-6 text-stone-500">
-            Use the reset link sent to your email to set a new password for your account.
+            Use the reset link provided by your administrator to set a new password for your staff account.
           </p>
 
           {!token ? (
