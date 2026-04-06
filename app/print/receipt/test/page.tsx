@@ -63,7 +63,7 @@ export default async function ReceiptPrintTestPage({
           cashReceived: '210.00',
           changeDue: '7.56',
           notes:
-            'Use this page to check margins, barcode clarity, paper width, and the drawer trigger placeholder.',
+            'Use this page to check margins, barcode clarity, paper width, and the cash drawer trigger.',
           createdAt: now.toISOString(),
           payments: [
             {

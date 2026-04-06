@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { openCashDrawer } from '@/lib/cash-drawer';
 import Button from '@/components/ui/Button';
 import { dateTime, money, shortDate } from '@/lib/format';
 
@@ -186,25 +187,15 @@ export default function ThermalReceipt({
     return () => clearTimeout(timer);
   }, [autoprint]);
 
-  function handleDrawerKick() {
-    if (typeof window === 'undefined') {
-      return;
-    }
+  async function handleDrawerKick() {
+    const result = await openCashDrawer({
+      source: testMode ? 'print-test' : 'receipt-print',
+      saleId: sale.id,
+      receiptNumber: sale.receiptNumber,
+      triggeredAt: new Date().toISOString()
+    });
 
-    window.dispatchEvent(
-      new CustomEvent('vertex-pos:cash-drawer-kick', {
-        detail: {
-          mode: 'browser-placeholder',
-          source: testMode ? 'print-test' : 'receipt-print',
-          saleId: sale.id,
-          receiptNumber: sale.receiptNumber,
-          triggeredAt: new Date().toISOString()
-        }
-      })
-    );
-    setDrawerMessage(
-      'Cash-drawer placeholder event dispatched. Connect this browser event to your native bridge or local helper to fire real hardware.'
-    );
+    setDrawerMessage(result.message);
   }
 
   return (
