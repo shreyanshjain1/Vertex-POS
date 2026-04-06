@@ -112,7 +112,7 @@ The codebase is structured as a production-minded full-stack application with se
 - Low-stock alerts and daily summary notifications
 - Command palette
 - Guided first-run and empty-state UX across key modules
-- Thermal receipt settings for 58mm / 80mm paper, printer-safe browser output, brand-mark toggle, drawer bridge trigger, scanner notes, and operational defaults
+- Thermal receipt settings for 58mm / 80mm paper, printer-safe browser output, brand-mark toggle, drawer placeholder trigger, scanner notes, and operational defaults
 - Offline stock max-age and strict-lock settings for branches that need tighter offline checkout safeguards
 
 ## Screens / Modules
@@ -133,7 +133,7 @@ Key app modules currently present in the repository:
 - `/transfers` - branch transfer creation, dispatch, and receiving
 - `/reports` - sales, inventory, profit, and cashier reports
 - `/register/open`, `/register/close`, `/register/history` - cash drawer/session workflows, reconciliation, review, and reopen controls
-- `/print/receipt/test` - thermal printer test page for width checks, printer-safe layout review, barcode output, and drawer bridge validation
+- `/print/receipt/test` - thermal printer test page for width checks, printer-safe layout review, barcode output, and drawer placeholder validation
 - `/print/register-z-read/[id]` - printable register Z-read / end-of-shift summary
 - `/staff` - staff directory, permissions, and security controls
 - `/activity` - operational activity and audit visibility
@@ -193,16 +193,6 @@ The Prisma schema already models a fairly complete retail operations domain, inc
 ```bash
 npm install
 ```
-
-### Test scripts
-
-```bash
-npm test
-npm run test:watch
-npm run test:coverage
-```
-
-These run the existing Vitest suite in `tests/` and produce terminal plus HTML coverage output for the covered library modules.
 
 ### 2. Configure environment
 
@@ -368,3 +358,23 @@ In portfolio terms, this project shows the ability to design and ship a serious 
 - Local uploads are stored in `public/uploads/products/`.
 - Removed or replaced local product images are cleaned up automatically when a product is updated.
 - Control the upload size with `MAX_PRODUCT_IMAGE_UPLOAD_MB`.
+
+
+## Quality checks
+
+Run the main quality checks locally before pushing:
+
+```bash
+npm run lint
+npm run typecheck
+npm test
+```
+
+Optional test commands:
+
+```bash
+npm run test:watch
+npm run test:coverage
+```
+
+GitHub Actions runs the same install, Prisma client generation, lint, typecheck, and test steps on pushes and pull requests.
