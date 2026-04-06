@@ -6,7 +6,8 @@ import {
   canTransitionPurchaseStatus,
   derivePayableStatus,
   derivePurchaseReceiptStatus,
-  getPurchaseRemainingUnitQty
+  getPurchaseRemainingUnitQty,
+  type ManualPurchaseStatus
 } from '@/lib/purchases';
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
@@ -169,15 +170,7 @@ export async function updatePurchaseStatus({
   purchase: PurchaseDetail;
   shopId: string;
   userId: string;
-  nextStatus:
-  | 'DRAFT'
-  | 'SUBMITTED'
-  | 'APPROVED'
-  | 'SENT'
-  | 'PARTIALLY_RECEIVED'
-  | 'FULLY_RECEIVED'
-  | 'CANCELLED'
-  | 'CLOSED';
+  nextStatus: ManualPurchaseStatus;
   notes?: string | null;
 }) {
   if (purchase.status === 'CANCELLED' || purchase.status === 'CLOSED') {
