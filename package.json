@@ -15,7 +15,9 @@
     "seed": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\",\\\"moduleResolution\\\":\\\"node\\\"}\" prisma/seed.ts",
     "worker": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\",\\\"moduleResolution\\\":\\\"node\\\"}\" worker/index.ts",
     "worker:once": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\",\\\"moduleResolution\\\":\\\"node\\\"}\" worker/index.ts --once",
-    "worker:tick": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\",\\\"moduleResolution\\\":\\\"node\\\"}\" worker/index.ts --once"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@prisma/client": "^6.19.2",
@@ -38,6 +40,8 @@
     "prisma": "^6.19.2",
     "tailwindcss": "^4.1.18",
     "ts-node": "^10.9.1",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^2.1.8",
+    "@vitest/coverage-v8": "^2.1.8"
   }
 }

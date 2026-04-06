@@ -352,37 +352,28 @@ Vertex-POS already demonstrates a broad retail operations surface area:
 In portfolio terms, this project shows the ability to design and ship a serious business application with real workflow depth, not just a CRUD storefront or a simple cash register UI.
 
 
-### 5. Run the worker
+## Automated QA checks
 
-For local development in a second terminal:
+The repo now includes a lightweight Vitest suite for high-signal business logic:
+- document number generation
+- permission defaults and overrides
+- business status labels
+- money/date/slug formatting
+
+Run the checks with:
 
 ```bash
-npm run worker
+npm test
 ```
 
-To process a single queued job manually:
+Watch mode:
 
 ```bash
-npm run worker:tick
+npm run test:watch
 ```
 
-### 6. Optional cron endpoint for deployment
+Coverage report:
 
-For environments where you do not keep a long-running worker alive, you can call:
-
+```bash
+npm run test:coverage
 ```
-POST /api/cron/worker
-```
-
-Authorize the request with either:
-
-- `Authorization: Bearer <WORKER_CRON_SECRET>`
-- `x-worker-cron-secret: <WORKER_CRON_SECRET>`
-
-What this endpoint does:
-
-- queues operational jobs for every shop without piling up duplicate immediate jobs
-- recovers stale `RUNNING` jobs back to `QUEUED`
-- processes a small batch of queued jobs in the same request
-
-This is suitable for an external cron or scheduler hitting the endpoint every few minutes.
