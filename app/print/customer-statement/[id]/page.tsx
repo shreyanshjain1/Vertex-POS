@@ -176,7 +176,7 @@ export default async function PrintCustomerStatementPage({
                         <div className="text-xs text-stone-500">{dateTime(sale.createdAt)}</div>
                       </div>
                       <div className="text-right">
-                        <div className="font-semibold text-stone-900">{money(sale.totalAmount, currencySymbol)}</div>
+                        <div className="font-semibold text-stone-900">{money(Number(sale.totalAmount), currencySymbol)}</div>
                         <div className="text-xs text-stone-500">{sale.paymentMethod}</div>
                       </div>
                     </div>
@@ -206,11 +206,11 @@ export default async function PrintCustomerStatementPage({
                       <div className="grid grid-cols-2 gap-4 text-sm lg:min-w-[280px]">
                         <div>
                           <div className="text-xs uppercase tracking-[0.14em] text-stone-400">Original</div>
-                          <div className="font-semibold text-stone-900">{money(ledger.originalAmount, currencySymbol)}</div>
+                          <div className="font-semibold text-stone-900">{money(Number(ledger.originalAmount), currencySymbol)}</div>
                         </div>
                         <div>
                           <div className="text-xs uppercase tracking-[0.14em] text-stone-400">Balance</div>
-                          <div className="font-semibold text-stone-900">{money(ledger.balance, currencySymbol)}</div>
+                          <div className="font-semibold text-stone-900">{money(Number(ledger.balance), currencySymbol)}</div>
                         </div>
                       </div>
                     </div>
@@ -225,7 +225,7 @@ export default async function PrintCustomerStatementPage({
                                 {payment.referenceNumber ? ` / Ref ${payment.referenceNumber}` : ''}
                               </div>
                             </div>
-                            <div className="font-semibold text-stone-900">{money(payment.amount, currencySymbol)}</div>
+                            <div className="font-semibold text-stone-900">{money(Number(payment.amount), currencySymbol)}</div>
                           </div>
                         </div>
                       )) : (

@@ -100,8 +100,8 @@ export default async function PrintQuotePage({
                     <div className="text-xs text-stone-500">{item.variantLabel ?? 'Base item'}</div>
                   </td>
                   <td className="px-4 py-3 text-right text-stone-700">{item.qty}</td>
-                  <td className="px-4 py-3 text-right text-stone-700">{money(item.unitPrice, currencySymbol)}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-stone-900">{money(item.lineTotal, currencySymbol)}</td>
+                  <td className="px-4 py-3 text-right text-stone-700">{money(Number(item.unitPrice), currencySymbol)}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-stone-900">{money(Number(item.lineTotal), currencySymbol)}</td>
                 </tr>
               ))}
             </tbody>
