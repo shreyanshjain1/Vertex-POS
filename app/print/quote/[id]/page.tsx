@@ -109,10 +109,28 @@ export default async function PrintQuotePage({
         </div>
 
         <div className="mt-8 ml-auto max-w-sm space-y-2 rounded-[24px] border border-stone-200 bg-stone-50 p-5">
-          <div className="flex items-center justify-between text-sm"><span className="text-stone-500">Subtotal</span><span className="font-semibold text-stone-900">{money(parkedSale.subtotal, currencySymbol)}</span></div>
-          <div className="flex items-center justify-between text-sm"><span className="text-stone-500">Tax</span><span className="font-semibold text-stone-900">{money(parkedSale.taxAmount, currencySymbol)}</span></div>
-          <div className="flex items-center justify-between text-sm"><span className="text-stone-500">Discount</span><span className="font-semibold text-stone-900">-{money(parkedSale.discountAmount, currencySymbol)}</span></div>
-          <div className="flex items-center justify-between border-t border-stone-200 pt-3 text-lg font-black text-stone-950"><span>Total quote</span><span>{money(parkedSale.totalAmount, currencySymbol)}</span></div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-stone-500">Subtotal</span>
+            <span className="font-semibold text-stone-900">
+              {money(Number(parkedSale.subtotal), currencySymbol)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-stone-500">Tax</span>
+            <span className="font-semibold text-stone-900">
+              {money(Number(parkedSale.taxAmount), currencySymbol)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-stone-500">Discount</span>
+            <span className="font-semibold text-stone-900">
+              -{money(Number(parkedSale.discountAmount), currencySymbol)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between border-t border-stone-200 pt-3 text-lg font-black text-stone-950">
+            <span>Total quote</span>
+            <span>{money(Number(parkedSale.totalAmount), currencySymbol)}</span>
+          </div>
         </div>
 
         <div className="mt-8 rounded-[24px] border border-sky-200 bg-sky-50 px-5 py-4 text-sm leading-6 text-sky-900">
