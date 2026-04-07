@@ -1,12 +1,16 @@
-import { ParkedSale, ParkedSaleItem, ParkedSaleType, Prisma, ShopRole, User } from '@prisma/client';
+import { ParkedSale, ParkedSaleItem, Prisma, ShopRole, User } from '@prisma/client';
 import { hasRole } from '@/lib/authz';
-import { roundCurrency } from '@/lib/inventory';
 import { prisma } from '@/lib/prisma';
+import {
+  calculateParkedSaleTotals,
+  createQuoteReference,
+  getParkedSaleExpiresAt,
+  getParkedSaleTypeLabel,
+  PARKED_SALE_TTL_HOURS,
+  QUOTE_TTL_DAYS
+} from '@/lib/parked-sales-utils';
 
 type ParkedSalesDb = Prisma.TransactionClient | typeof prisma;
-
-export const PARKED_SALE_TTL_HOURS = 24;
-export const QUOTE_TTL_DAYS = 30;
 
 type ParkedSaleRecord = ParkedSale & {
   cashier?: Pick<User, 'id' | 'name' | 'email'> | null;
@@ -50,27 +54,14 @@ export type SerializedParkedSale = {
   }>;
 };
 
-export function getParkedSaleExpiresAt(type: ParkedSaleType = 'SAVED_CART', now = new Date()) {
-  if (type === 'QUOTE') {
-    return new Date(now.getTime() + QUOTE_TTL_DAYS * 24 * 60 * 60 * 1000);
-  }
-
-  return new Date(now.getTime() + PARKED_SALE_TTL_HOURS * 60 * 60 * 1000);
-}
-
-export function createQuoteReference(now = new Date()) {
-  const compactDate = now.toISOString().slice(0, 10).replace(/-/g, '');
-  const timeFragment = `${now.getHours().toString().padStart(2, '0')}${now
-    .getMinutes()
-    .toString()
-    .padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
-
-  return `QT-${compactDate}-${timeFragment}`;
-}
-
-export function getParkedSaleTypeLabel(type: ParkedSaleType) {
-  return type === 'QUOTE' ? 'Quote' : 'Saved cart';
-}
+export {
+  PARKED_SALE_TTL_HOURS,
+  QUOTE_TTL_DAYS,
+  getParkedSaleExpiresAt,
+  createQuoteReference,
+  getParkedSaleTypeLabel,
+  calculateParkedSaleTotals
+};
 
 export async function cleanupExpiredParkedSales(db: ParkedSalesDb, shopId: string) {
   return db.parkedSale.updateMany({
@@ -108,10 +99,7 @@ export function serializeParkedSale(record: ParkedSaleRecord): SerializedParkedS
     shopId: record.shopId,
     cashierUserId: record.cashierUserId,
     customerId: record.customerId ?? null,
-    cashierName:
-      record.cashier?.name ??
-      record.cashier?.email?.split('@')[0] ??
-      'Cashier',
+    cashierName: record.cashier?.name ?? record.cashier?.email?.split('@')[0] ?? 'Cashier',
     cashierEmail: record.cashier?.email ?? null,
     customerName: record.customerName ?? null,
     customerPhone: record.customerPhone ?? null,
@@ -141,25 +129,5 @@ export function serializeParkedSale(record: ParkedSaleRecord): SerializedParkedS
       lineTotal: item.lineTotal.toString(),
       createdAt: item.createdAt.toISOString()
     }))
-  };
-}
-
-export function calculateParkedSaleTotals(input: {
-  items: Array<{ qty: number; unitPrice: number }>;
-  taxRate: number;
-  discountAmount: number;
-}) {
-  const subtotal = roundCurrency(
-    input.items.reduce((sum, item) => sum + item.qty * item.unitPrice, 0)
-  );
-  const taxAmount = roundCurrency(subtotal * (input.taxRate / 100));
-  const discountAmount = roundCurrency(input.discountAmount);
-  const totalAmount = roundCurrency(subtotal + taxAmount - discountAmount);
-
-  return {
-    subtotal,
-    taxAmount,
-    discountAmount,
-    totalAmount
   };
 }
