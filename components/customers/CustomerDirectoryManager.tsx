@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
@@ -439,9 +440,27 @@ export default function CustomerDirectoryManager({
 
       {selectedCustomer ? (
         <Card>
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            <h2 className="text-2xl font-black text-stone-900">{getCustomerDisplayName(selectedCustomer)}</h2>
-            <Badge tone={customerTypeTone(selectedCustomer.type)}>{getCustomerTypeLabel(selectedCustomer.type)}</Badge>
+          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-2xl font-black text-stone-900">{getCustomerDisplayName(selectedCustomer)}</h2>
+              <Badge tone={customerTypeTone(selectedCustomer.type)}>{getCustomerTypeLabel(selectedCustomer.type)}</Badge>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href={`/print/customer-statement/${selectedCustomer.id}`}
+                target="_blank"
+                className="inline-flex h-11 items-center justify-center rounded-2xl border border-stone-200 bg-white px-4 text-sm font-semibold text-stone-800 shadow-[0_12px_24px_-18px_rgba(28,25,23,0.32)] transition duration-200 hover:-translate-y-0.5 hover:border-stone-300 hover:bg-stone-50"
+              >
+                Print statement
+              </Link>
+              <Link
+                href={`/print/customer-statement/${selectedCustomer.id}?openOnly=1`}
+                target="_blank"
+                className="inline-flex h-11 items-center justify-center rounded-2xl border border-emerald-700/90 bg-[linear-gradient(180deg,#059669,#047857)] px-4 text-sm font-semibold text-white shadow-[0_18px_30px_-20px_rgba(5,150,105,0.9)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_36px_-20px_rgba(5,150,105,0.85)]"
+              >
+                Print open receivables
+              </Link>
+            </div>
           </div>
 
           <div className="grid gap-6 xl:grid-cols-3">
