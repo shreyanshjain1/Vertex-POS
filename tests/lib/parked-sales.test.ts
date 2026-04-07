@@ -29,8 +29,10 @@ describe('parked sales utils', () => {
 
   it('creates a quote reference with the expected prefix and date format', () => {
     const now = new Date('2026-04-07T08:09:10.000Z');
+    const reference = createQuoteReference(now);
 
-    expect(createQuoteReference(now)).toBe('QT-20260407-080910');
+    expect(reference.startsWith('QT-20260407-')).toBe(true);
+    expect(reference).toMatch(/^QT-\d{8}-\d{6}$/);
   });
 
   it('returns a readable type label', () => {

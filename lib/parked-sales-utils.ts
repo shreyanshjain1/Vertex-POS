@@ -14,10 +14,10 @@ export function getParkedSaleExpiresAt(type: ParkedSaleType = 'SAVED_CART', now 
 
 export function createQuoteReference(now = new Date()) {
   const compactDate = now.toISOString().slice(0, 10).replace(/-/g, '');
-  const timeFragment = `${now.getHours().toString().padStart(2, '0')}${now
-    .getMinutes()
+  const timeFragment = `${now.getUTCHours().toString().padStart(2, '0')}${now
+    .getUTCMinutes()
     .toString()
-    .padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
+    .padStart(2, '0')}${now.getUTCSeconds().toString().padStart(2, '0')}`;
 
   return `QT-${compactDate}-${timeFragment}`;
 }
