@@ -5,6 +5,7 @@ import { apiErrorResponse } from '@/lib/api';
 import { logActivity } from '@/lib/activity';
 import {
   calculateParkedSaleTotals,
+  canManageAllParkedSales,
   cleanupExpiredParkedSales,
   createQuoteReference,
   getParkedSaleExpiresAt,
@@ -15,6 +16,73 @@ import { getCustomerDisplayName } from '@/lib/customers';
 import { collapseSaleItems, normalizeText } from '@/lib/inventory';
 import { buildVariantLabel } from '@/lib/product-merchandising';
 import { prisma } from '@/lib/prisma';
+
+
+
+export async function GET(request: Request) {
+  try {
+    const { shopId, userId, role } = await requireRole('CASHIER');
+    const { searchParams } = new URL(request.url);
+    const search = normalizeText(searchParams.get('q'))?.toLowerCase() ?? null;
+    const type = searchParams.get('type');
+    const ownership = searchParams.get('ownership');
+    const limit = Math.min(Math.max(Number(searchParams.get('limit') ?? 50), 1), 100);
+
+    await cleanupExpiredParkedSales(prisma, shopId);
+
+    const parkedSales = await prisma.parkedSale.findMany({
+      where: {
+        shopId,
+        status: 'HELD',
+        expiresAt: {
+          gt: new Date()
+        },
+        ...(type === 'QUOTE' || type === 'SAVED_CART' ? { type } : {}),
+        ...(ownership === 'mine' || !canManageAllParkedSales(role) ? { cashierUserId: userId } : {}),
+        ...(search
+          ? {
+              OR: [
+                { customerName: { contains: search, mode: 'insensitive' } },
+                { customerPhone: { contains: search, mode: 'insensitive' } },
+                { cashier: { name: { contains: search, mode: 'insensitive' } } },
+                { cashier: { email: { contains: search, mode: 'insensitive' } } },
+                { title: { contains: search, mode: 'insensitive' } },
+                { quoteReference: { contains: search, mode: 'insensitive' } },
+                {
+                  items: {
+                    some: {
+                      OR: [
+                        { productName: { contains: search, mode: 'insensitive' } },
+                        { variantLabel: { contains: search, mode: 'insensitive' } }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          : {})
+      },
+      include: {
+        cashier: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        items: {
+          orderBy: { createdAt: 'asc' }
+        }
+      },
+      orderBy: [{ type: 'desc' }, { createdAt: 'desc' }],
+      take: limit
+    });
+
+    return NextResponse.json({ parkedSales: parkedSales.map(serializeParkedSale) });
+  } catch (error) {
+    return apiErrorResponse(error, 'Unable to load saved checkout entries.');
+  }
+}
 
 export async function POST(request: Request) {
   try {

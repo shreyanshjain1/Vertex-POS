@@ -101,6 +101,13 @@ const sections: Array<{ title: string; links: NavLink[] }> = [
         minRole: 'CASHIER'
       },
       {
+        href: '/parked-sales',
+        label: 'Saved carts',
+        description: 'Review held carts and printable customer quotes.',
+        icon: 'sales',
+        minRole: 'CASHIER'
+      },
+      {
         href: '/register/open',
         label: 'Open register',
         description: 'Start a drawer session with the opening cash float.',

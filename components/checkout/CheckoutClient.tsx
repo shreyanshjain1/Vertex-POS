@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { type FormEvent, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import ThermalReceipt from '@/components/receipts/ThermalReceipt';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
@@ -344,11 +344,13 @@ export default function CheckoutClient({
   initialParkedSales: ParkedSale[];
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const scanInputRef = useRef<HTMLInputElement>(null);
   const cartRef = useRef<CartItem[]>([]);
   const queuedSalesRef = useRef<OfflineQueuedSale[]>([]);
   const syncInFlightRef = useRef(false);
   const retryTimerRef = useRef<number | null>(null);
+  const handledSearchParamResumeRef = useRef<string | null>(null);
   const canAcceptCash = hasActiveCashSession;
   const draftStorageKey = useMemo(
     () => buildOfflineCheckoutDraftStorageKey(shopId, userId),
@@ -697,7 +699,7 @@ export default function CheckoutClient({
     if (!value) {
       setScanFeedback({ tone: 'error', message: 'Scan or enter a barcode/SKU, then press Enter to add it.' });
       focusScanInput();
-      return;
+      return false;
     }
     const product = findProductByScan(value);
     if (!product) {
@@ -1080,6 +1082,27 @@ export default function CheckoutClient({
     };
   }, []);
 
+  useEffect(() => {
+    const parkedSaleId = searchParams.get('parkedSaleId');
+    if (!parkedSaleId || handledSearchParamResumeRef.current === parkedSaleId) {
+      return;
+    }
+
+    const parkedSale = parkedSales.find((entry) => entry.id === parkedSaleId);
+    if (!parkedSale) {
+      handledSearchParamResumeRef.current = parkedSaleId;
+      setError('That saved checkout entry is no longer available or has already expired.');
+      router.replace('/checkout');
+      return;
+    }
+
+    handledSearchParamResumeRef.current = parkedSaleId;
+    void resumeParkedSale(parkedSale, {
+      skipReplaceConfirm: true,
+      clearSearchParamAfter: true
+    });
+  }, [parkedSales, router, searchParams]);
+
   async function saveCheckoutDraft(type: 'SAVED_CART' | 'QUOTE') {
     if (!cart.length) {
       setError(`Add at least one item before saving this ${type === 'QUOTE' ? 'quote' : 'cart'}.`);
@@ -1134,15 +1157,15 @@ export default function CheckoutClient({
     }
   }
 
-  async function resumeParkedSale(parkedSale: ParkedSale) {
+  async function resumeParkedSale(parkedSale: ParkedSale, options?: { skipReplaceConfirm?: boolean; clearSearchParamAfter?: boolean }) {
     setError('');
     setParkedFeedback('');
     const missingOption = parkedSale.items.find((item) => !productMap.has(item.productVariantId ?? item.productId));
     if (missingOption) {
       setError('One or more items in this saved checkout entry are no longer available in the active catalog.');
-      return;
+      return false;
     }
-    if (cart.length && !window.confirm('Load this saved checkout entry and replace the current checkout cart?')) return;
+    if (cart.length && !options?.skipReplaceConfirm && !window.confirm('Load this saved checkout entry and replace the current checkout cart?')) return false;
     setResumeLoadingId(parkedSale.id);
     try {
       const response = await fetch(`/api/parked-sales/${parkedSale.id}/resume`, { method: 'POST' });
@@ -1150,7 +1173,7 @@ export default function CheckoutClient({
       setResumeLoadingId(null);
       if (!response.ok) {
         setError(data?.error ?? 'Unable to load the saved checkout entry.');
-        return;
+        return false;
       }
       setCart(
         parkedSale.items.map((item) => {
@@ -1177,9 +1200,14 @@ export default function CheckoutClient({
       setParkedSales((current) => current.filter((entry) => entry.id !== parkedSale.id));
       setParkedFeedback(`Loaded ${parkedSale.type === 'QUOTE' ? 'quote' : 'saved cart'} from ${parkedSale.cashierName}.`);
       focusScanInput();
+      if (options?.clearSearchParamAfter) {
+        router.replace('/checkout');
+      }
+      return true;
     } catch {
       setResumeLoadingId(null);
       setError('Unable to load the saved checkout entry.');
+      return false;
     }
   }
 

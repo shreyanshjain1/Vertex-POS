@@ -385,3 +385,10 @@ Behavior notes:
 - quotes expire after 30 days
 - neither flow deducts stock until the checkout is completed as a real sale
 - both flows preserve cart lines, customer details, discount amount, and notes
+
+
+## Saved carts and quotes workspace
+
+- Added a dedicated `/parked-sales` workspace for held carts and quotes.
+- Cashiers and managers can filter active entries, reopen them inside checkout, cancel them, and print quote copies.
+- Added printable quote documents at `/print/quote/[id]`.
